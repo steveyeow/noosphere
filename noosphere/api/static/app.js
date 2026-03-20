@@ -27,18 +27,60 @@ function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
 const DM=[{n:"Lenny's Newsletter",d:'product, growth',c:'#e76f51'},{n:'Paul Graham',d:'startups, philosophy',c:'#2a9d8f'},{n:'AI Research',d:'AI, ML',c:'#264653'},{n:'Feynman Lectures',d:'physics, science',c:'#f4a261'},{n:'Stoic Philosophy',d:'philosophy, ethics',c:'#588157'},{n:'YC Startup School',d:'startups, growth',c:'#457b9d'},{n:'Design Patterns',d:'software, design',c:'#e9c46a'},{n:'World History',d:'history, culture',c:'#b56576'}];
-function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><button class="lp-cta" id="lp-cta">Get Started</button></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge for agents.</h1><p class="lp-sub">Turn any knowledge base into an agent-readable corpus. AI agents discover, query, and cite your knowledge via MCP and API.</p><button class="lp-go" id="lp-go">Get Started →</button></div><div class="lp-demo"><div class="lp-dt">Semantic Search with Citations</div><div class="lp-dq"><input value="How should startups think about pricing?" readonly /><button>Search</button></div><div class="lp-r"><div class="lp-sc">Score: 0.87</div><div class="lp-rt">"The biggest mistake I see in pricing is undercharging..."</div><div class="lp-ci">Pricing your AI product — Jul 2025</div></div><div class="lp-r"><div class="lp-sc">Score: 0.82</div><div class="lp-rt">"Value-based pricing means charging based on the outcome..."</div><div class="lp-ci">The pricing playbook — Mar 2024</div></div></div></div></div>`;
-  document.getElementById('lp-cta').onclick=document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph()}
+function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><button class="lp-cta" id="lp-cta">Get Started</button></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge for agents.</h1><p class="lp-sub">Turn any knowledge base into an agent-readable corpus. AI agents discover, query, and cite your knowledge via MCP and API.</p><button class="lp-go" id="lp-go">Get Started →</button></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div></div>`;
+  document.getElementById('lp-cta').onclick=document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph();animateLPTerm()}
+
+function animateLPTerm(){
+  const body=document.getElementById('lp-term-body');if(!body)return;
+  const lines=[
+    {delay:400,type:'cmd',text:'> noosphere import https://paulgraham.com/startupideas.html'},
+    {delay:1200,type:'out',text:'Fetching content...'},
+    {delay:800,type:'out',text:'Extracted: "How to Get Startup Ideas" — 4,218 words'},
+    {delay:600,type:'status',text:'CREATING',label:'Corpus: Paul Graham Essays'},
+    {delay:500,type:'out',text:'Chunking into 12 semantic blocks...'},
+    {delay:900,type:'out',text:'Generating embeddings ████████████████ 12/12'},
+    {delay:400,type:'status',text:'INDEXED',label:'Indexed & searchable'},
+    {delay:800,type:'out',text:''},
+    {delay:200,type:'cmd',text:'> noosphere search "how to find good startup ideas"'},
+    {delay:1100,type:'result',score:'0.94',text:'"The very best startup ideas tend to have three things in common: they\'re something the founders themselves want..."',cite:'How to Get Startup Ideas — paulgraham.com'},
+    {delay:700,type:'result',score:'0.89',text:'"Live in the future, then build what\'s missing."',cite:'How to Get Startup Ideas — paulgraham.com'},
+    {delay:600,type:'out',text:''},
+    {delay:200,type:'cmd',text:'> noosphere publish --access public'},
+    {delay:800,type:'status',text:'LIVE',label:'Registered to the Noosphere'},
+    {delay:400,type:'out',text:'MCP endpoint: localhost:8080/mcp'},
+    {delay:300,type:'out',text:'Agents worldwide can now discover & cite your knowledge.'},
+  ];
+
+  let i=0,totalDelay=0;
+  function addLine(l){
+    const el=document.createElement('div');
+    if(l.type==='cmd'){
+      el.className='lpt-line lpt-cmd';el.textContent=l.text;
+    }else if(l.type==='out'){
+      if(!l.text){el.className='lpt-spacer';el.innerHTML='&nbsp;'}
+      else{el.className='lpt-line lpt-out';el.textContent=l.text;}
+    }else if(l.type==='status'){
+      el.className='lpt-line lpt-status';
+      const st=l.text==='INDEXED'?'#3b82f6':l.text==='CREATING'?'#f59e0b':l.text==='LIVE'?'#22c55e':'#86868b';
+      el.innerHTML=`<span class="lpt-badge" style="color:${st}">${l.text}</span> ${esc(l.label)}`;
+    }else if(l.type==='result'){
+      el.className='lpt-result';
+      el.innerHTML=`<span class="lpt-score">Score: ${l.score}</span><div class="lpt-quote">${esc(l.text)}</div><div class="lpt-cite">${esc(l.cite)}</div>`;
+    }
+    body.appendChild(el);body.scrollTop=body.scrollHeight;
+  }
+
+  function step(){
+    if(i>=lines.length){setTimeout(()=>{body.innerHTML='';i=0;totalDelay=0;step()},3000);return}
+    const l=lines[i];
+    setTimeout(()=>{addLine(l);i++;step()},l.delay);
+  }
+  step();
+}
 function drawLPGraph(){const co=document.getElementById('lp-cv');if(!co)return;const tk=m=>(m.d||'').split(/[,;]+/).map(d=>d.trim().toLowerCase()).filter(Boolean);const ns=DM.map((m,i)=>({id:'l'+i,name:m.n,dom:m.d,color:m.c,ini:m.n.split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk:tk(m)}));const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=ns[i].tk.filter(t=>ns[j].tk.some(u=>t===u||t.includes(u)||u.includes(t)));if(s.length)lk.push({source:ns[i].id,target:ns[j].id,s:s.length})}const dp=devicePixelRatio||1,W=co.clientWidth||800,H=co.clientHeight||600,BR=Math.max(14,Math.min(22,W/(ns.length*2.5)));const cv=document.createElement('canvas');cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';co.appendChild(cv);const cx=cv.getContext('2d');cx.scale(dp,dp);const pts=[];lk.forEach(l=>{for(let i=0;i<Math.max(1,Math.round(l.s*1.5));i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.2,op:.3+Math.random()*.5})});const gX=W*.55,zn=[{cx:W*.1+170,cy:H/2,hw:200,hh:120}];function av(){let n;function f(){for(const nd of n)for(const z of zn){const dx=nd.x-z.cx,dy=nd.y-z.cy,ox=z.hw-Math.abs(dx),oy=z.hh-Math.abs(dy);if(ox>0&&oy>0){if(ox<oy){nd.vx+=(dx>=0?1:-1)*ox*.08;nd.vx*=.85}else{nd.vy+=(dy>=0?1:-1)*oy*.08;nd.vy*=.85}}}}f.initialize=x=>{n=x};return f}const sim=d3.forceSimulation(ns).force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(55,220-d.s*50)).strength(d=>.08+d.s*.15)).force('charge',d3.forceManyBody().strength(-400).distanceMax(550)).force('center',d3.forceCenter(gX,H/2).strength(.02)).force('collision',d3.forceCollide().radius(BR+12)).force('avoid',av()).alphaDecay(.03).velocityDecay(.35);let hov=null,mp=null;cv.onmousemove=e=>{const r=cv.getBoundingClientRect();mp=[e.clientX-r.left,e.clientY-r.top];hov=null;for(const n of ns)if(Math.hypot(n.x-mp[0],n.y-mp[1])<BR+4){hov=n;break}cv.style.cursor=hov?'pointer':'default'};cv.onmouseleave=()=>{hov=null;mp=null};function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);for(const l of lk){const s=l.source,t=l.target;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${.1+l.s*.07})`;cx.lineWidth=.5+l.s*.3;cx.stroke()}for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.35})`;cx.fill()}for(const n of ns){const h=hov===n;let r=BR;if(mp){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<180?BR*(1+(1-d/180)*.45):BR*.8}if(h)r=Math.max(r,BR*1.35);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*1.8);g.addColorStop(0,`rgba(${cr},${cg},${cb},${h?.1:.04})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*1.8,0,Math.PI*2);cx.fillStyle=g;cx.fill();if(h){cx.beginPath();cx.arc(n.x,n.y,rr+2,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},.4)`;cx.lineWidth=1.5;cx.stroke()}cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);cx.fillStyle=n.color;cx.fill();cx.strokeStyle='rgba(255,255,255,.2)';cx.lineWidth=1;cx.stroke();cx.fillStyle='rgba(255,255,255,.92)';cx.font=`700 ${rr*.5}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${h?.9:.65})`:`rgba(30,35,50,${h?.85:.55})`;cx.font=`600 ${h?10:9}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+10)}cx.restore();_lpAnim=requestAnimationFrame(draw)}sim.on('tick',()=>{});_lpAnim=requestAnimationFrame(draw)}
 
-/* ══════ HOME — Interactive Terminal ══════ */
+/* ══════ HOME — Terminal (input top, output below) ══════ */
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
-const TERM_SUGGESTIONS=[
-  {text:'What is RAG and how does it work?',label:'Search all corpora',desc:'Ask a question across your knowledge'},
-  {text:'https://paulgraham.com/startupideas.html',label:'Import from URL',desc:'Fetch, extract, and index a webpage'},
-  {text:'/status',label:'Corpora status',desc:'See all corpora and their stats'},
-  {text:'/write',label:'Write a source',desc:'Open the editor to write directly'},
-];
 let _termCtx={};
 
 function renderHome(){
@@ -46,43 +88,34 @@ function renderHome(){
   const hour=new Date().getHours();
   const greet=hour<12?'Morning':hour<18?'Afternoon':'Evening';
   const totalDocs=_corpora.reduce((a,c)=>a+(c.document_count||0),0);
-  const totalChunks=_corpora.reduce((a,c)=>a+(c.chunk_count||0),0);
   const totalWords=_corpora.reduce((a,c)=>a+(c.word_count||0),0);
+  const statsText=_corpora.length?`${_corpora.length} corpora · ${totalDocs} sources · ${totalWords.toLocaleString()} words`:'No corpora yet. Paste a URL to get started.';
+
   ct.innerHTML=`<div class="term-full">
-    <div class="term-greet">
-      <div class="term-greet-left">
-        <div class="term-greet-row">
-          <svg width="32" height="32" viewBox="0 0 64 64" fill="none">
-            <circle cx="32" cy="32" r="28" stroke="var(--acc)" stroke-width="2.5"/>
-            <circle cx="20" cy="24" r="5" fill="var(--acc)" opacity="0.7"/>
-            <circle cx="44" cy="20" r="4" fill="var(--acc)" opacity="0.6"/>
-            <circle cx="36" cy="42" r="6" fill="var(--acc)" opacity="0.8"/>
-            <circle cx="18" cy="42" r="3" fill="var(--acc)" opacity="0.5"/>
-            <line x1="20" y1="24" x2="44" y2="20" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
-            <line x1="20" y1="24" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
-            <line x1="44" y1="20" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
-            <line x1="18" y1="42" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
-          </svg>
-          <div>
-            <div class="term-greet-hi">${greet}</div>
-            <div class="term-greet-meta">${_corpora.length
-              ?`${_corpora.length} corpora · ${totalDocs} sources · ${totalWords.toLocaleString()} words`
-              :'No corpora yet'}</div>
-          </div>
-        </div>
+    <div class="term-top">
+      <div class="term-greet">
+        <svg class="term-icon" width="36" height="36" viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect x="3" y="0" width="4" height="1" fill="var(--acc)" opacity=".6"/><rect x="2" y="1" width="6" height="1" fill="var(--acc)" opacity=".5"/><rect x="1" y="2" width="8" height="3" fill="var(--acc)"/><rect x="2" y="3" width="2" height="1" fill="#fff"/><rect x="6" y="3" width="2" height="1" fill="#fff"/><rect x="3" y="3" width="1" height="1" fill="var(--bg3)"/><rect x="7" y="3" width="1" height="1" fill="var(--bg3)"/><rect x="1" y="5" width="8" height="3" fill="var(--acc)" opacity=".6"/><rect x="3" y="6" width="4" height="1" fill="var(--acc)" opacity=".3"/><rect x="1" y="8" width="2" height="1" fill="var(--acc)" opacity=".35"/><rect x="7" y="8" width="2" height="1" fill="var(--acc)" opacity=".35"/><rect x="0" y="4" width="1" height="3" fill="var(--acc)" opacity=".3"/><rect x="9" y="4" width="1" height="3" fill="var(--acc)" opacity=".3"/></svg>
+        <div><div class="term-hi">${greet}</div><div class="term-stats">${statsText}</div></div>
+      </div>
+      <div class="term-input-wrap">
+        <span class="term-caret">&gt;</span>
+        <input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus />
+      </div>
+      <div class="term-hints" id="term-hints">
+        <div class="term-sg" data-cmd="/write"><span class="term-caret">&gt;</span> Write a new source</div>
+        <div class="term-sg" data-cmd="How should I think about pricing?"><span class="term-caret">&gt;</span> Ask the Noosphere</div>
+        <div class="term-sg" data-cmd="/status"><span class="term-caret">&gt;</span> View my corpora</div>
       </div>
     </div>
-    <div class="term-body" id="term-body"></div>
-    <div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Search the Noosphere, paste a URL to import, or type /help" autofocus /><span class="term-cursor-input">\u2588</span></div>
-    <div class="term-hints" id="term-hints"></div>
+    <div class="term-output" id="term-output"></div>
   </div>`;
 
-  const body=document.getElementById('term-body');
   const input=document.getElementById('term-input');
+  const output=document.getElementById('term-output');
   const hints=document.getElementById('term-hints');
   _termCtx={};
 
-  renderSuggestions(hints);
+  document.querySelectorAll('.term-sg').forEach(s=>{s.onclick=()=>{input.value=s.dataset.cmd;input.focus();sendInput()}});
 
   let _sending=false;
   async function sendInput(){
@@ -90,44 +123,36 @@ function renderHome(){
     const val=input.value.trim();if(!val)return;
     _sending=true;input.value='';input.disabled=true;
     hints.style.display='none';
-    appendLine(body,{type:'prompt',text:val});
-    appendLine(body,{type:'resp',text:'Processing...',id:'term-loading'});
+    addLine(output,'prompt',val);
+    const loadId='ld-'+Date.now();
+    addLine(output,'resp','Processing...',loadId);
     try{
       const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
       const d=await r.json();
-      document.getElementById('term-loading')?.remove();
+      document.getElementById(loadId)?.remove();
       _termCtx=d.context||{};
-      for(const line of(d.lines||[]))appendLine(body,line);
+      for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
       if(d.context?.action==='open_write'){setTimeout(()=>{location.hash='#/write'},500)}
-    }catch(err){
-      document.getElementById('term-loading')?.remove();
-      appendLine(body,{type:'resp',text:'Error: '+err.message});
-    }
-    input.disabled=false;input.focus();body.scrollTop=body.scrollHeight;
+    }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+err.message)}
+    input.disabled=false;input.focus();
     _sending=false;
   }
   input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sendInput()}});
 }
 
-function appendLine(body,line,hints){
+function addLine(container,type,text,id,line){
   const el=document.createElement('div');
-  if(line.id)el.id=line.id;
-  if(line.type==='prompt'){el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span><span>'+esc(line.text)+'</span>'}
-  else if(line.type==='resp'){el.className='term-line term-resp';el.textContent=line.text}
-  else if(line.type==='hint'){el.className='term-line term-resp';el.style.opacity='.6';el.textContent=line.text}
-  else if(line.type==='option'){el.className='term-line term-option';el.textContent=line.text;el.style.cursor='pointer';
-    el.onclick=()=>{const input=document.getElementById('term-input');if(input&&line.value){input.value=line.value;input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))}}}
-  else if(line.type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between"><span class="term-card-lbl">${esc(line.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[line.status]||'#6e6e73'}">${esc(line.status||'')}</span></div><div class="term-card-det">${esc(line.detail||'')}</div>${line.val?`<div class="term-card-val">${esc(line.val)}</div>`:''}`;
-    if(line.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+line.corpus_id}}}
-  else if(line.type==='cite'){el.className='term-line';el.innerHTML=`<span class="chat-cite">${esc(line.text)}</span>`}
-  else if(line.type==='search_result'){el.className='term-card';el.innerHTML=`<div class="term-card-lbl" style="display:flex;justify-content:space-between"><span>${esc(line.title||'')}</span><span style="color:var(--acc);font-size:10px">${line.score?('Score: '+line.score.toFixed(2)):''}</span></div><div class="term-card-det" style="margin-top:6px;line-height:1.5">${esc(line.text||'')}</div>${line.source?`<div style="font-size:10px;color:var(--tx3);margin-top:4px">${esc(line.source)}</div>`:''}`}
+  if(id)el.id=id;
+  const ln=line||{};
+  if(type==='prompt'){el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span> '+esc(text||ln.text||'')}
+  else if(type==='resp'){el.className='term-line term-resp';el.textContent=text||ln.text||''}
+  else if(type==='hint'){el.className='term-line term-resp';el.style.opacity='.5';el.textContent=ln.text||''}
+  else if(type==='option'){el.className='term-line term-option';el.textContent=ln.text||'';
+    el.onclick=()=>{const input=document.getElementById('term-input');if(input&&ln.value){input.value=ln.value;input.focus();setTimeout(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})),50)}}}
+  else if(type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><span class="term-card-lbl">${esc(ln.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[ln.status]||'var(--tx3)'}">${esc(ln.status||'')}</span></div><div class="term-card-det">${esc(ln.detail||'')}</div>${ln.val?`<div class="term-card-val">${esc(ln.val)}</div>`:''}`;
+    if(ln.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+ln.corpus_id}}}
   else return;
-  body.appendChild(el);body.scrollTop=body.scrollHeight;
-}
-
-function renderSuggestions(el){
-  el.innerHTML=TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> <span class="term-sg-label">${esc(s.label)}</span><span class="term-sg-desc">${esc(s.desc||'')}</span></div>`).join('');
-  el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();setTimeout(()=>{const e=new KeyboardEvent('keydown',{key:'Enter',bubbles:true});input.dispatchEvent(e)},50)}}});
+  container.appendChild(el);container.scrollTop=container.scrollHeight;
 }
 
 /* ══════ WRITE ══════ */

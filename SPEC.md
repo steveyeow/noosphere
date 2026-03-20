@@ -2,9 +2,9 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-**Google Scholar and arXiv — rebuilt for agents.**
+**arXiv for all knowledge — built for agents.**
 
-Noosphere is an open platform that lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like Google Scholar and arXiv, but built for agents instead of human readers, and open to all knowledge — not just academic papers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
+Noosphere is an open platform that lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like arXiv, but open to all knowledge (not just academic papers) and built for agents instead of human readers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
 
 ---
 
@@ -509,7 +509,7 @@ Deliverables:
 
 ## Summary
 
-Noosphere is Google Scholar and arXiv rebuilt for agents. Anyone can publish their knowledge as structured, agent-readable corpora. Agents discover, query, and cite knowledge through MCP and API. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
+Noosphere is arXiv for all knowledge — built for agents. Anyone can publish their knowledge as structured, agent-readable corpora. Agents discover, query, and cite knowledge through MCP and API. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
 
 The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
 

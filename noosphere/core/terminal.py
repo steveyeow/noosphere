@@ -51,36 +51,25 @@ def _handle_url(url: str) -> dict:
     lines = [{"type": "resp", "text": f"Fetching {url}..."}]
 
     corpora = list_corpora()
-    if not corpora:
-        try:
-            corpus = create_corpus("My Knowledge", access_level="public")
-            doc = ingest_url(corpus["id"], url)
-            result = index_corpus(corpus["id"])
-            lines.extend([
-                {"type": "resp", "text": f'✓ Extracted: "{doc["title"]}"'},
-                {"type": "resp", "text": f'✓ {doc["word_count"]} words'},
-                {"type": "resp", "text": "Created new corpus: My Knowledge"},
-                {"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"},
-                {"type": "card", "label": "Source Added", "status": "READY",
-                 "detail": f'{doc["title"]} · {doc["word_count"]} words',
-                 "val": f'Corpus: My Knowledge · {result["chunk_count"]} chunks',
-                 "corpus_id": corpus["id"]},
-                {"type": "resp", "text": "Agents can now discover and cite this content."},
-            ])
-            return {"lines": lines, "context": {"state": "idle"}}
-        except Exception as e:
-            lines.append({"type": "resp", "text": f"✗ Failed: {str(e)[:100]}"})
-            return {"lines": lines, "context": {"state": "idle"}}
+    corpus = corpora[0] if corpora else create_corpus("My Knowledge", access_level="public")
+    corpus_name = corpus["name"]
+    cid = corpus["id"]
 
-    lines.append({"type": "resp", "text": "Add to which corpus?"})
-    for i, c in enumerate(corpora):
-        lines.append({"type": "option", "text": f"[{i+1}] {c['name']} ({c['document_count']} sources)", "value": str(i+1)})
-    lines.append({"type": "option", "text": f"[{len(corpora)+1}] Create new corpus", "value": str(len(corpora)+1)})
+    try:
+        doc = ingest_url(cid, url)
+        lines.append({"type": "resp", "text": f'✓ Extracted: "{doc["title"]}" · {doc["word_count"]} words'})
+        lines.append({"type": "resp", "text": f"Indexing into {corpus_name}..."})
+        result = index_corpus(cid)
+        lines.append({"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"})
+        lines.append({"type": "card", "label": "Source Added", "status": "READY",
+                       "detail": f'{doc["title"]} · {corpus_name}',
+                       "val": f'{result["chunk_count"]} chunks · {doc["word_count"]} words',
+                       "corpus_id": cid})
+        lines.append({"type": "resp", "text": "Agents can now cite this content."})
+    except Exception as e:
+        lines.append({"type": "resp", "text": f"✗ Failed: {str(e)[:120]}"})
 
-    return {
-        "lines": lines,
-        "context": {"state": "pick_corpus", "url": url, "corpora_ids": [c["id"] for c in corpora]},
-    }
+    return {"lines": lines, "context": {"state": "idle"}}
 
 
 def _handle_corpus_pick(text: str, ctx: dict) -> dict:
@@ -178,25 +167,19 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
     original = ctx.get("original_text", "")
     if text.strip() == "1":
         corpora = list_corpora()
-        if not corpora:
-            corpus = create_corpus("My Knowledge", access_level="public")
-            doc = ingest_text(corpus["id"], title="Note", content=original)
-            result = index_corpus(corpus["id"])
-            return {
-                "lines": [
-                    {"type": "resp", "text": f'✓ Saved as source in "My Knowledge"'},
-                    {"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"},
-                    {"type": "card", "label": "Source Added", "status": "READY",
-                     "detail": f'My Knowledge · {result["chunk_count"]} chunks',
-                     "corpus_id": corpus["id"]},
-                ],
-                "context": {"state": "idle"},
-            }
-        lines = [{"type": "resp", "text": "Add to which corpus?"}]
-        for i, c in enumerate(corpora):
-            lines.append({"type": "option", "text": f"[{i+1}] {c['name']}", "value": str(i+1)})
-        lines.append({"type": "option", "text": f"[{len(corpora)+1}] Create new corpus", "value": str(len(corpora)+1)})
-        return {"lines": lines, "context": {"state": "pick_corpus", "write_content": original, "write_title": "Note", "corpora_ids": [c["id"] for c in corpora]}}
+        corpus = corpora[0] if corpora else create_corpus("My Knowledge", access_level="public")
+        doc = ingest_text(corpus["id"], title="Note", content=original)
+        result = index_corpus(corpus["id"])
+        return {
+            "lines": [
+                {"type": "resp", "text": f'✓ Saved to "{corpus["name"]}"'},
+                {"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"},
+                {"type": "card", "label": "Source Added", "status": "READY",
+                 "detail": f'{corpus["name"]} · {result["chunk_count"]} chunks',
+                 "corpus_id": corpus["id"]},
+            ],
+            "context": {"state": "idle"},
+        }
 
     if text.strip() == "2":
         return _handle_question(original)
