@@ -2,15 +2,43 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-**Turn any knowledge base into an agent-readable, permissioned, monetizable corpus.**
+**The open, agent-native knowledge marketplace.**
 
-Noosphere is an open platform that lets anyone convert their personal or organizational knowledge — blogs, newsletters, podcasts, docs, notes — into a structured, agent-friendly format that AI agents can discover, query, and cite. Creators control access: free, private, or paid.
+Noosphere lets anyone publish their knowledge — blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, cite, and pay for.
+
+Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publish), Google Scholar's discovery (agents find what they need), and built-in payment rails (creators get paid when agents use their knowledge).
+
+```
+                    Agent-native
+                        ↑
+                        |
+         Wolfram API    |    ← Noosphere
+                        |
+   HuggingFace          |
+                        |
+  ──────────────────────┼──────────────────── Anyone can publish
+   Closed /              |
+   platform-produced     |
+                        |
+         JSTOR          |    arXiv
+         Elsevier       |    Wikipedia
+                        |
+         Google Scholar  |    Semantic Scholar
+                        |
+                        ↓
+                    Human-readable
+```
+
+Every existing knowledge platform was built for humans to read. Noosphere is built for the world where agents are the primary consumers of knowledge — expanding both the scope (knowledge too niche to find becomes accessible) and the scale (millions of agents querying thousands of knowledge bases simultaneously) of collective enlightenment.
 
 ## Why
 
-The trend is clear: more products are being built for agents. More knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort.
+Two transformations drive Noosphere:
 
-Some creators have started manually converting their content into agent-friendly Markdown with MCP servers — but that requires significant technical effort. Noosphere standardizes this into a platform anyone can use.
+1. **Anyone can publish.** Not just academics or institutions. Any person, community, or organization can turn their knowledge into a structured, queryable corpus — as easily as uploading files or pointing at a URL.
+2. **Agents are the primary audience.** Every corpus is designed to be discovered, queried, and cited by agents first. The primary interface for consumers is MCP and API, not a web browser.
+
+Today, making your knowledge agent-friendly requires significant technical effort — structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments. Noosphere standardizes and democratizes the entire pipeline.
 
 ## What it does
 

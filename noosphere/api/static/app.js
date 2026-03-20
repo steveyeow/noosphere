@@ -43,7 +43,28 @@ let _termCtx={};
 
 function renderHome(){
   hideRP();const ct=document.getElementById('content');
-  ct.innerHTML=`<div class="term-full"><div class="term-welcome"><div class="term-avatar"><svg width="32" height="32" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2.5"/><circle cx="22" cy="26" r="4" fill="currentColor" opacity="0.8"/><circle cx="42" cy="26" r="4" fill="currentColor" opacity="0.8"/><circle cx="32" cy="42" r="5" fill="currentColor" opacity="0.6"/><line x1="22" y1="26" x2="42" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><line x1="22" y1="26" x2="32" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><line x1="42" y1="26" x2="32" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.3"/></svg></div><div class="term-welcome-text">Expand the Noosphere.</div></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div><div class="term-hints" id="term-hints"></div></div>`;
+  const hour=new Date().getHours();
+  const greet=hour<12?'Morning':hour<18?'Afternoon':'Evening';
+  ct.innerHTML=`<div class="term-full">
+    <div class="term-greet">
+      <div class="term-greet-left">
+        <div class="term-greet-hi">${greet}</div>
+        <div class="term-greet-sub">What knowledge will you add to the Noosphere?</div>
+      </div>
+      <svg class="term-pixel" width="40" height="40" viewBox="0 0 8 8" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+        <rect x="2" y="0" width="4" height="1" fill="var(--acc)"/>
+        <rect x="1" y="1" width="6" height="3" fill="var(--acc)" opacity=".7"/>
+        <rect x="2" y="2" width="1" height="1" fill="white"/><rect x="5" y="2" width="1" height="1" fill="white"/>
+        <rect x="1" y="4" width="6" height="2" fill="var(--acc)" opacity=".5"/>
+        <rect x="3" y="4" width="2" height="1" fill="var(--acc)" opacity=".9"/>
+        <rect x="1" y="6" width="2" height="1" fill="var(--acc)" opacity=".4"/>
+        <rect x="5" y="6" width="2" height="1" fill="var(--acc)" opacity=".4"/>
+      </svg>
+    </div>
+    <div class="term-body" id="term-body"></div>
+    <div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div>
+    <div class="term-hints" id="term-hints"></div>
+  </div>`;
 
   const body=document.getElementById('term-body');
   const input=document.getElementById('term-input');

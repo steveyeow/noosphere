@@ -2,17 +2,41 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-**Turn any knowledge base into an agent-readable, permissioned, monetizable corpus.**
+**The open, agent-native knowledge marketplace.**
 
-Noosphere is an open platform that lets anyone convert their personal or organizational knowledge — blogs, newsletters, podcasts, docs, notes — into a structured, agent-friendly format that AI agents can discover, query, and cite. Creators control access: free, private, or paid.
+Noosphere is an open platform that lets anyone publish their knowledge — blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, cite, and pay for. Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publish), Google Scholar's discovery (agents find what they need), and built-in payment rails (creators get paid when agents use their knowledge).
 
 ---
 
 ## Origin story
 
-The trend is clear. More products are being built for agents. More knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort: structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments.
+Platforms for human knowledge discovery already exist. Google Scholar indexes academic papers. arXiv lets anyone upload preprints. JSTOR and Elsevier sell access to journals. Wikipedia lets anyone contribute encyclopedic knowledge. But none of them were built for the emerging world where **agents are the primary consumers of knowledge**.
 
-Some creators have started converting their content into agent-friendly formats manually — but each effort is a one-off technical project. Noosphere asks: **what if anyone could do this?** It standardizes and democratizes the entire pipeline.
+```
+                    Agent-native
+                        ↑
+                        |
+         Wolfram API    |    ← Noosphere
+                        |
+                        |
+   HuggingFace          |
+                        |
+  ──────────────────────┼──────────────────── Anyone can publish
+   Closed /              |
+   platform-produced     |
+                        |
+         JSTOR          |    arXiv
+         Elsevier       |    Wikipedia
+                        |
+         Google Scholar  |    Semantic Scholar
+                        |
+                        ↓
+                    Human-readable
+```
+
+The upper-right quadrant — open to any knowledge creator AND built for agent consumption — is empty. That is where Noosphere sits.
+
+The trend is clear: more products are being built for agents, and more knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort — structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments. Some creators have started converting their content into agent-friendly formats manually, but each effort is a one-off technical project. Noosphere standardizes and democratizes the entire pipeline.
 
 ## Connection to Feynman
 
@@ -41,10 +65,18 @@ Integration is optional. Feynman can import `noosphere` as a Python library (sam
 
 **Expand the scope and scale of collective enlightenment.**
 
+Every existing knowledge platform was built for humans to read. Google Scholar helps researchers find papers. arXiv lets scientists share preprints. Wikipedia lets anyone contribute to a shared encyclopedia. These platforms expanded collective enlightenment within the bounds of human attention and reading speed.
+
+Noosphere asks: what happens when agents can read, discover, and pay for knowledge on behalf of humans? The scope expands — knowledge that was previously too niche, too specialized, or too buried to find becomes accessible through agent queries. The scale expands — millions of agents can query thousands of knowledge bases simultaneously, far beyond what any individual human could consume.
+
+Two transformations make this possible:
+
+1. **Anyone can publish.** Not just academics, not just institutions. Any person, community, or organization can turn their knowledge into a structured, queryable corpus — as easily as uploading files or pointing at a URL.
+2. **Agents are the primary audience.** Every corpus is designed to be discovered, queried, and cited by agents first. The web UI exists for creators to manage their knowledge and see how agents are using it. The primary interface for consumers is MCP and API.
+
 We believe that:
 
 - Human knowledge should not be locked inside formats that only humans can navigate.
-- Every person, community, and organization should be able to make their knowledge accessible to agents — easily, safely, and on their own terms.
 - The emerging agent ecosystem needs trusted, structured, citable knowledge sources — not just raw web scraping.
 - Creators should control access to their knowledge and be able to monetize it if they choose.
 - An open protocol for agent-readable knowledge will create more value than any closed platform alone.
@@ -479,10 +511,10 @@ Deliverables:
 
 ## Summary
 
-Noosphere is an open platform that lets anyone turn their knowledge base into a structured, agent-readable corpus. Creators control access: free, private, token-gated, or paid. The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
+Noosphere is the open, agent-native knowledge marketplace — where Google Scholar, arXiv, and Stripe meet for the agent era. Anyone can publish their knowledge as structured, agent-readable corpora. Agents can discover, query, cite, and pay for knowledge through MCP and API. Creators control access: free, private, token-gated, or paid.
+
+The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
 
 All nodes — self-hosted and cloud-hosted — participate in a shared discovery network via the registry. Self-hosted corpora register their metadata (not content) to the public registry, making them discoverable by any agent worldwide. Content stays on the creator's infrastructure.
 
-Business model: cloud users pay for infrastructure convenience (Free/Pro tiers). Transaction commission (10%) applies only to cloud-hosted paid corpora. Self-hosted users pay nothing, ever.
-
-The mission is to expand the scope and scale of collective enlightenment — by making it easy, safe, and rewarding for anyone to contribute their knowledge to the emerging agent ecosystem.
+The mission is to expand the scope and scale of collective enlightenment — by making every person's knowledge accessible to every agent, on the creator's terms.
