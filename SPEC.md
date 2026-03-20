@@ -2,9 +2,9 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-**The open, agent-native knowledge marketplace.**
+**Google Scholar and arXiv — rebuilt for agents.**
 
-Noosphere is an open platform that lets anyone publish their knowledge — blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, cite, and pay for. Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publish), Google Scholar's discovery (agents find what they need), and built-in payment rails (creators get paid when agents use their knowledge).
+Noosphere is an open platform that lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like Google Scholar and arXiv, but built for agents instead of human readers, and open to all knowledge — not just academic papers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
 
 ---
 
@@ -18,8 +18,7 @@ Platforms for human knowledge discovery already exist. Google Scholar indexes ac
                         |
          Wolfram API    |    ← Noosphere
                         |
-                        |
-   HuggingFace          |
+                        |    HuggingFace
                         |
   ──────────────────────┼──────────────────── Anyone can publish
    Closed /              |
@@ -67,7 +66,7 @@ Integration is optional. Feynman can import `noosphere` as a Python library (sam
 
 Every existing knowledge platform was built for humans to read. Google Scholar helps researchers find papers. arXiv lets scientists share preprints. Wikipedia lets anyone contribute to a shared encyclopedia. These platforms expanded collective enlightenment within the bounds of human attention and reading speed.
 
-Noosphere asks: what happens when agents can read, discover, and pay for knowledge on behalf of humans? The scope expands — knowledge that was previously too niche, too specialized, or too buried to find becomes accessible through agent queries. The scale expands — millions of agents can query thousands of knowledge bases simultaneously, far beyond what any individual human could consume.
+Noosphere asks: what happens when agents can discover, read, and cite knowledge on behalf of humans — across every knowledge base in the world, simultaneously? The scope expands — knowledge that was previously too niche, too specialized, or too buried to find becomes accessible through agent queries. The scale expands — millions of agents can query thousands of knowledge bases simultaneously, far beyond what any individual human could consume.
 
 Two transformations make this possible:
 
@@ -511,7 +510,7 @@ Deliverables:
 
 ## Summary
 
-Noosphere is the open, agent-native knowledge marketplace — where Google Scholar, arXiv, and Stripe meet for the agent era. Anyone can publish their knowledge as structured, agent-readable corpora. Agents can discover, query, cite, and pay for knowledge through MCP and API. Creators control access: free, private, token-gated, or paid.
+Noosphere is Google Scholar and arXiv rebuilt for agents. Anyone can publish their knowledge as structured, agent-readable corpora. Agents discover, query, and cite knowledge through MCP and API. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
 
 The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
 

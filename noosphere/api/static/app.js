@@ -45,21 +45,41 @@ function renderHome(){
   hideRP();const ct=document.getElementById('content');
   const hour=new Date().getHours();
   const greet=hour<12?'Morning':hour<18?'Afternoon':'Evening';
+  const totalDocs=_corpora.reduce((a,c)=>a+(c.document_count||0),0);
+  const totalChunks=_corpora.reduce((a,c)=>a+(c.chunk_count||0),0);
+  const totalWords=_corpora.reduce((a,c)=>a+(c.word_count||0),0);
   ct.innerHTML=`<div class="term-full">
     <div class="term-greet">
       <div class="term-greet-left">
-        <div class="term-greet-hi">${greet}</div>
-        <div class="term-greet-sub">What knowledge will you add to the Noosphere?</div>
+        <div class="term-greet-row">
+          <svg class="term-dragon" width="36" height="36" viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+            <rect x="3" y="0" width="1" height="1" fill="#4dba87"/>
+            <rect x="6" y="0" width="1" height="1" fill="#4dba87"/>
+            <rect x="2" y="1" width="2" height="1" fill="#4dba87"/>
+            <rect x="6" y="1" width="2" height="1" fill="#4dba87"/>
+            <rect x="1" y="2" width="8" height="3" fill="#4dba87"/>
+            <rect x="2" y="3" width="2" height="1" fill="#fff"/>
+            <rect x="6" y="3" width="2" height="1" fill="#fff"/>
+            <rect x="3" y="3" width="1" height="1" fill="#1a1a2e"/>
+            <rect x="7" y="3" width="1" height="1" fill="#1a1a2e"/>
+            <rect x="4" y="5" width="2" height="1" fill="#2d6a4f"/>
+            <rect x="1" y="5" width="8" height="3" fill="#4dba87" opacity=".7"/>
+            <rect x="3" y="6" width="4" height="1" fill="#fbbf24" opacity=".5"/>
+            <rect x="1" y="8" width="2" height="1" fill="#4dba87" opacity=".5"/>
+            <rect x="7" y="8" width="2" height="1" fill="#4dba87" opacity=".5"/>
+            <rect x="0" y="5" width="1" height="2" fill="#4dba87" opacity=".4"/>
+            <rect x="9" y="5" width="1" height="2" fill="#4dba87" opacity=".4"/>
+          </svg>
+          <div class="term-greet-hi">${greet}</div>
+        </div>
+        <div class="term-greet-sub">What will you add to the Noosphere?</div>
       </div>
-      <svg class="term-pixel" width="40" height="40" viewBox="0 0 8 8" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-        <rect x="2" y="0" width="4" height="1" fill="var(--acc)"/>
-        <rect x="1" y="1" width="6" height="3" fill="var(--acc)" opacity=".7"/>
-        <rect x="2" y="2" width="1" height="1" fill="white"/><rect x="5" y="2" width="1" height="1" fill="white"/>
-        <rect x="1" y="4" width="6" height="2" fill="var(--acc)" opacity=".5"/>
-        <rect x="3" y="4" width="2" height="1" fill="var(--acc)" opacity=".9"/>
-        <rect x="1" y="6" width="2" height="1" fill="var(--acc)" opacity=".4"/>
-        <rect x="5" y="6" width="2" height="1" fill="var(--acc)" opacity=".4"/>
-      </svg>
+      <div class="term-greet-stats">
+        ${_corpora.length?`<div class="tgs-row"><span class="tgs-val">${_corpora.length}</span> corpora</div>
+        <div class="tgs-row"><span class="tgs-val">${totalDocs}</span> sources · <span class="tgs-val">${totalChunks}</span> chunks</div>
+        <div class="tgs-row"><span class="tgs-val">${totalWords.toLocaleString()}</span> words indexed</div>`
+        :`<div class="tgs-row" style="color:var(--tx3)">No corpora yet</div>`}
+      </div>
     </div>
     <div class="term-body" id="term-body"></div>
     <div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div>

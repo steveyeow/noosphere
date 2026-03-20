@@ -2,11 +2,9 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-**The open, agent-native knowledge marketplace.**
+**Google Scholar and arXiv — rebuilt for agents.**
 
-Noosphere lets anyone publish their knowledge — blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, cite, and pay for.
-
-Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publish), Google Scholar's discovery (agents find what they need), and built-in payment rails (creators get paid when agents use their knowledge).
+Noosphere lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like Google Scholar and arXiv, but built for agents instead of human readers, and open to all knowledge — not just academic papers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
 
 ```
                     Agent-native
@@ -14,7 +12,7 @@ Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publ
                         |
          Wolfram API    |    ← Noosphere
                         |
-   HuggingFace          |
+                        |    HuggingFace
                         |
   ──────────────────────┼──────────────────── Anyone can publish
    Closed /              |
@@ -29,7 +27,7 @@ Think of it as an agent-native Google Scholar: arXiv's openness (anyone can publ
                     Human-readable
 ```
 
-Every existing knowledge platform was built for humans to read. Noosphere is built for the world where agents are the primary consumers of knowledge — expanding both the scope (knowledge too niche to find becomes accessible) and the scale (millions of agents querying thousands of knowledge bases simultaneously) of collective enlightenment.
+Every existing knowledge platform — Google Scholar, arXiv, Wikipedia, JSTOR — was built for humans to read. Noosphere is built for the world where agents are the primary consumers of knowledge, expanding both the scope (knowledge too niche to find becomes accessible through agent queries) and the scale (millions of agents querying thousands of knowledge bases simultaneously) of collective enlightenment.
 
 ## Why
 
