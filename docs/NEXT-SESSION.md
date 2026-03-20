@@ -1,52 +1,88 @@
-# Next Session: Terminal UX Fix
-
-## Critical Issues to Fix
-
-### 1. Input position — TOP not bottom
-Input should be at the TOP of the content area (like AigisPay), with output appearing BELOW and pushing down as more content appears. NOT chat-style bottom input.
-
-```
-┌──────────────────────────────────────────┐
-│  🐲 Evening                              │  ← header with icon + stats
-│  3 corpora · 5 sources · 173 words       │
-├──────────────────────────────────────────┤
-│  > █ Paste a URL or ask a question       │  ← INPUT at top
-│                                          │
-│  / for shortcuts                         │
-│  > Import a URL                          │
-│  > Write a new source                    │
-│  > Ask the Noosphere                     │
-├──────────────────────────────────────────┤
-│  (output appears here and grows down)    │  ← OUTPUT below
-│                                          │
-└──────────────────────────────────────────┘
-```
-
-### 2. Remove multi-step corpus selection
-URL import should NOT ask "Add to which corpus?" — it should auto-create or use a default corpus. Zero friction.
-
-Flow: paste URL → fetch → index → done. One step.
-
-### 3. Fix suggestions
-- Remove `https://example.com/my-article` — it fails with SSL error
-- Use real actionable suggestions that work
-
-### 4. Pixel dragon redesign
-Current one is too crude. Design a cleaner, cuter pixel character. Reference AigisPay's pixel robot quality level.
-
-### 5. Stats position
-Move stats to LEFT side under the dragon icon (like AigisPay shows balance under the robot), not right-aligned.
-
-### 6. Remove subtitle
-Remove "What will you add to the Noosphere?" — too verbose.
-
-### 7. Clear/reset
-Need a way to clear the terminal output and return to initial state.
+# Next Session: Terminal Polish — Copy AigisPay Dashboard Style
 
 ## Reference
-AigisPay dashboard screenshot: assets/image-cfe40437-3a4a-4e3e-87f8-80dc6f316e68.png
+AigisPay dashboard screenshot: `assets/image-cfe40437-3a4a-4e3e-87f8-80dc6f316e68.png`
+
+The AigisPay dashboard has this exact layout that we need to replicate:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│                   Evening, Alice                            │
+│                       🤖                                    │
+│               $4,087.75  $740 in escrow                     │
+│            ● Bronze · 1 trade · 0x742b...                   │
+│                                                       + New │
+│─────────────────────────────────────────────────────────────│
+│                                                             │
+│  > █ Describe a trade, or pick one below                    │
+│                                                             │
+│    / for shortcuts                                          │
+│                                                             │
+│    > Sell a Steam account with 500 hours on CS2             │
+│    > Trade in-game currency for 50 USDC                     │
+│    > Freelance logo design, 3 revisions included            │
+│    > Pay my driver $25 for an airport ride                  │
+│                                                             │
+│                                                             │
+│                                                             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Exact Changes Needed
+
+### 1. Sidebar logo font
+- Change "Noosphere" in sidebar to Libre Baskerville (same as landing page hero)
+
+### 2. Pixel icon redesign  
+- Current one is too crude
+- Needs to be cleaner, cuter — reference AigisPay's pixel robot quality
+- Pixel art style, 8x8 or 10x10 grid, crisp edges
+
+### 3. Header layout
+- Icon CENTERED above greeting (like AigisPay: name centered, robot below)
+- "Evening, [username]" — add username (hardcode for now)
+- Stats below greeting: "3 corpora · 5 sources · 173 words"
+- Divider line separating header from input area
+- "+ New chat" button on the right side of the divider (like AigisPay's "+ New chat")
+
+### 4. Terminal input
+- `> █` with blinking cursor (the █ character with CSS animation)
+- Placeholder: "Paste a URL, upload a file, or write something"
+- Input area has clear visual separation from header
+
+### 5. Suggestions — THREE main actions
+```
+/ for shortcuts
+
+> Paste a link to import
+> Upload a file  
+> Write something
+```
+These are the 3 primary ways to add knowledge. NOT "Ask the Noosphere" or "/status" — those are secondary.
+
+### 6. Greeting font
+- "Evening" should use Libre Baskerville (serif) — same as landing page hero
+- All terminal output uses JetBrains Mono (monospace)
+
+### 7. History / New Chat
+- Sidebar "+ New" should clear the terminal and reset to initial state
+- Consider adding "/ for shortcuts" hint like AigisPay's "/ for shortcuts"
+
+### 8. The AigisPay terminal CSS to reference
+The AigisPay landing page has terminal styles at:
+`/Users/steveyao/Projects/GitHub/aigispay.com/landingpage.html` (lines 430-591)
+
+Key styles to copy:
+- `.terminal-prompt` — font-family, font-size, color, line-height
+- `.terminal-caret` — font-weight: 700, color
+- `.terminal-cursor` — animation: cursor-blink 1.1s step-end infinite
+- `.terminal-response` — color: #8b949e
+- `.terminal-card` — border, background, border-radius
+- `@keyframes cursor-blink` — 0%,100% opacity:0.6, 50% opacity:0
 
 ## Files to Modify
-- `noosphere/api/static/app.js` — renderHome(), terminal interaction
-- `noosphere/api/static/styles.css` — terminal layout (input top, output bottom)
-- `noosphere/core/terminal.py` — remove corpus selection step, auto-create
+- `noosphere/api/static/app.js` — renderHome()
+- `noosphere/api/static/styles.css` — terminal styles  
+- `noosphere/api/static/index.html` — sidebar logo font
