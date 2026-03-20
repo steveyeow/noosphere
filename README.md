@@ -88,28 +88,6 @@ noosphere search --corpus my-blog "How does pricing work?"
 noosphere serve --port 8420
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    COMMERCIAL LAYER (BSL)                │
-│  Auth · Quota · Stripe (noosphere/cloud/)               │
-├─────────────────────────────────────────────────────────┤
-│                     OPEN CORE LAYER (MIT)                │
-│  Ingestion · Chunking · Embedding · Retrieval           │
-│  Citations · MCP server · REST API · Web UI · CLI       │
-└─────────────────────────────────────────────────────────┘
-```
-
-- **Open core** (this repo): ingest, index, serve, query — everything needed to run a Noosphere node locally.
-- **Commercial layer** (`noosphere/cloud/`, BSL): auth, usage quotas, and Stripe billing — activated by `ENABLE_CLOUD` env var.
-
-## Connection to Feynman
-
-Both Noosphere and [Feynman](https://github.com/steveyeow/feynman) are independent open-core products. Noosphere publishes knowledge as agent-readable corpora. Feynman is one consumer — it can use Noosphere corpora as source-grounded minds in its knowledge network.
-
-Integration is optional: Feynman can import `noosphere` as a Python library (same-process) or connect via API (remote). Noosphere corpora can be consumed by any MCP/API-compatible agent or tool.
-
 ## Spec
 
 See [SPEC.md](SPEC.md) for the full product specification, corpus format, API design, business model, and roadmap.
