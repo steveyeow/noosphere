@@ -39,39 +39,35 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .content{flex:1;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;position:relative}
 .rpanel{width:320px;flex-shrink:0;border-left:1px solid var(--brd);background:var(--bg3);overflow-y:auto;padding:24px 20px}
 
-/* ── Terminal (from aigis-pay) ── */
-.term-page{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:40px;gap:28px}
-.term-title{font-family:'Libre Baskerville',Georgia,serif;font-size:22px;font-weight:700;text-align:center}
-.term-sub{font-size:13px;color:var(--tx2);text-align:center;max-width:400px}
-.term-demo{width:100%;max-width:560px;border-radius:12px;background:#1c1c1e;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 80px -12px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.04);overflow:hidden}
-.term-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06)}
+/* ── Terminal (fullscreen) ── */
+.term-full{display:flex;flex-direction:column;height:100%;background:#1c1c1e;color:#e6edf3}
+.term-header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
 .term-dots{display:flex;gap:5px}.term-dots span{width:9px;height:9px;border-radius:50%}.term-dots span:nth-child(1){background:#ff5f57}.term-dots span:nth-child(2){background:#febc2e}.term-dots span:nth-child(3){background:#28c840}
-.term-ttl{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.35);letter-spacing:.04em}
-.term-body{padding:20px 18px;min-height:220px;max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;scrollbar-width:none}.term-body::-webkit-scrollbar{display:none}
+.term-ttl{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.3);letter-spacing:.04em}
+.term-body{flex:1;overflow-y:auto;padding:20px 20px 8px;display:flex;flex-direction:column;gap:10px;scrollbar-width:none}.term-body::-webkit-scrollbar{display:none}
 .term-line{display:flex;align-items:flex-start;gap:7px;animation:termFadeIn .3s ease-out}
 .term-prompt{font-family:var(--mono);font-size:13px;color:#e6edf3;line-height:1.5}
-.term-caret{color:#e6edf3;font-weight:700;flex-shrink:0;user-select:none}
+.term-caret{color:#58a6ff;font-weight:700;flex-shrink:0;user-select:none}
 .term-cursor{color:#e6edf3;animation:cursorBlink 1.1s step-end infinite;font-size:13px}
-.term-idle{opacity:.5}
-.term-resp{font-family:var(--mono);font-size:12px;color:#8b949e;line-height:1.6;padding-left:16px}
-.term-card{margin-left:16px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);animation:termFadeIn .3s ease-out}
-.term-card-lbl{font-family:var(--mono);font-size:11px;font-weight:600;color:#e6edf3}.term-card-det{font-family:var(--mono);font-size:10px;color:#7d8590;margin-top:2px}
-.term-card-val{font-family:var(--mono);font-size:12px;font-weight:600;color:#e6edf3;margin-top:4px}
-.term-status{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;float:right}
-@keyframes termFadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-@keyframes cursorBlink{0%,100%{opacity:.6}50%{opacity:0}}
-
-.term-input-wrap{display:flex;align-items:center;gap:6px;padding:6px 18px 14px;border-top:1px solid rgba(255,255,255,.06)}
+.term-idle{opacity:.4}
+.term-resp{font-family:var(--mono);font-size:12.5px;color:#8b949e;line-height:1.6;padding-left:18px}
+.term-card{margin-left:18px;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);animation:termFadeIn .3s ease-out;margin-top:2px;margin-bottom:2px}
+.term-card-lbl{font-family:var(--mono);font-size:12px;font-weight:600;color:#e6edf3}.term-card-det{font-family:var(--mono);font-size:11px;color:#7d8590;margin-top:3px;line-height:1.4}
+.term-card-val{font-family:var(--mono);font-size:12px;font-weight:600;color:#e6edf3;margin-top:5px}
+.term-status{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.term-option{cursor:pointer;padding:2px 0;font-family:var(--mono);font-size:12.5px;color:#8b949e;padding-left:18px;transition:color .12s}.term-option:hover{color:#e6edf3}
+.term-input-wrap{display:flex;align-items:center;gap:7px;padding:10px 20px 12px;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0}
 .term-input{flex:1;background:transparent;border:none;outline:none;color:#e6edf3;font-family:var(--mono);font-size:13px;line-height:1.5;caret-color:transparent}
-.term-input::placeholder{color:rgba(255,255,255,.25)}
-.term-input:disabled{opacity:.5}
+.term-input::placeholder{color:rgba(255,255,255,.2)}
+.term-input:disabled{opacity:.4}
 .term-cursor-input{color:#e6edf3;animation:cursorBlink 1.1s step-end infinite;font-size:13px}
-.term-option{cursor:pointer;padding:2px 0;transition:color .12s}.term-option:hover{color:#e6edf3!important}
-.term-hints{max-width:560px;width:100%;margin-top:12px}
-.term-hint-label{font-size:11px;color:var(--tx3);margin-bottom:6px;padding-left:4px}
-.term-suggestion{font-family:var(--mono);font-size:12px;color:var(--tx2);padding:5px 8px;border-radius:6px;cursor:pointer;transition:all .12s;display:flex;align-items:center;gap:6px}
-.term-suggestion:hover{background:var(--bgH);color:var(--tx)}
-.term-suggestion .term-caret{color:var(--acc);font-weight:700}
+.term-hints{padding:8px 20px 14px;border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+.term-hint-label{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.2);margin-bottom:4px}
+.term-suggestion{font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.35);padding:4px 0;cursor:pointer;transition:color .12s;display:flex;align-items:center;gap:6px}
+.term-suggestion:hover{color:#e6edf3}
+.term-suggestion .term-caret{color:#58a6ff;font-weight:700}
+@keyframes termFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes cursorBlink{0%,100%{opacity:.6}50%{opacity:0}}
 
 /* ── My Corpora view ── */
 .mc-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--brd)}

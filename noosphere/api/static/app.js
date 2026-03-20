@@ -43,7 +43,7 @@ let _termCtx={};
 
 function renderHome(){
   hideRP();const ct=document.getElementById('content');
-  ct.innerHTML=`<div class="term-page"><div class="term-demo"><div class="term-header"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-ttl">noosphere</span></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div></div><div class="term-hints" id="term-hints"></div></div>`;
+  ct.innerHTML=`<div class="term-full"><div class="term-header"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-ttl">noosphere</span></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div><div class="term-hints" id="term-hints"></div></div>`;
 
   const body=document.getElementById('term-body');
   const input=document.getElementById('term-input');
