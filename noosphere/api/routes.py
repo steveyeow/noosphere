@@ -177,6 +177,55 @@ async def api_delete_document(corpus_id: str, doc_id: str):
 
 # ── File upload ──
 
+def _extract_pdf_text(raw: bytes) -> str:
+    import fitz
+    doc = fitz.open(stream=raw, filetype="pdf")
+    pages = [page.get_text() for page in doc]
+    doc.close()
+    return "\n\n".join(pages)
+
+
+def _extract_docx_text(raw: bytes) -> str:
+    import io
+    from docx import Document
+    doc = Document(io.BytesIO(raw))
+    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def _extract_csv_text(content: str) -> str:
+    import csv, io
+    reader = csv.reader(io.StringIO(content))
+    rows = list(reader)
+    if not rows:
+        return ""
+    header = rows[0]
+    lines = []
+    for row in rows[1:]:
+        entry = "; ".join(f"{header[i]}: {row[i]}" for i in range(min(len(header), len(row))) if row[i].strip())
+        if entry:
+            lines.append(entry)
+    return "\n".join(lines)
+
+
+def _extract_json_text(content: str) -> str:
+    import json
+    data = json.loads(content)
+    if isinstance(data, list):
+        parts = []
+        for item in data:
+            if isinstance(item, dict):
+                parts.append("\n".join(f"{k}: {v}" for k, v in item.items() if isinstance(v, (str, int, float))))
+            else:
+                parts.append(str(item))
+        return "\n\n".join(parts)
+    elif isinstance(data, dict):
+        return "\n".join(f"{k}: {v}" for k, v in data.items() if isinstance(v, (str, int, float)))
+    return str(data)
+
+
+SUPPORTED_EXTENSIONS = {"md", "markdown", "txt", "text", "html", "htm", "pdf", "docx", "csv", "json", "jsonl"}
+
+
 @router.post("/corpora/{corpus_id}/upload")
 async def api_upload_files(
     corpus_id: str,
@@ -186,26 +235,51 @@ async def api_upload_files(
     corpus = _resolve_corpus(corpus_id)
     results = []
     for f in files:
-        content = (await f.read()).decode("utf-8", errors="replace")
-        if not content.strip():
-            continue
-        from noosphere.core.ingest import _extract_markdown_metadata, _extract_markdown_title
-        metadata, body = _extract_markdown_metadata(content)
-        title = metadata.get("title") or _extract_markdown_title(body) or (f.filename or "Untitled").rsplit(".", 1)[0]
-
         ext = (f.filename or "").rsplit(".", 1)[-1].lower()
-        doc_type = "doc"
-        if ext in ("md", "markdown"):
-            doc_type = "doc"
-        elif ext in ("txt", "text"):
-            doc_type = "note"
+        raw = await f.read()
 
-        tags_str = metadata.get("tags", "")
+        if ext == "pdf":
+            body = _extract_pdf_text(raw)
+            title = (f.filename or "Untitled").rsplit(".", 1)[0]
+            metadata, doc_type = {}, "paper"
+        elif ext == "docx":
+            body = _extract_docx_text(raw)
+            title = (f.filename or "Untitled").rsplit(".", 1)[0]
+            metadata, doc_type = {}, "doc"
+        elif ext == "csv":
+            content = raw.decode("utf-8", errors="replace")
+            body = _extract_csv_text(content)
+            title = (f.filename or "Untitled").rsplit(".", 1)[0]
+            metadata, doc_type = {}, "data"
+        elif ext in ("json", "jsonl"):
+            content = raw.decode("utf-8", errors="replace")
+            if ext == "jsonl":
+                import json as _j
+                lines = [_j.loads(line) for line in content.strip().splitlines() if line.strip()]
+                body = _extract_json_text(_json.dumps(lines))
+            else:
+                body = _extract_json_text(content)
+            title = (f.filename or "Untitled").rsplit(".", 1)[0]
+            metadata, doc_type = {}, "data"
+        else:
+            content = raw.decode("utf-8", errors="replace")
+            if not content.strip():
+                continue
+            from noosphere.core.ingest import _extract_markdown_metadata, _extract_markdown_title
+            metadata, body = _extract_markdown_metadata(content)
+            title = metadata.get("title") or _extract_markdown_title(body) or (f.filename or "Untitled").rsplit(".", 1)[0]
+            doc_type = "doc" if ext in ("md", "markdown", "html", "htm") else "note"
+
+        if not body or not body.strip():
+            continue
+
+        tags_str = metadata.get("tags", "") if isinstance(metadata, dict) else ""
         tags = [t.strip() for t in tags_str.split(",")] if tags_str else []
 
         doc = ingest_text(
             corpus["id"], title=title, content=body, doc_type=doc_type,
-            date=metadata.get("date", ""), tags=tags, metadata=metadata,
+            date=metadata.get("date", "") if isinstance(metadata, dict) else "",
+            tags=tags, metadata=metadata if isinstance(metadata, dict) else {},
         )
         results.append(doc)
 

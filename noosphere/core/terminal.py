@@ -149,6 +149,12 @@ def _handle_slash(text: str) -> dict:
             "context": {"state": "idle", "action": "open_write"},
         }
 
+    if cmd == "/upload":
+        return {
+            "lines": [{"type": "resp", "text": "Opening file picker..."}],
+            "context": {"state": "idle", "action": "open_upload"},
+        }
+
     return {"lines": [{"type": "resp", "text": f'Unknown command: {text}. Type / for help.'}], "context": {"state": "idle"}}
 
 
