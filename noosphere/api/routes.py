@@ -21,6 +21,12 @@ class SearchRequest(BaseModel):
     include_context: bool = True
 
 
+class ChatRequest(BaseModel):
+    message: str
+    history: list[dict] = []
+    top_k: int = 5
+
+
 class CreateCorpusRequest(BaseModel):
     name: str
     description: str = ""
@@ -288,6 +294,23 @@ async def api_global_search(req: SearchRequest):
         "results": all_results[: req.top_k],
         "corpora_searched": len(ready),
     }
+
+
+# ── Chat ──
+
+@router.post("/chat")
+async def api_global_chat(req: ChatRequest):
+    """Chat across all public corpora in the Noosphere."""
+    from noosphere.core.chat import chat_with_noosphere
+    return chat_with_noosphere(req.message, history=req.history, top_k=req.top_k)
+
+
+@router.post("/corpora/{corpus_id}/chat")
+async def api_corpus_chat(corpus_id: str, req: ChatRequest):
+    """Chat with a specific corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    from noosphere.core.chat import chat_with_corpus
+    return chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
 
 
 @router.get("/corpora/{corpus_id}/analytics")
