@@ -199,31 +199,54 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
         return {"lines": lines, "context": {"state": "pick_corpus", "write_content": original, "write_title": "Note", "corpora_ids": [c["id"] for c in corpora]}}
 
     if text.strip() == "2":
-        from noosphere.core.chat import chat_with_noosphere
-        result = chat_with_noosphere(original)
-        lines = [{"type": "resp", "text": result["response"]}]
-        if result.get("citations"):
-            cite_names = list(dict.fromkeys(
-                c.get("corpus_name") or c.get("title", "") for c in result["citations"] if c.get("corpus_name") or c.get("title")
-            ))
-            if cite_names:
-                lines.append({"type": "resp", "text": "Sources: " + " · ".join(cite_names)})
-        return {"lines": lines, "context": {"state": "idle"}}
+        return _handle_question(original)
 
     return {"lines": [{"type": "resp", "text": "Please enter 1 or 2."}], "context": ctx}
 
 
 def _handle_question(text: str) -> dict:
-    try:
-        from noosphere.core.chat import chat_with_noosphere
-        result = chat_with_noosphere(text)
-        lines = [{"type": "resp", "text": result["response"]}]
-        if result.get("citations"):
-            cite_names = list(dict.fromkeys(
-                c.get("corpus_name") or c.get("title", "") for c in result["citations"] if c.get("corpus_name") or c.get("title")
-            ))
-            if cite_names:
-                lines.append({"type": "resp", "text": "Sources: " + " · ".join(cite_names)})
-        return {"lines": lines, "context": {"state": "idle"}}
-    except Exception as e:
-        return {"lines": [{"type": "resp", "text": f"Search failed: {str(e)[:80]}"}], "context": {"state": "idle"}}
+    corpora = list_corpora()
+    ready = [c for c in corpora if c.get("status") == "ready"]
+
+    if not ready:
+        return {
+            "lines": [{"type": "resp", "text": "No indexed corpora yet. Import a URL or upload files first."}],
+            "context": {"state": "idle"},
+        }
+
+    from noosphere.core.retrieval import search_corpus
+    all_results = []
+    corpus_names = {}
+    for c in ready:
+        corpus_names[c["id"]] = c["name"]
+        try:
+            result = search_corpus(c["id"], text, top_k=3, include_context=True)
+            for r in result.get("results", []):
+                r["corpus_id"] = c["id"]
+                r["corpus_name"] = c["name"]
+                all_results.append(r)
+        except Exception:
+            continue
+
+    all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    top = all_results[:5]
+
+    if not top:
+        return {
+            "lines": [{"type": "resp", "text": f"No results found for \"{text}\" across {len(ready)} corpora."}],
+            "context": {"state": "idle"},
+        }
+
+    lines = [{"type": "resp", "text": f"Found {len(all_results)} results across {len(ready)} corpora:"}]
+    for r in top:
+        chunk_text = r.get("text", "")
+        if len(chunk_text) > 200:
+            chunk_text = chunk_text[:200] + "..."
+        lines.append({
+            "type": "search_result",
+            "title": r.get("document_title", r.get("title", "")),
+            "text": chunk_text,
+            "score": r.get("score", 0),
+            "source": r.get("corpus_name", ""),
+        })
+    return {"lines": lines, "context": {"state": "idle"}}

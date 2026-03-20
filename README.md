@@ -12,17 +12,16 @@ Noosphere lets anyone publish their knowledge — papers, blogs, newsletters, po
                         |
          Wolfram API    |    ← Noosphere
                         |
-                        |    HuggingFace
                         |
   ──────────────────────┼──────────────────── Anyone can publish
-   Closed /              |
-   platform-produced     |
+   Closed /             |
+   platform-controlled  |
+                        |    HuggingFace
+  Google Scholar        |    arXiv
+  Semantic Scholar      |    Wikipedia
                         |
-         JSTOR          |    arXiv
-         Elsevier       |    Wikipedia
-                        |
-         Google Scholar  |    Semantic Scholar
-                        |
+         JSTOR          |
+         Elsevier       |
                         ↓
                     Human-readable
 ```

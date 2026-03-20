@@ -1,89 +1,52 @@
-# Next Session: Frontend UX Redesign
+# Next Session: Terminal UX Fix
 
-## Context
-Backend is complete. Frontend needs a significant UX rethink based on product discussions.
+## Critical Issues to Fix
 
-## Changes to Implement
+### 1. Input position — TOP not bottom
+Input should be at the TOP of the content area (like AigisPay), with output appearing BELOW and pushing down as more content appears. NOT chat-style bottom input.
 
-### 1. Sidebar — Minimal Nav Only
-Sidebar should only have navigation links, NO content:
 ```
-⊙ Noosphere (logo → home)
-──────────
-[+ New]          ← goes to terminal-style creation page
-📚 My Corpora    ← goes to corpus list/grid in CONTENT area
-🌐 Network       ← goes to full network graph in CONTENT area  
-──────────
-[🌙 dark mode]
-```
-- My Corpora is a NAV LINK, not an expandable list in sidebar
-- Network should be prominent, not buried at bottom
-- Corpus items are NOT listed in the sidebar — they appear in the content area when "My Corpora" is clicked
-
-### 2. Home / New Page — Terminal Style (like aigis-pay)
-Reference: `/Users/steveyao/Projects/GitHub/aigispay.com/landingpage.html`
-
-Terminal-style interactive demo showing:
-```
-> noosphere add "My AI Research Blog"
-  Creating corpus... ✓
-  Name: My AI Research Blog
-  Access: Public
-  
-> noosphere write
-  Opening editor...
-
-> noosphere upload ./notes/*.md
-  Uploading 12 files...
-  Indexing... ✓
-  
-  MCP: http://localhost:8420/mcp
-  API: http://localhost:8420/api/v1/corpora/abc123/search
-  
-  Your knowledge is now part of the Noosphere.
+┌──────────────────────────────────────────┐
+│  🐲 Evening                              │  ← header with icon + stats
+│  3 corpora · 5 sources · 173 words       │
+├──────────────────────────────────────────┤
+│  > █ Paste a URL or ask a question       │  ← INPUT at top
+│                                          │
+│  / for shortcuts                         │
+│  > Import a URL                          │
+│  > Write a new source                    │
+│  > Ask the Noosphere                     │
+├──────────────────────────────────────────┤
+│  (output appears here and grows down)    │  ← OUTPUT below
+│                                          │
+└──────────────────────────────────────────┘
 ```
 
-Below terminal: actual action buttons (Write / Upload / Import URL)
+### 2. Remove multi-step corpus selection
+URL import should NOT ask "Add to which corpus?" — it should auto-create or use a default corpus. Zero friction.
 
-Key CSS from aigis-pay:
-- `.terminal-demo` — dark bg (#1c1c1e), rounded corners (12px), box-shadow
-- `.terminal-header` — dots (red/yellow/green) + title
-- `.terminal-body` — monospace font (JetBrains Mono), padding 24px
-- `.terminal-prompt` — `>` caret + blinking cursor (█)
-- `.terminal-response` — gray text (#8b949e)
-- Typing animation: character-by-character at 35ms intervals
-- `@keyframes cursor-blink` + `@keyframes terminalFadeIn`
+Flow: paste URL → fetch → index → done. One step.
 
-### 3. My Corpora — Content Area View
-When "My Corpora" is clicked in sidebar, the content area shows:
-- **List view** (default): cards/rows of your corpora with name, stats, access level, endpoints
-- **Network view** (toggle): D3 graph showing ONLY your corpora as nodes
-- Toggle switch between list and network at the top
+### 3. Fix suggestions
+- Remove `https://example.com/my-article` — it fails with SSL error
+- Use real actionable suggestions that work
 
-### 4. Network — Full Noosphere
-When "Network" is clicked:
-- Full-screen D3 graph of ALL corpora (yours + registered from registry)
-- Nodes are draggable (already implemented)
-- Feynman-style composer at bottom: "Ask the Noosphere..."
-- Click a node → goes to corpus detail
+### 4. Pixel dragon redesign
+Current one is too crude. Design a cleaner, cuter pixel character. Reference AigisPay's pixel robot quality level.
 
-### 5. Corpus Detail
-- Sources list (first auto-expanded)
-- Chat composer at bottom (Feynman-style)
-- Right panel: metadata, MCP/API endpoints, stats, access control
+### 5. Stats position
+Move stats to LEFT side under the dragon icon (like AigisPay shows balance under the robot), not right-aligned.
 
-### 6. Composer Style (Feynman-style)
-Already implemented. Key CSS:
-- `border-radius: 24px`
-- `padding: 14px 16px 8px`
-- Transparent textarea, 16px font
-- Round send button (32px, dark bg)
-- Focus glow effect
+### 6. Remove subtitle
+Remove "What will you add to the Noosphere?" — too verbose.
+
+### 7. Clear/reset
+Need a way to clear the terminal output and return to initial state.
+
+## Reference
+AigisPay dashboard screenshot: assets/image-cfe40437-3a4a-4e3e-87f8-80dc6f316e68.png
 
 ## Files to Modify
-- `noosphere/api/static/index.html`
-- `noosphere/api/static/styles.css`
-- `noosphere/api/static/app.js`
-
-## Backend — No Changes Needed
-All APIs are complete: chat, search, CRUD, upload, URL ingest, analytics, MCP, registry.
+- `noosphere/api/static/app.js` — renderHome(), terminal interaction
+- `noosphere/api/static/styles.css` — terminal layout (input top, output bottom)
+- `noosphere/core/terminal.py` — remove corpus selection step, auto-create

@@ -1,4 +1,4 @@
-/* Noosphere v6 — Terminal + My Corpora + Network + Chat */
+/* Noosphere v7 — Terminal + My Corpora + Network + Chat */
 const API='/api/v1';
 let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[];
 const isDark=()=>document.documentElement.classList.contains('dark')||(!document.documentElement.classList.contains('light')&&window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -34,10 +34,10 @@ function drawLPGraph(){const co=document.getElementById('lp-cv');if(!co)return;c
 /* ══════ HOME — Interactive Terminal ══════ */
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
 const TERM_SUGGESTIONS=[
-  {text:'https://example.com/my-article',label:'Import a URL'},
-  {text:'/write',label:'Write a new source'},
-  {text:'What is RAG and how does it work?',label:'Ask the Noosphere'},
-  {text:'/status',label:'View my corpora'},
+  {text:'What is RAG and how does it work?',label:'Search all corpora',desc:'Ask a question across your knowledge'},
+  {text:'https://paulgraham.com/startupideas.html',label:'Import from URL',desc:'Fetch, extract, and index a webpage'},
+  {text:'/status',label:'Corpora status',desc:'See all corpora and their stats'},
+  {text:'/write',label:'Write a source',desc:'Open the editor to write directly'},
 ];
 let _termCtx={};
 
@@ -52,37 +52,28 @@ function renderHome(){
     <div class="term-greet">
       <div class="term-greet-left">
         <div class="term-greet-row">
-          <svg class="term-dragon" width="36" height="36" viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-            <rect x="3" y="0" width="1" height="1" fill="#4dba87"/>
-            <rect x="6" y="0" width="1" height="1" fill="#4dba87"/>
-            <rect x="2" y="1" width="2" height="1" fill="#4dba87"/>
-            <rect x="6" y="1" width="2" height="1" fill="#4dba87"/>
-            <rect x="1" y="2" width="8" height="3" fill="#4dba87"/>
-            <rect x="2" y="3" width="2" height="1" fill="#fff"/>
-            <rect x="6" y="3" width="2" height="1" fill="#fff"/>
-            <rect x="3" y="3" width="1" height="1" fill="#1a1a2e"/>
-            <rect x="7" y="3" width="1" height="1" fill="#1a1a2e"/>
-            <rect x="4" y="5" width="2" height="1" fill="#2d6a4f"/>
-            <rect x="1" y="5" width="8" height="3" fill="#4dba87" opacity=".7"/>
-            <rect x="3" y="6" width="4" height="1" fill="#fbbf24" opacity=".5"/>
-            <rect x="1" y="8" width="2" height="1" fill="#4dba87" opacity=".5"/>
-            <rect x="7" y="8" width="2" height="1" fill="#4dba87" opacity=".5"/>
-            <rect x="0" y="5" width="1" height="2" fill="#4dba87" opacity=".4"/>
-            <rect x="9" y="5" width="1" height="2" fill="#4dba87" opacity=".4"/>
+          <svg width="32" height="32" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="28" stroke="var(--acc)" stroke-width="2.5"/>
+            <circle cx="20" cy="24" r="5" fill="var(--acc)" opacity="0.7"/>
+            <circle cx="44" cy="20" r="4" fill="var(--acc)" opacity="0.6"/>
+            <circle cx="36" cy="42" r="6" fill="var(--acc)" opacity="0.8"/>
+            <circle cx="18" cy="42" r="3" fill="var(--acc)" opacity="0.5"/>
+            <line x1="20" y1="24" x2="44" y2="20" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
+            <line x1="20" y1="24" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
+            <line x1="44" y1="20" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
+            <line x1="18" y1="42" x2="36" y2="42" stroke="var(--acc)" stroke-width="1.5" opacity="0.4"/>
           </svg>
-          <div class="term-greet-hi">${greet}</div>
+          <div>
+            <div class="term-greet-hi">${greet}</div>
+            <div class="term-greet-meta">${_corpora.length
+              ?`${_corpora.length} corpora · ${totalDocs} sources · ${totalWords.toLocaleString()} words`
+              :'No corpora yet'}</div>
+          </div>
         </div>
-        <div class="term-greet-sub">What will you add to the Noosphere?</div>
-      </div>
-      <div class="term-greet-stats">
-        ${_corpora.length?`<div class="tgs-row"><span class="tgs-val">${_corpora.length}</span> corpora</div>
-        <div class="tgs-row"><span class="tgs-val">${totalDocs}</span> sources · <span class="tgs-val">${totalChunks}</span> chunks</div>
-        <div class="tgs-row"><span class="tgs-val">${totalWords.toLocaleString()}</span> words indexed</div>`
-        :`<div class="tgs-row" style="color:var(--tx3)">No corpora yet</div>`}
       </div>
     </div>
     <div class="term-body" id="term-body"></div>
-    <div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div>
+    <div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Search the Noosphere, paste a URL to import, or type /help" autofocus /><span class="term-cursor-input">\u2588</span></div>
     <div class="term-hints" id="term-hints"></div>
   </div>`;
 
@@ -129,12 +120,13 @@ function appendLine(body,line,hints){
   else if(line.type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between"><span class="term-card-lbl">${esc(line.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[line.status]||'#6e6e73'}">${esc(line.status||'')}</span></div><div class="term-card-det">${esc(line.detail||'')}</div>${line.val?`<div class="term-card-val">${esc(line.val)}</div>`:''}`;
     if(line.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+line.corpus_id}}}
   else if(line.type==='cite'){el.className='term-line';el.innerHTML=`<span class="chat-cite">${esc(line.text)}</span>`}
+  else if(line.type==='search_result'){el.className='term-card';el.innerHTML=`<div class="term-card-lbl" style="display:flex;justify-content:space-between"><span>${esc(line.title||'')}</span><span style="color:var(--acc);font-size:10px">${line.score?('Score: '+line.score.toFixed(2)):''}</span></div><div class="term-card-det" style="margin-top:6px;line-height:1.5">${esc(line.text||'')}</div>${line.source?`<div style="font-size:10px;color:var(--tx3);margin-top:4px">${esc(line.source)}</div>`:''}`}
   else return;
   body.appendChild(el);body.scrollTop=body.scrollHeight;
 }
 
 function renderSuggestions(el){
-  el.innerHTML=TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> <span class="term-sg-label">${esc(s.label)}</span></div>`).join('');
+  el.innerHTML=TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> <span class="term-sg-label">${esc(s.label)}</span><span class="term-sg-desc">${esc(s.desc||'')}</span></div>`).join('');
   el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();setTimeout(()=>{const e=new KeyboardEvent('keydown',{key:'Enter',bubbles:true});input.dispatchEvent(e)},50)}}});
 }
 
