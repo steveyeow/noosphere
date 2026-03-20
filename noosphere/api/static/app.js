@@ -34,16 +34,16 @@ function drawLPGraph(){const co=document.getElementById('lp-cv');if(!co)return;c
 /* ══════ HOME — Interactive Terminal ══════ */
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
 const TERM_SUGGESTIONS=[
-  {text:'Import https://example.com/my-article',icon:'>'},
-  {text:'What is RAG and how does it work?',icon:'>'},
-  {text:'/status',icon:'>'},
-  {text:'/write',icon:'>'},
+  {text:'https://example.com/my-article',label:'Import a URL'},
+  {text:'/write',label:'Write a new source'},
+  {text:'What is RAG and how does it work?',label:'Ask the Noosphere'},
+  {text:'/status',label:'View my corpora'},
 ];
 let _termCtx={};
 
 function renderHome(){
   hideRP();const ct=document.getElementById('content');
-  ct.innerHTML=`<div class="term-full"><div class="term-header"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-ttl">noosphere</span></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div><div class="term-hints" id="term-hints"></div></div>`;
+  ct.innerHTML=`<div class="term-full"><div class="term-welcome"><div class="term-avatar"><svg width="32" height="32" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="2.5"/><circle cx="22" cy="26" r="4" fill="currentColor" opacity="0.8"/><circle cx="42" cy="26" r="4" fill="currentColor" opacity="0.8"/><circle cx="32" cy="42" r="5" fill="currentColor" opacity="0.6"/><line x1="22" y1="26" x2="42" y2="26" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><line x1="22" y1="26" x2="32" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.3"/><line x1="42" y1="26" x2="32" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.3"/></svg></div><div class="term-welcome-text">Expand the Noosphere.</div></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div><div class="term-hints" id="term-hints"></div></div>`;
 
   const body=document.getElementById('term-body');
   const input=document.getElementById('term-input');
@@ -93,7 +93,7 @@ function appendLine(body,line,hints){
 }
 
 function renderSuggestions(el){
-  el.innerHTML='<div class="term-hint-label">/ for shortcuts</div>'+TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> ${esc(s.text)}</div>`).join('');
+  el.innerHTML=TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> <span class="term-sg-label">${esc(s.label)}</span></div>`).join('');
   el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();setTimeout(()=>{const e=new KeyboardEvent('keydown',{key:'Enter',bubbles:true});input.dispatchEvent(e)},50)}}});
 }
 
