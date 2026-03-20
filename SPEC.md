@@ -10,22 +10,30 @@ Noosphere is an open platform that lets anyone convert their personal or organiz
 
 ## Origin story
 
-In March 2026, Lenny Rachitsky ([x.com/lennysan/status/2033958104967352587](https://x.com/lennysan/status/2033958104967352587)) converted his 300+ podcast transcripts and 350 newsletter posts into agent-friendly Markdown, published a GitHub repo, built an MCP server, and invited people to build products on top of his archive. He open-sourced a free starter pack (10 posts, 50 transcripts) and gated the full archive behind a paid subscription.
+The trend is clear. More products are being built for agents. More knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort: structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments.
 
-This was a manual, one-off effort by one creator. Noosphere asks: **what if anyone could do this?**
-
-The trend is clear. More products are being built for agents. More knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort: structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments. Noosphere standardizes and democratizes this entire pipeline.
+Some creators have started converting their content into agent-friendly formats manually — but each effort is a one-off technical project. Noosphere asks: **what if anyone could do this?** It standardizes and democratizes the entire pipeline.
 
 ## Connection to Feynman
 
 Noosphere is inspired by and connected to [Feynman](https://github.com/steveyeow/feynman), an open-source project that lets people chat with books and learn with an evolving network of agent-simulated great minds in a navigable knowledge space (the Noosphere).
 
-The relationship:
+Both are independent open-core products with the same architecture:
 
-- **Noosphere** is the publishing layer — turn your knowledge into an agent-readable corpus
-- **Feynman** is one consumer — read with these corpora as source-grounded minds in the Noosphere
+| | Noosphere | Feynman |
+|---|---|---|
+| **What** | Knowledge publishing infrastructure | Chat-with-books product |
+| **MIT core** | Ingest, chunk, embed, search, MCP, API, CLI, Web UI | Chat, RAG, minds, library, Web UI |
+| **BSL commercial** | `noosphere/cloud/` (auth, quota, stripe) | `app/pro/` (auth, quota, stripe) |
+| **Self-hosted** | Full functionality, free forever | Full functionality, free forever |
+| **Repo** | Separate repo | Separate repo |
 
-Noosphere corpora can be consumed by Feynman, by other AI products, by coding agents, by research tools, or by any MCP/API-compatible client. Feynman is one important but not exclusive consumer.
+The relationship is **producer-consumer**, not parent-child:
+
+- **Noosphere** publishes knowledge as agent-readable corpora
+- **Feynman** is one consumer — it can use Noosphere corpora as source-grounded minds
+
+Integration is optional. Feynman can import `noosphere` as a Python library (same-process, zero latency) or connect to a remote Noosphere instance via API (cross-network). Noosphere corpora can be consumed by any MCP/API-compatible agent or tool.
 
 ---
 
@@ -45,71 +53,148 @@ We believe that:
 
 1. **Knowledge is the primitive, not content.** We are not building a CMS or a file host. We are building a system that turns unstructured knowledge into structured, queryable, citable corpora that agents can reason over.
 
-2. **Agent-native by default.** Every corpus is designed to be consumed by agents first. Human-readable interfaces are important but secondary. The primary interface is MCP/API.
+2. **Agent-native by default.** Every corpus is designed to be consumed by agents first. The web UI exists for creators to manage their knowledge and see how agents are using it. The primary interface for consumers is MCP/API.
 
-3. **Creator sovereignty.** The creator owns their corpus. They decide: public, private, or paid. They decide the price, the access model, the license terms. The platform enforces their choices.
+3. **Creator sovereignty.** The creator owns their corpus. They decide: public, private, token-gated, or paid. They decide the price, the access model, the license terms. The platform enforces their choices — whether self-hosted or cloud.
 
-4. **Source-grounded, not generative.** When an agent queries a Noosphere corpus, the response should be grounded in retrieved passages with citations. Not hallucinated summaries. Not persona roleplay. Real source material, traceable to specific documents.
+4. **Source-grounded, not generative.** When an agent queries a Noosphere corpus, the response should be grounded in retrieved passages with citations. Not hallucinated summaries. Real source material, traceable to specific documents.
 
-5. **Open core, commercial services.** The protocol, conversion tools, and self-hosted node are open-source. Managed hosting, payments, analytics, and discovery are commercial services.
+5. **Open core, commercial convenience.** The full product is open-source and self-hostable — including paid access control. The commercial layer adds hosting convenience, not exclusive features.
 
-6. **Interoperability.** Noosphere corpora should work with any MCP-compatible client, any RAG pipeline, any agent framework. No lock-in.
+6. **One network.** Self-hosted and cloud-hosted corpora are equal participants in the Noosphere. The registry connects them all. Content stays on the creator's infrastructure; only metadata is shared for discovery.
 
 ---
 
 ## Product architecture
 
-### Two layers
+### Single repo, open core with commercial shim
+
+Following the same architecture as Feynman, Noosphere is a single repository with clear license boundaries:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    COMMERCIAL LAYER                      │
-│                                                         │
-│  Managed hosting · Creator dashboard · Payments/billing │
-│  Access control · Analytics · Discovery/marketplace     │
-│  Premium integrations · Enterprise features · SLA       │
-├─────────────────────────────────────────────────────────┤
-│                     OPEN CORE LAYER                      │
-│                                                         │
-│  Ingestion pipeline · Corpus format · Chunking/embedding│
-│  Retrieval engine · Citation system · MCP server        │
-│  REST API · Self-hosted node · CLI tools · SDKs         │
-│  Protocol specification                                 │
-└─────────────────────────────────────────────────────────┘
+noosphere/
+├── LICENSE                    ← MIT (root)
+├── noosphere/
+│   ├── core/                  ← MIT — ingestion, chunking, embedding, retrieval
+│   ├── api/                   ← MIT — REST API + web frontend
+│   ├── cli/                   ← MIT — CLI commands
+│   ├── mcp/                   ← MIT — MCP server
+│   └── cloud/                 ← BSL — managed auth, quota, stripe connect (Phase 2+)
+│       ├── LICENSE            ← BSL 1.1
+│       ├── auth.py
+│       ├── quota.py
+│       └── stripe.py
+├── tests/
+├── requirements.txt
+└── README.md
 ```
 
-### Open core (open-source, MIT)
+### Self-hosted vs Cloud
 
-What anyone can self-host and use for free:
+| | Self-hosted (open source) | Cloud (commercial) |
+|---|---|---|
+| Code | Same repo | Same repo |
+| Database | SQLite | PostgreSQL |
+| Embedding API keys | User's own | Platform's |
+| Usage limits | None | Free/Pro tier quotas |
+| Set corpus to paid | **Yes** (user's own Stripe) | Yes (Stripe Connect) |
+| Platform commission | **0%** | 10% on paid corpus revenue |
+| Registry participation | Yes (opt-in per corpus) | Automatic |
+| Who pays infra costs | User | Us (covered by subscription) |
 
-| Component | Description |
-|-----------|-------------|
-| **Ingestion pipeline** | Convert Markdown, PDF, HTML, plain text, JSON, RSS into a structured corpus |
-| **Corpus format** | Standardized schema for documents, metadata, chunks, embeddings, citations |
-| **Chunking engine** | Split documents into semantically meaningful chunks with metadata |
-| **Embedding engine** | Generate vector embeddings for all chunks (pluggable providers) |
-| **Retrieval engine** | Semantic search over corpus with cosine similarity |
-| **Citation system** | Every retrieval result includes source document, chunk location, and provenance |
-| **MCP server** | Model Context Protocol endpoint that agents can connect to |
-| **REST API** | Standard HTTP endpoints for querying, listing, and browsing a corpus |
-| **CLI tools** | Command-line tools for ingesting, indexing, and serving a corpus locally |
-| **Self-hosted node** | Run a complete Noosphere node on your own infrastructure |
+The open-source version is the **full product**, not a crippled trial. Self-hosted users can do everything cloud users can — including monetizing their corpora. The cloud version sells **convenience** (we run the infra) and charges a commission only when money flows through our payment rails.
 
-### Commercial layer (hosted service)
+### Interface layers
 
-What the hosted platform adds:
+```
+Layer 4:  MCP Server          ← Agent-native protocol (Claude, Cursor, Codex)
+Layer 3:  REST API            ← Universal HTTP interface (any client)
+Layer 2:  CLI                 ← Developer/creator tool (ingest, index, serve)
+Layer 1:  Corpus Format       ← Structured data (Markdown + chunks + embeddings)
+```
 
-| Component | Description |
-|-----------|-------------|
-| **Managed hosting** | Upload and serve corpora without managing infrastructure |
-| **Creator dashboard** | Web UI for managing corpora, viewing analytics, configuring access |
-| **Access control** | Public, private, token-gated, subscriber-only, or paid access |
-| **Payments** | Stripe-based billing: per-query, per-month, per-corpus, or custom pricing |
-| **Creator payouts** | Revenue sharing for creators who monetize their corpora |
-| **Analytics** | Who is querying, which topics, how often, which agents |
-| **Discovery** | Directory/marketplace where agents and users can find published corpora |
-| **Premium integrations** | Auto-sync from Substack, Notion, Google Docs, Obsidian, Ghost, WordPress |
-| **Enterprise** | Team workspaces, audit logs, SSO, compliance, private registries |
+All layers are needed:
+- **Markdown** is the content storage format, not an access interface
+- **CLI** is the creator-side tool for building and managing corpora
+- **REST API** is the universal access interface — any agent, app, or script can call HTTP
+- **MCP** is the agent-native discovery and tool-use protocol that sits on top
+
+MCP and REST API share the same core logic. The CLI calls the same core functions directly.
+
+---
+
+## Access levels
+
+| Level | Description | Available in |
+|-------|-------------|--------------|
+| `public` | Anyone can query. No authentication. Discoverable in the Noosphere registry. | Self-hosted + Cloud |
+| `private` | Only the owner can query. Not registered in the registry. | Self-hosted + Cloud |
+| `token` | Requires an access key. Creator generates keys and shares them with specific people or agents. Useful for granting access to collaborators, beta testers, or specific agent deployments without making the corpus fully public. | Self-hosted + Cloud |
+| `paid` | Pay-per-query or subscription. Requires Stripe integration. Self-hosted users configure their own Stripe keys; cloud users use Stripe Connect (platform takes 10%). | Self-hosted + Cloud |
+
+---
+
+## Web frontend
+
+The web UI serves **creators** — people who add knowledge to the Noosphere and want to see how agents are using it. Agents access knowledge via MCP/API, not the web UI.
+
+### Two audiences, two interfaces
+
+| | Creator (human) | Consumer (agent) |
+|---|---|---|
+| **Interface** | Web UI | MCP / REST API |
+| **Actions** | Upload knowledge, configure access, view analytics | Search, retrieve, cite |
+| **Sees** | Documents, endpoints, query activity | Chunks, scores, citations |
+
+### User flow
+
+```
+New user arrives
+  → Landing page: "Publish your knowledge for agents"
+  → Click "Get Started"
+  → Main view: the Noosphere (network graph + global search + your corpora)
+  → Click "+ Add Knowledge"
+  → Create corpus: name, description, upload files or paste URL
+  → Choose access: public / private / token-gated
+  → Choose whether to register in the Noosphere (recommended for public)
+  → Done → See your corpus with MCP/API endpoints prominently displayed
+  → Copy endpoint → paste into Claude/Cursor/agent config
+  → Come back later → see query activity (agents are using your knowledge)
+```
+
+### Page structure (two levels)
+
+**Level 1 — Main view (the Noosphere)**
+
+The home screen after landing. Shows:
+- **Global search bar** at the top — search across ALL public corpora in the Noosphere
+- **Network graph** — D3 force-directed graph where each node is a corpus. Nodes connected by shared tags/topics. Agent activity shown as pulses on nodes.
+- **Your Corpora** — list of the user's own corpora, each showing:
+  - Name, access level, doc count, query activity
+  - MCP and API endpoint URLs with copy buttons (this is the primary call-to-action)
+  - "Manage →" to go to corpus detail
+- **"+ Add Knowledge" button**
+
+**Level 2 — Corpus detail (click into one corpus)**
+
+Shows everything about one corpus on a single page:
+- **Back to Noosphere** link
+- **Header**: name, author, description
+- **Connection info**: MCP endpoint + API endpoint with copy buttons (prominent)
+- **Access settings**: dropdown to change access level + save
+- **Stats**: documents, chunks, words, queries received, model
+- **Documents**: listed with expand/collapse to read content inline (no third page level)
+- **Search**: search box to try queries against this corpus
+- **Actions**: add documents, re-index
+- **Registry status**: "Registered in the Noosphere ✓" or "Local only"
+
+### Key UI principles
+
+1. **MCP/API endpoints are the hero** — the most prominent element on each corpus card. The user's main action is "copy this URL and give it to an agent."
+2. **Documents expand inline** — click to expand/collapse, no page navigation for reading content.
+3. **Global search searches the whole Noosphere** — not just one corpus. Results show which corpus each answer came from.
+4. **Agent activity is visible** — query count on each corpus, pulses on network nodes when agents query.
+5. **Registry awareness** — the UI makes it clear that public corpora join a global network of knowledge.
 
 ---
 
@@ -139,80 +224,28 @@ my-corpus/
 ```json
 {
   "schema_version": "1.0",
-  "corpus_id": "lenny-rachitsky-archive",
-  "name": "Lenny's Newsletter & Podcast Archive",
-  "description": "300+ podcast transcripts and newsletter posts on product, growth, and startups.",
+  "corpus_id": "example-archive",
+  "name": "Example Knowledge Base",
+  "description": "A collection of articles on product, growth, and startups.",
   "author": {
-    "name": "Lenny Rachitsky",
-    "url": "https://www.lennysnewsletter.com",
-    "avatar_url": ""
+    "name": "Jane Doe",
+    "url": "https://www.example.com"
   },
   "created_at": "2026-03-19T00:00:00Z",
   "updated_at": "2026-03-19T00:00:00Z",
   "document_count": 60,
   "chunk_count": 2400,
   "word_count": 950000,
-  "embedding_model": "text-embedding-3-small",
-  "embedding_dim": 1536,
+  "embedding_model": "gemini-embedding-001",
+  "embedding_dim": 3072,
   "language": "en",
-  "license": "personal-use",
-  "tags": ["product", "growth", "startups", "AI", "PM"],
+  "tags": ["product", "growth", "startups"],
   "access": {
     "level": "public",
     "pricing": null
-  },
-  "source": {
-    "type": "manual",
-    "origin": "https://github.com/LennysNewsletter/lennys-newsletterpodcastdata"
-  },
-  "documents": [
-    {
-      "id": "doc-001",
-      "title": "How Duolingo reignited user growth",
-      "filename": "documents/doc-001.md",
-      "type": "newsletter",
-      "date": "2023-02-28",
-      "word_count": 4812,
-      "tags": ["growth", "strategy"],
-      "metadata": {
-        "subtitle": "The story behind Duolingo's 350% growth acceleration"
-      }
-    }
-  ]
-}
-```
-
-### Chunk schema (`chunks.jsonl`)
-
-Each line is a JSON object:
-
-```json
-{
-  "chunk_id": "doc-001-chunk-003",
-  "document_id": "doc-001",
-  "chunk_index": 3,
-  "text": "The key insight was that streaks created a daily habit loop...",
-  "char_start": 2401,
-  "char_end": 3200,
-  "word_count": 142,
-  "embedding_offset": 3072,
-  "metadata": {
-    "section": "The streak mechanism",
-    "document_title": "How Duolingo reignited user growth",
-    "document_date": "2023-02-28"
   }
 }
 ```
-
-### Access levels
-
-| Level | Description |
-|-------|-------------|
-| `public` | Anyone can query. No authentication required. |
-| `private` | Only the owner can query. Not discoverable. |
-| `token` | Requires a valid access token. Owner distributes tokens. |
-| `subscription` | Requires an active subscription (managed by the platform). |
-| `paid` | Pay-per-query or pay-per-month. Stripe-based. |
 
 ---
 
@@ -220,65 +253,40 @@ Each line is a JSON object:
 
 ### MCP (Model Context Protocol)
 
-Noosphere exposes each corpus as an MCP server. Any MCP-compatible client (Claude, Cursor, Codex, custom agents) can connect.
+Noosphere exposes corpora via MCP. Any MCP-compatible client (Claude, Cursor, Codex, custom agents) can connect.
 
-MCP tools exposed per corpus:
+MCP tools:
 
 | Tool | Description |
 |------|-------------|
-| `search` | Semantic search across the corpus. Returns ranked chunks with citations. |
+| `search` | Semantic search across corpora. Returns ranked chunks with citations. |
 | `get_document` | Retrieve a full document by ID. |
 | `list_documents` | List all documents with metadata. |
+| `list_corpora` | List available corpora. |
 | `get_topics` | List extracted topics and themes. |
-| `get_stats` | Corpus statistics (document count, word count, last updated). |
+| `get_stats` | Corpus statistics. |
 | `get_manifest` | Full corpus manifest. |
 
 ### REST API
 
 ```
+GET    /api/v1/health                           # Health check (for registry)
 GET    /api/v1/corpora                          # List available corpora
+POST   /api/v1/corpora                          # Create a new corpus
 GET    /api/v1/corpora/:id                      # Get corpus manifest
+PATCH  /api/v1/corpora/:id                      # Update corpus settings
+DELETE /api/v1/corpora/:id                      # Delete corpus
 GET    /api/v1/corpora/:id/documents            # List documents
 GET    /api/v1/corpora/:id/documents/:doc_id    # Get a document
+POST   /api/v1/corpora/:id/upload               # Upload files
+POST   /api/v1/corpora/:id/ingest-url           # Ingest from URL
+POST   /api/v1/corpora/:id/index                # Trigger indexing
 POST   /api/v1/corpora/:id/search               # Semantic search
-GET    /api/v1/corpora/:id/topics               # List topics
-GET    /api/v1/corpora/:id/stats                # Corpus statistics
-```
-
-Search request:
-
-```json
-POST /api/v1/corpora/lenny-archive/search
-{
-  "query": "How should startups think about pricing?",
-  "top_k": 5,
-  "include_context": true
-}
-```
-
-Search response:
-
-```json
-{
-  "results": [
-    {
-      "chunk_id": "doc-042-chunk-007",
-      "score": 0.87,
-      "text": "The biggest mistake I see in pricing is...",
-      "citation": {
-        "document_title": "Pricing your AI product",
-        "document_id": "doc-042",
-        "author": "Madhavan Ramanujam (guest)",
-        "date": "2025-07-27",
-        "char_range": [4200, 5100]
-      }
-    }
-  ],
-  "usage": {
-    "tokens_used": 128,
-    "queries_remaining": null
-  }
-}
+GET    /api/v1/corpora/:id/analytics            # Query logs
+GET    /api/v1/corpora/:id/topics               # Topics
+GET    /api/v1/corpora/:id/stats                # Statistics
+POST   /api/v1/search                           # Global search across all public corpora
+GET    /.well-known/noosphere.json              # Federated discovery manifest
 ```
 
 ---
@@ -289,69 +297,15 @@ Search response:
 
 | Format | Source |
 |--------|--------|
-| Markdown files | Local directory, GitHub repo |
+| Markdown files | Local directory, upload, GitHub repo |
 | Plain text | Upload |
-| PDF | Upload |
-| HTML | URL fetch |
-| RSS/Atom | Feed URL |
-| JSON index + Markdown | Lenny-style dataset structure |
+| HTML / Blog | URL fetch → auto-convert to markdown |
+| Audio transcription | Cloud only (Whisper API) — paid feature |
 
 ### Pipeline stages
 
 ```
-Input sources
-    │
-    ▼
-┌──────────────┐
-│   Ingest     │  Read files, fetch URLs, parse formats
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   Clean      │  Strip HTML, normalize whitespace, extract metadata
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   Chunk      │  Split into semantic chunks (500-1000 tokens)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   Embed      │  Generate vector embeddings (pluggable provider)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   Index      │  Build search index, extract topics, compute stats
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│   Publish    │  Write corpus package, start MCP/API server
-└──────────────┘
-```
-
-### CLI interface
-
-```bash
-# Initialize a new corpus from a directory of Markdown files
-noosphere init ./my-blog-posts --name "My Blog" --author "Jane Doe"
-
-# Ingest additional documents
-noosphere ingest ./more-posts --corpus my-blog
-
-# Re-index (re-chunk, re-embed)
-noosphere index --corpus my-blog
-
-# Serve locally (MCP + REST API)
-noosphere serve --corpus my-blog --port 8420
-
-# Export corpus package
-noosphere export --corpus my-blog --output ./my-blog-corpus.zip
-
-# Publish to Noosphere Cloud (commercial)
-noosphere publish --corpus my-blog --access public
+Input sources → Ingest → Clean → Chunk → Embed → Index → Publish
 ```
 
 ---
@@ -365,263 +319,170 @@ noosphere publish --corpus my-blog --access public
 | Backend | Python / FastAPI |
 | Database | SQLite (self-hosted) / PostgreSQL (cloud) |
 | Embeddings | Pluggable: OpenAI, Gemini, local models |
-| Vector storage | Embedded (NumPy cosine similarity, same as Feynman) |
-| MCP server | Python MCP SDK |
-| CLI | Click / Typer |
-| Frontend (cloud) | React or vanilla JS (TBD) |
-| Payments | Stripe |
-| Auth | API keys (self-hosted) / Supabase Auth (cloud) |
+| Vector storage | NumPy cosine similarity |
+| MCP server | JSON-RPC over HTTP |
+| CLI | Click |
+| Frontend | Vanilla JS SPA + D3.js (served by FastAPI) |
+| Payments | Stripe (self-hosted: user's own keys, cloud: Stripe Connect) |
+| Auth (cloud) | Supabase |
 
-### Database schema (core tables)
+---
 
-```sql
--- Corpora: each corpus is a knowledge base
-CREATE TABLE corpora (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    description TEXT,
-    author_name TEXT,
-    author_url TEXT,
-    document_count INTEGER DEFAULT 0,
-    chunk_count INTEGER DEFAULT 0,
-    word_count INTEGER DEFAULT 0,
-    embedding_model TEXT,
-    embedding_dim INTEGER,
-    language TEXT DEFAULT 'en',
-    license TEXT DEFAULT 'personal-use',
-    tags TEXT,                          -- JSON array
-    access_level TEXT DEFAULT 'public', -- public | private | token | subscription | paid
-    pricing_json TEXT,                  -- JSON: pricing config if access_level is paid
-    status TEXT DEFAULT 'draft',        -- draft | indexing | ready | error
-    owner_id TEXT,                      -- user ID (cloud only)
-    source_type TEXT,                   -- manual | github | rss | substack | notion
-    source_url TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
+## Discovery and registry
 
--- Documents within a corpus
-CREATE TABLE documents (
-    id TEXT PRIMARY KEY,
-    corpus_id TEXT NOT NULL REFERENCES corpora(id),
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,              -- full document text
-    doc_type TEXT,                      -- newsletter | podcast | blog | doc | note
-    date TEXT,
-    word_count INTEGER,
-    tags TEXT,                          -- JSON array
-    metadata_json TEXT,                 -- flexible metadata
-    created_at TEXT NOT NULL
-);
-CREATE INDEX idx_documents_corpus ON documents(corpus_id);
+### Design: centralized registry, decentralized hosting
 
--- Chunks: embedded segments for retrieval
-CREATE TABLE chunks (
-    id TEXT PRIMARY KEY,
-    corpus_id TEXT NOT NULL REFERENCES corpora(id),
-    document_id TEXT NOT NULL REFERENCES documents(id),
-    chunk_index INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    char_start INTEGER,
-    char_end INTEGER,
-    vector BLOB NOT NULL,              -- float32 embedding
-    dim INTEGER NOT NULL,
-    norm REAL NOT NULL,
-    metadata_json TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX idx_chunks_corpus ON chunks(corpus_id);
-CREATE INDEX idx_chunks_document ON chunks(document_id);
-
--- Access tokens (for token-gated corpora)
-CREATE TABLE access_tokens (
-    id TEXT PRIMARY KEY,
-    corpus_id TEXT NOT NULL REFERENCES corpora(id),
-    token_hash TEXT NOT NULL,           -- hashed token
-    label TEXT,                         -- human-readable label
-    permissions TEXT DEFAULT 'read',    -- read | admin
-    usage_count INTEGER DEFAULT 0,
-    last_used_at TEXT,
-    expires_at TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX idx_tokens_corpus ON access_tokens(corpus_id);
-
--- Query logs (for analytics)
-CREATE TABLE query_logs (
-    id TEXT PRIMARY KEY,
-    corpus_id TEXT NOT NULL REFERENCES corpora(id),
-    query_text TEXT,
-    result_count INTEGER,
-    token_id TEXT,                      -- which token was used
-    agent_id TEXT,                      -- agent identifier if provided
-    latency_ms INTEGER,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX idx_queries_corpus ON query_logs(corpus_id, created_at);
+```
+┌──────────────────────────────────────────────────────────┐
+│                  Noosphere Registry                       │
+│           (registry.noosphere.ai)                         │
+│                                                           │
+│  Stores ONLY metadata:                                    │
+│    corpus name, description, tags, endpoint URL,          │
+│    document count, access level, last health check        │
+│                                                           │
+│  Does NOT store:                                          │
+│    document content, chunks, embeddings, auth tokens      │
+├───────────────────────────────────────────────────────────┤
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
+│  │ Self-    │  │ Self-    │  │ Cloud-   │               │
+│  │ hosted   │  │ hosted   │  │ hosted   │               │
+│  │ node A   │  │ node B   │  │ node C   │               │
+│  └──────────┘  └──────────┘  └──────────┘               │
+│       ▲              ▲             ▲                      │
+│       └──────────────┴─────────────┘                      │
+│         Agents connect DIRECTLY to each node              │
+└───────────────────────────────────────────────────────────┘
 ```
 
----
+Self-hosted and cloud-hosted corpora are equal citizens. The registry indexes all of them. Agents query the registry to discover corpora, then connect directly to the hosting node.
 
-## Implementation roadmap
+### Registration in the UI
 
-### Phase 1: Open core MVP
+When a user creates a public corpus, the UI asks:
 
-Goal: a working open-source tool that can ingest a directory of Markdown files and serve them as a queryable, citable corpus via MCP and REST API.
+```
+🌐 Join the Noosphere?
 
-Deliverables:
-- [ ] Corpus format specification (noosphere.json schema)
-- [ ] Ingestion pipeline (Markdown, plain text, JSON+Markdown like Lenny's format)
-- [ ] Chunking engine with metadata preservation
-- [ ] Embedding engine (OpenAI + Gemini providers)
-- [ ] Retrieval engine (cosine similarity search with citations)
-- [ ] MCP server (search, get_document, list_documents)
-- [ ] REST API (search, documents, stats)
-- [ ] CLI (init, ingest, index, serve, export)
-- [ ] Lenny starter dataset as example corpus
-- [ ] README with quick start guide
-- [ ] MIT license
+Register this corpus so agents worldwide can discover
+and query your knowledge.
 
-Demo: ingest Lenny's free starter dataset, serve it locally, query it from Claude/Cursor via MCP.
+☑ Register to the Noosphere (recommended)
 
-### Phase 2: Multi-corpus and access control
+Your content stays on your server.
+Only the name, description, and tags are shared.
+```
 
-Goal: support multiple corpora, basic access control, and a simple web dashboard.
+This makes registration explicit and the user understands what's shared (metadata only).
 
-Deliverables:
-- [ ] Multi-corpus support (multiple corpora on one node)
-- [ ] Access levels (public, private, token-gated)
-- [ ] Token management (create, revoke, track usage)
-- [ ] Query logging and basic analytics
-- [ ] Web dashboard for managing corpora
-- [ ] PDF and HTML ingestion
-- [ ] RSS/feed auto-sync
-- [ ] Topic extraction
-
-### Phase 3: Commercial hosted platform
-
-Goal: a hosted version where creators can sign up, upload corpora, and configure access/pricing.
-
-Deliverables:
-- [ ] Hosted platform (Vercel/Railway + PostgreSQL)
-- [ ] User auth (Supabase)
-- [ ] Creator onboarding flow
-- [ ] Stripe integration for paid corpora
-- [ ] Pay-per-query and subscription billing
-- [ ] Creator payouts
-- [ ] Usage analytics dashboard
-- [ ] Public corpus directory/discovery
-- [ ] Embeddable chat widget for corpus owners
-
-### Phase 4: Ecosystem and integrations
-
-Goal: make Noosphere the standard way to publish knowledge for agents.
-
-Deliverables:
-- [ ] Auto-sync integrations (Substack, Notion, Ghost, WordPress, Obsidian)
-- [ ] Corpus-to-corpus cross-references
-- [ ] Federated discovery (multiple Noosphere nodes can discover each other)
-- [ ] Feynman integration (import Noosphere corpus as a mind in Feynman)
-- [ ] SDKs (Python, JavaScript, Go)
-- [ ] Enterprise features (team workspaces, SSO, audit logs)
-
----
-
-## How Lenny's dataset maps to Noosphere
-
-Lenny's free starter pack is the first example corpus. Here is how it maps:
-
-| Lenny's structure | Noosphere equivalent |
-|---|---|
-| `01-start-here/index.json` | `noosphere.json` manifest |
-| `02-newsletters/*.md` | `documents/` with `type: "newsletter"` |
-| `03-podcasts/*.md` | `documents/` with `type: "podcast"` |
-| `01-start-here/LICENSE.md` | `license` field in manifest |
-| Free starter pack | `access.level: "public"` |
-| Paid full archive | `access.level: "subscription"` or `"paid"` |
-| Starter MCP | Noosphere MCP server |
-
-The ingestion pipeline should auto-detect Lenny's format (JSON index + Markdown directory) and convert it into a Noosphere corpus with a single command:
+### Configuration
 
 ```bash
-noosphere init ./lennys-newsletterpodcastdata-starter \
-  --name "Lenny's Newsletter & Podcast (Starter)" \
-  --author "Lenny Rachitsky" \
-  --format lenny
+# Default: register with the public registry on serve
+noosphere serve --port 8420
+
+# Opt out
+noosphere serve --port 8420 --no-registry
+
+# Custom registry
+noosphere serve --port 8420 --registry https://internal.mycompany.com/registry
 ```
 
 ---
 
 ## Business model
 
-### Free tier (open-source, self-hosted)
+### Principle: charge for our costs, not their content
 
-- Unlimited corpora
-- Unlimited queries
-- MCP + REST API
-- Self-hosted
-- Community support
+Creator's content = Creator's property. Our infrastructure = Our cost. Payment facilitation = Our service.
 
-### Cloud free tier
+### Self-hosted (open source)
 
-- 1 corpus
-- 100 documents
-- 1,000 queries/month
-- Public access only
-- Basic analytics
+- Full product, free forever
+- Bring your own API keys, infra, and Stripe keys
+- All access levels including paid corpora
+- 0% platform commission
+- No usage limits
+- Register to the Noosphere for free
 
-### Cloud pro tier
+### Cloud tiers
 
-- Unlimited corpora
-- Unlimited documents
-- Unlimited queries
-- All access levels (public, private, token, paid)
-- Stripe payments integration
-- Full analytics
-- Premium integrations
-- Priority support
+| Resource | Free Tier | Pro Tier ($9/month) |
+|----------|-----------|---------------------|
+| Corpora | 1 | Unlimited |
+| Documents per corpus | 100 | Unlimited |
+| Embedding tokens/month | 10K | Unlimited |
+| Storage | 100MB | 10GB+ |
+| Queries received/month | 1,000 | 100K |
+| Access levels | All | All |
+| Paid corpus support | Stripe Connect | Stripe Connect |
+| Audio transcription | Not available | Whisper API included |
 
-### Platform fee
+### Transaction commission (cloud only)
 
-For paid corpora, the platform takes a percentage of creator revenue (e.g., 10-20%), similar to app store or marketplace models.
+When a cloud-hosted paid corpus is queried and payment flows through our Stripe Connect:
+- Creator gets 90%
+- Platform gets 10%
+- Stripe fees are separate (~2.9% + $0.30)
 
----
-
-## Competitive positioning
-
-| Existing solution | What it does | What Noosphere adds |
-|---|---|---|
-| Lenny's Data | One creator, manual setup | Platform for anyone, automated pipeline |
-| RAG-as-a-service (Pinecone, Weaviate) | Vector DB infrastructure | Full pipeline from content to agent access |
-| Notion/Obsidian publish | Human-readable publishing | Agent-readable publishing |
-| Substack/Ghost | Newsletter platform | Agent-native knowledge platform |
-| MCP servers | Protocol specification | Full platform with ingestion, hosting, payments |
-
-Noosphere is not competing with vector databases or content platforms. It sits at the intersection: **the platform that turns human knowledge into agent-readable infrastructure, with creator control and monetization built in.**
+Self-hosted users who set up their own Stripe keep 100%.
 
 ---
 
-## Naming and brand
+## Implementation roadmap
 
-**Noosphere** — from Pierre Teilhard de Chardin's concept of a planetary layer of connected human thought.
+### Phase 1: Open core MVP (current)
 
-The name signals:
-- collective knowledge, not just individual content
-- a living network, not a static archive
-- connection between minds, not isolation
-- a serious intellectual foundation
+Goal: working open-source tool — ingest, index, search, serve via MCP/API/CLI/Web.
 
-Tagline options:
-- *Publish your knowledge for agents.*
-- *Turn any knowledge base into agent infrastructure.*
-- *The open platform for agent-readable knowledge.*
-- *Make your knowledge part of the Noosphere.*
+Deliverables:
+- [x] Corpus format specification
+- [x] Database schema and corpus management
+- [x] Ingestion pipeline (Markdown, plain text, URL fetch)
+- [x] Chunking engine
+- [x] Embedding engine (OpenAI + Gemini)
+- [x] Retrieval engine (cosine similarity + citations)
+- [x] MCP server (7 tools)
+- [x] REST API (full CRUD + search + upload + analytics)
+- [x] CLI (init, ingest, index, serve, list, search, export)
+- [x] Web frontend: landing page with D3 network graph
+- [x] Web frontend: corpus network view
+- [x] Web frontend: corpus detail with search, documents, access control
+- [x] Health endpoint + /.well-known/noosphere.json
+- [x] Registry client (auto-registration)
+- [x] RetrievalEngine abstraction (local + remote)
+- [ ] Web frontend redesign: agent-native UX (global search, prominent endpoints, inline docs)
+- [ ] Global search across all corpora
+- [ ] README with quick start guide
+
+### Phase 2: Access control + payments
+
+- [ ] Token-gated access (generate/revoke access keys)
+- [ ] Stripe integration for paid corpora (self-hosted: own keys)
+- [ ] `noosphere/cloud/` — managed auth, quota, Stripe Connect (BSL)
+- [ ] PDF ingestion
+
+### Phase 3: Registry + hosted platform
+
+- [ ] Registry server
+- [ ] Cloud deployment (Vercel/Railway + PostgreSQL)
+- [ ] User registration + Stripe billing
+
+### Phase 4: Ecosystem
+
+- [ ] Feynman integration
+- [ ] RSS/feed auto-sync
+- [ ] Audio transcription (Whisper, cloud paid feature)
+- [ ] Agent-to-Agent payment support
 
 ---
 
 ## Summary
 
-Noosphere is an open platform that lets anyone turn their knowledge base into a structured, agent-readable corpus. Creators control access: free, private, or paid. The open core handles ingestion, indexing, retrieval, and serving via MCP/API. The commercial layer adds hosting, payments, analytics, and discovery.
+Noosphere is an open platform that lets anyone turn their knowledge base into a structured, agent-readable corpus. Creators control access: free, private, token-gated, or paid. The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
+
+All nodes — self-hosted and cloud-hosted — participate in a shared discovery network via the registry. Self-hosted corpora register their metadata (not content) to the public registry, making them discoverable by any agent worldwide. Content stays on the creator's infrastructure.
+
+Business model: cloud users pay for infrastructure convenience (Free/Pro tiers). Transaction commission (10%) applies only to cloud-hosted paid corpora. Self-hosted users pay nothing, ever.
 
 The mission is to expand the scope and scale of collective enlightenment — by making it easy, safe, and rewarding for anyone to contribute their knowledge to the emerging agent ecosystem.

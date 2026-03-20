@@ -10,7 +10,7 @@ Noosphere is an open platform that lets anyone convert their personal or organiz
 
 The trend is clear: more products are being built for agents. More knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort.
 
-Lenny Rachitsky recently converted his 300+ podcast transcripts and newsletter posts into agent-friendly Markdown with an MCP server, and invited people to build on it. That was a manual effort by one creator. Noosphere standardizes this into a platform anyone can use.
+Some creators have started manually converting their content into agent-friendly Markdown with MCP servers — but that requires significant technical effort. Noosphere standardizes this into a platform anyone can use.
 
 ## What it does
 
@@ -32,55 +32,63 @@ cp .env.example .env   # add your embedding API key
 # Ingest a directory of Markdown files
 python -m noosphere.cli init ./my-knowledge-base --name "My Knowledge"
 
-# Serve it locally (MCP + REST API)
+# Serve it locally (MCP + REST API + Web UI)
 python -m noosphere.cli serve --port 8420
 ```
 
-Then connect your MCP client (Claude, Cursor, etc.) to `http://localhost:8420/mcp`.
+Then:
+- Open `http://localhost:8420` for the web UI with interactive corpus network
+- Connect your MCP client (Claude, Cursor, etc.) to `http://localhost:8420/mcp`
+- Use the REST API at `http://localhost:8420/api/v1/corpora`
 
-## Example: Lenny's dataset
+## CLI commands
 
 ```bash
-# Clone the free starter dataset
-git clone https://github.com/LennysNewsletter/lennys-newsletterpodcastdata.git
+# Initialize a corpus from a directory
+noosphere init ./my-docs --name "My Blog" --author "Jane Doe"
 
-# Convert it into a Noosphere corpus
-python -m noosphere.cli init ./lennys-newsletterpodcastdata \
-  --name "Lenny's Newsletter & Podcast (Starter)" \
-  --author "Lenny Rachitsky"
+# Ingest more documents into an existing corpus
+noosphere ingest ./more-docs --corpus my-blog
 
-# Serve it
-python -m noosphere.cli serve --port 8420
+# Re-index a corpus (re-chunk and re-embed)
+noosphere index --corpus my-blog
+
+# List all corpora
+noosphere list
+
+# Search a corpus
+noosphere search --corpus my-blog "How does pricing work?"
+
+# Start the server
+noosphere serve --port 8420
 ```
-
-Now any MCP-compatible agent can query Lenny's archive with source citations.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    COMMERCIAL LAYER                      │
-│  Managed hosting · Payments · Analytics · Discovery     │
+│                    COMMERCIAL LAYER (BSL)                │
+│  Auth · Quota · Stripe (noosphere/cloud/)               │
 ├─────────────────────────────────────────────────────────┤
-│                     OPEN CORE LAYER                      │
+│                     OPEN CORE LAYER (MIT)                │
 │  Ingestion · Chunking · Embedding · Retrieval           │
-│  Citations · MCP server · REST API · CLI                │
+│  Citations · MCP server · REST API · Web UI · CLI       │
 └─────────────────────────────────────────────────────────┘
 ```
 
 - **Open core** (this repo): ingest, index, serve, query — everything needed to run a Noosphere node locally.
-- **Commercial layer** (coming soon): managed hosting, access control, payments, analytics, and a discovery marketplace.
+- **Commercial layer** (`noosphere/cloud/`, BSL): auth, usage quotas, and Stripe billing — activated by `ENABLE_CLOUD` env var.
 
 ## Connection to Feynman
 
-Noosphere is the publishing layer. [Feynman](https://github.com/steveyeow/feynman) is one consumer: it can import Noosphere corpora as source-grounded minds in its knowledge network.
+Both Noosphere and [Feynman](https://github.com/steveyeow/feynman) are independent open-core products. Noosphere publishes knowledge as agent-readable corpora. Feynman is one consumer — it can use Noosphere corpora as source-grounded minds in its knowledge network.
 
-But Noosphere corpora can be consumed by any MCP/API-compatible agent or tool.
+Integration is optional: Feynman can import `noosphere` as a Python library (same-process) or connect via API (remote). Noosphere corpora can be consumed by any MCP/API-compatible agent or tool.
 
 ## Spec
 
-See [SPEC.md](SPEC.md) for the full product specification, corpus format, API design, and roadmap.
+See [SPEC.md](SPEC.md) for the full product specification, corpus format, API design, business model, and roadmap.
 
 ## License
 
-MIT
+MIT (open core). The `noosphere/cloud/` directory is licensed separately under BSL 1.1.
