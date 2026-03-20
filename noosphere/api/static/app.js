@@ -52,27 +52,29 @@ function renderHome(){
 
   renderSuggestions(hints);
 
-  input.addEventListener('keydown',async e=>{
-    if(e.key==='Enter'){
-      e.preventDefault();
-      const val=input.value.trim();if(!val)return;
-      input.value='';input.disabled=true;
-      appendLine(body,{type:'prompt',text:val});
-      appendLine(body,{type:'resp',text:'Processing...',id:'term-loading'});
-      try{
-        const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
-        const d=await r.json();
-        document.getElementById('term-loading')?.remove();
-        _termCtx=d.context||{};
-        for(const line of(d.lines||[]))appendLine(body,line,hints);
-        if(d.context?.action==='open_write'){setTimeout(()=>{location.hash='#/write'},500)}
-      }catch(err){
-        document.getElementById('term-loading')?.remove();
-        appendLine(body,{type:'resp',text:'Error: '+err.message});
-      }
-      input.disabled=false;input.focus();body.scrollTop=body.scrollHeight;
+  let _sending=false;
+  async function sendInput(){
+    if(_sending)return;
+    const val=input.value.trim();if(!val)return;
+    _sending=true;input.value='';input.disabled=true;
+    hints.style.display='none';
+    appendLine(body,{type:'prompt',text:val});
+    appendLine(body,{type:'resp',text:'Processing...',id:'term-loading'});
+    try{
+      const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
+      const d=await r.json();
+      document.getElementById('term-loading')?.remove();
+      _termCtx=d.context||{};
+      for(const line of(d.lines||[]))appendLine(body,line);
+      if(d.context?.action==='open_write'){setTimeout(()=>{location.hash='#/write'},500)}
+    }catch(err){
+      document.getElementById('term-loading')?.remove();
+      appendLine(body,{type:'resp',text:'Error: '+err.message});
     }
-  });
+    input.disabled=false;input.focus();body.scrollTop=body.scrollHeight;
+    _sending=false;
+  }
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sendInput()}});
 }
 
 function appendLine(body,line,hints){
@@ -92,7 +94,7 @@ function appendLine(body,line,hints){
 
 function renderSuggestions(el){
   el.innerHTML='<div class="term-hint-label">/ for shortcuts</div>'+TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> ${esc(s.text)}</div>`).join('');
-  el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))}}});
+  el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();setTimeout(()=>{const e=new KeyboardEvent('keydown',{key:'Enter',bubbles:true});input.dispatchEvent(e)},50)}}});
 }
 
 /* ══════ WRITE ══════ */

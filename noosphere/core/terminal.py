@@ -203,8 +203,11 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
         result = chat_with_noosphere(original)
         lines = [{"type": "resp", "text": result["response"]}]
         if result.get("citations"):
-            for c in result["citations"][:3]:
-                lines.append({"type": "cite", "text": c.get("corpus_name") or c.get("title", "")})
+            cite_names = list(dict.fromkeys(
+                c.get("corpus_name") or c.get("title", "") for c in result["citations"] if c.get("corpus_name") or c.get("title")
+            ))
+            if cite_names:
+                lines.append({"type": "resp", "text": "Sources: " + " · ".join(cite_names)})
         return {"lines": lines, "context": {"state": "idle"}}
 
     return {"lines": [{"type": "resp", "text": "Please enter 1 or 2."}], "context": ctx}
@@ -216,8 +219,11 @@ def _handle_question(text: str) -> dict:
         result = chat_with_noosphere(text)
         lines = [{"type": "resp", "text": result["response"]}]
         if result.get("citations"):
-            for c in result["citations"][:3]:
-                lines.append({"type": "cite", "text": c.get("corpus_name") or c.get("title", "")})
+            cite_names = list(dict.fromkeys(
+                c.get("corpus_name") or c.get("title", "") for c in result["citations"] if c.get("corpus_name") or c.get("title")
+            ))
+            if cite_names:
+                lines.append({"type": "resp", "text": "Sources: " + " · ".join(cite_names)})
         return {"lines": lines, "context": {"state": "idle"}}
     except Exception as e:
         return {"lines": [{"type": "resp", "text": f"Search failed: {str(e)[:80]}"}], "context": {"state": "idle"}}
