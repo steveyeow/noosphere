@@ -31,42 +31,68 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   document.getElementById('lp-cta').onclick=document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph()}
 function drawLPGraph(){const co=document.getElementById('lp-cv');if(!co)return;const tk=m=>(m.d||'').split(/[,;]+/).map(d=>d.trim().toLowerCase()).filter(Boolean);const ns=DM.map((m,i)=>({id:'l'+i,name:m.n,dom:m.d,color:m.c,ini:m.n.split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk:tk(m)}));const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=ns[i].tk.filter(t=>ns[j].tk.some(u=>t===u||t.includes(u)||u.includes(t)));if(s.length)lk.push({source:ns[i].id,target:ns[j].id,s:s.length})}const dp=devicePixelRatio||1,W=co.clientWidth||800,H=co.clientHeight||600,BR=Math.max(14,Math.min(22,W/(ns.length*2.5)));const cv=document.createElement('canvas');cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';co.appendChild(cv);const cx=cv.getContext('2d');cx.scale(dp,dp);const pts=[];lk.forEach(l=>{for(let i=0;i<Math.max(1,Math.round(l.s*1.5));i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.2,op:.3+Math.random()*.5})});const gX=W*.55,zn=[{cx:W*.1+170,cy:H/2,hw:200,hh:120}];function av(){let n;function f(){for(const nd of n)for(const z of zn){const dx=nd.x-z.cx,dy=nd.y-z.cy,ox=z.hw-Math.abs(dx),oy=z.hh-Math.abs(dy);if(ox>0&&oy>0){if(ox<oy){nd.vx+=(dx>=0?1:-1)*ox*.08;nd.vx*=.85}else{nd.vy+=(dy>=0?1:-1)*oy*.08;nd.vy*=.85}}}}f.initialize=x=>{n=x};return f}const sim=d3.forceSimulation(ns).force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(55,220-d.s*50)).strength(d=>.08+d.s*.15)).force('charge',d3.forceManyBody().strength(-400).distanceMax(550)).force('center',d3.forceCenter(gX,H/2).strength(.02)).force('collision',d3.forceCollide().radius(BR+12)).force('avoid',av()).alphaDecay(.03).velocityDecay(.35);let hov=null,mp=null;cv.onmousemove=e=>{const r=cv.getBoundingClientRect();mp=[e.clientX-r.left,e.clientY-r.top];hov=null;for(const n of ns)if(Math.hypot(n.x-mp[0],n.y-mp[1])<BR+4){hov=n;break}cv.style.cursor=hov?'pointer':'default'};cv.onmouseleave=()=>{hov=null;mp=null};function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);for(const l of lk){const s=l.source,t=l.target;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${.1+l.s*.07})`;cx.lineWidth=.5+l.s*.3;cx.stroke()}for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.35})`;cx.fill()}for(const n of ns){const h=hov===n;let r=BR;if(mp){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<180?BR*(1+(1-d/180)*.45):BR*.8}if(h)r=Math.max(r,BR*1.35);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*1.8);g.addColorStop(0,`rgba(${cr},${cg},${cb},${h?.1:.04})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*1.8,0,Math.PI*2);cx.fillStyle=g;cx.fill();if(h){cx.beginPath();cx.arc(n.x,n.y,rr+2,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},.4)`;cx.lineWidth=1.5;cx.stroke()}cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);cx.fillStyle=n.color;cx.fill();cx.strokeStyle='rgba(255,255,255,.2)';cx.lineWidth=1;cx.stroke();cx.fillStyle='rgba(255,255,255,.92)';cx.font=`700 ${rr*.5}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${h?.9:.65})`:`rgba(30,35,50,${h?.85:.55})`;cx.font=`600 ${h?10:9}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+10)}cx.restore();_lpAnim=requestAnimationFrame(draw)}sim.on('tick',()=>{});_lpAnim=requestAnimationFrame(draw)}
 
-/* ══════ HOME — Terminal ══════ */
-const TERM_SCENARIOS=[[{type:'prompt',text:'noosphere add "My AI Research Blog"'},{type:'resp',text:'Creating corpus...',delay:800},{type:'card',delay:600,label:'Corpus Created',detail:'My AI Research Blog · Public',val:'MCP: localhost:8420/mcp',status:'READY'},{type:'resp',text:'Your knowledge is now discoverable by agents worldwide.',delay:1000}],[{type:'prompt',text:'noosphere write "RAG Best Practices"'},{type:'resp',text:'Opening editor...',delay:600},{type:'card',delay:500,label:'New Source',detail:'RAG Best Practices · 1,200 words',val:'Indexed: 8 chunks',status:'INDEXED'},{type:'resp',text:'Source added and indexed. Agents can now cite this content.',delay:1000}],[{type:'prompt',text:'noosphere upload ./blog-posts/*.md'},{type:'resp',text:'Uploading 15 files...',delay:1000},{type:'card',delay:800,label:'Upload Complete',detail:'15 sources · 45,000 words · 312 chunks',val:'Embedding: gemini-embedding-001',status:'READY'},{type:'resp',text:'All sources indexed. Share your MCP endpoint with any agent.',delay:1200}]];
+/* ══════ HOME — Interactive Terminal ══════ */
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
+const TERM_SUGGESTIONS=[
+  {text:'Import https://example.com/my-article',icon:'>'},
+  {text:'What is RAG and how does it work?',icon:'>'},
+  {text:'/status',icon:'>'},
+  {text:'/write',icon:'>'},
+];
+let _termCtx={};
 
 function renderHome(){
   hideRP();const ct=document.getElementById('content');
-  ct.innerHTML=`<div class="term-page"><div class="term-demo"><div class="term-header"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-ttl">noosphere</span></div><div class="term-body" id="term-body"></div></div><div class="term-actions"><div class="term-act" id="ta-write"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><div class="term-act-t">Write</div><div class="term-act-d">Write directly in the editor</div></div><div class="term-act" id="ta-upload"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><div class="term-act-t">Upload</div><div class="term-act-d">Upload files or import from URL</div></div></div></div>`;
-  document.getElementById('ta-write').onclick=()=>{location.hash='#/write'};
-  document.getElementById('ta-upload').onclick=()=>{location.hash='#/upload'};
-  initTermAnim();
+  ct.innerHTML=`<div class="term-page"><div class="term-demo"><div class="term-header"><div class="term-dots"><span></span><span></span><span></span></div><span class="term-ttl">noosphere</span></div><div class="term-body" id="term-body"></div><div class="term-input-wrap"><span class="term-caret">&gt;</span><input type="text" class="term-input" id="term-input" placeholder="Paste a URL, ask a question, or type / for shortcuts" autofocus /><span class="term-cursor-input">\u2588</span></div></div><div class="term-hints" id="term-hints"></div></div>`;
+
+  const body=document.getElementById('term-body');
+  const input=document.getElementById('term-input');
+  const hints=document.getElementById('term-hints');
+  _termCtx={};
+
+  renderSuggestions(hints);
+
+  input.addEventListener('keydown',async e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const val=input.value.trim();if(!val)return;
+      input.value='';input.disabled=true;
+      appendLine(body,{type:'prompt',text:val});
+      appendLine(body,{type:'resp',text:'Processing...',id:'term-loading'});
+      try{
+        const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
+        const d=await r.json();
+        document.getElementById('term-loading')?.remove();
+        _termCtx=d.context||{};
+        for(const line of(d.lines||[]))appendLine(body,line,hints);
+        if(d.context?.action==='open_write'){setTimeout(()=>{location.hash='#/write'},500)}
+      }catch(err){
+        document.getElementById('term-loading')?.remove();
+        appendLine(body,{type:'resp',text:'Error: '+err.message});
+      }
+      input.disabled=false;input.focus();body.scrollTop=body.scrollHeight;
+    }
+  });
 }
 
-function initTermAnim(){
-  const body=document.getElementById('term-body');if(!body)return;
-  let lines=[],visCnt=0,typing='',isTyping=false,si=0,origin=-1,queue=[],nextAt=0;
+function appendLine(body,line,hints){
+  const el=document.createElement('div');
+  if(line.id)el.id=line.id;
+  if(line.type==='prompt'){el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span><span>'+esc(line.text)+'</span>'}
+  else if(line.type==='resp'){el.className='term-line term-resp';el.textContent=line.text}
+  else if(line.type==='hint'){el.className='term-line term-resp';el.style.opacity='.6';el.textContent=line.text}
+  else if(line.type==='option'){el.className='term-line term-option';el.textContent=line.text;el.style.cursor='pointer';
+    el.onclick=()=>{const input=document.getElementById('term-input');if(input&&line.value){input.value=line.value;input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))}}}
+  else if(line.type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between"><span class="term-card-lbl">${esc(line.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[line.status]||'#6e6e73'}">${esc(line.status||'')}</span></div><div class="term-card-det">${esc(line.detail||'')}</div>${line.val?`<div class="term-card-val">${esc(line.val)}</div>`:''}`;
+    if(line.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+line.corpus_id}}}
+  else if(line.type==='cite'){el.className='term-line';el.innerHTML=`<span class="chat-cite">${esc(line.text)}</span>`}
+  else return;
+  body.appendChild(el);body.scrollTop=body.scrollHeight;
+}
 
-  function render(){body.innerHTML='';
-    if(!isTyping&&lines.length===0){const el=document.createElement('div');el.className='term-line term-prompt term-idle';el.innerHTML='<span class="term-caret">&gt;</span><span class="term-cursor">\u2588</span>';body.appendChild(el)}
-    if(isTyping){const el=document.createElement('div');el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span><span>'+esc(typing)+'</span><span class="term-cursor">\u2588</span>';body.appendChild(el)}
-    for(let i=0;i<Math.min(visCnt,lines.length);i++){const l=lines[i];
-      if(l.type==='prompt'){const el=document.createElement('div');el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span><span>'+esc(l.text)+'</span>';body.appendChild(el)}
-      else if(l.type==='resp'){const el=document.createElement('div');el.className='term-line term-resp';el.textContent=l.text;body.appendChild(el)}
-      else if(l.type==='card'){const el=document.createElement('div');el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between"><span class="term-card-lbl">${esc(l.label)}</span><span class="term-status" style="color:${TERM_STATUS_C[l.status]||'#6e6e73'}">${esc(l.status||'')}</span></div><div class="term-card-det">${esc(l.detail)}</div>${l.val?`<div class="term-card-val">${esc(l.val)}</div>`:''}`;body.appendChild(el)}}
-    if(!isTyping&&visCnt>=lines.length&&lines.length>0){const el=document.createElement('div');el.className='term-line term-prompt term-idle';el.innerHTML='<span class="term-caret">&gt;</span><span class="term-cursor">\u2588</span>';body.appendChild(el)}
-    body.scrollTop=body.scrollHeight}
-
-  function enq(base){const sc=TERM_SCENARIOS[si%TERM_SCENARIOS.length];si++;const prompt=sc[0]?.text||'';
-    queue.push({at:base,fn:()=>{isTyping=true;typing='';lines=[];visCnt=0;render()}});
-    let t=base;for(let i=0;i<prompt.length;i++){t+=35;(p=>{queue.push({at:t,fn:()=>{typing=p;render()}})})(prompt.substring(0,i+1))}
-    t+=400;queue.push({at:t,fn:()=>{isTyping=false;lines=sc;visCnt=1;render()}});
-    for(let i=1;i<sc.length;i++){t+=(sc[i].delay||800);(cnt=>{queue.push({at:t,fn:()=>{visCnt=cnt;render()}})})(i+1)}
-    nextAt=t+3500}
-
-  render();enq(2000);
-  function tick(now){if(origin<0)origin=now;const el=now-origin;while(queue.length&&queue[0].at<=el){queue.shift().fn()}if(!queue.length&&el>=nextAt)enq(nextAt);_termAnim=requestAnimationFrame(tick)}
-  _termAnim=requestAnimationFrame(tick);
+function renderSuggestions(el){
+  el.innerHTML='<div class="term-hint-label">/ for shortcuts</div>'+TERM_SUGGESTIONS.map(s=>`<div class="term-suggestion"><span class="term-caret">&gt;</span> ${esc(s.text)}</div>`).join('');
+  el.querySelectorAll('.term-suggestion').forEach((s,i)=>{s.onclick=()=>{const input=document.getElementById('term-input');if(input){input.value=TERM_SUGGESTIONS[i].text;input.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))}}});
 }
 
 /* ══════ WRITE ══════ */

@@ -27,6 +27,11 @@ class ChatRequest(BaseModel):
     top_k: int = 5
 
 
+class TerminalRequest(BaseModel):
+    input: str
+    context: dict = {}
+
+
 class CreateCorpusRequest(BaseModel):
     name: str
     description: str = ""
@@ -46,6 +51,13 @@ class UpdateCorpusRequest(BaseModel):
 class IngestURLRequest(BaseModel):
     url: str
     doc_type: str = "blog"
+
+
+@router.post("/terminal")
+async def api_terminal(req: TerminalRequest):
+    """Interactive terminal command handler."""
+    from noosphere.core.terminal import handle_terminal_input
+    return handle_terminal_input(req.input, req.context)
 
 
 def _resolve_corpus(corpus_id: str) -> dict:

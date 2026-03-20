@@ -61,12 +61,17 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 @keyframes termFadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
 @keyframes cursorBlink{0%,100%{opacity:.6}50%{opacity:0}}
 
-.term-actions{display:flex;gap:14px}
-.term-act{width:160px;padding:20px 16px;border-radius:14px;border:1px solid var(--brd);background:var(--bg2);cursor:pointer;text-align:center;transition:all .15s}
-.term-act:hover{border-color:var(--acc);box-shadow:var(--shM)}
-.term-act svg{margin-bottom:8px;color:var(--acc)}
-.term-act-t{font-size:13px;font-weight:600;margin-bottom:3px}
-.term-act-d{font-size:11px;color:var(--tx3);line-height:1.3}
+.term-input-wrap{display:flex;align-items:center;gap:6px;padding:6px 18px 14px;border-top:1px solid rgba(255,255,255,.06)}
+.term-input{flex:1;background:transparent;border:none;outline:none;color:#e6edf3;font-family:var(--mono);font-size:13px;line-height:1.5;caret-color:transparent}
+.term-input::placeholder{color:rgba(255,255,255,.25)}
+.term-input:disabled{opacity:.5}
+.term-cursor-input{color:#e6edf3;animation:cursorBlink 1.1s step-end infinite;font-size:13px}
+.term-option{cursor:pointer;padding:2px 0;transition:color .12s}.term-option:hover{color:#e6edf3!important}
+.term-hints{max-width:560px;width:100%;margin-top:12px}
+.term-hint-label{font-size:11px;color:var(--tx3);margin-bottom:6px;padding-left:4px}
+.term-suggestion{font-family:var(--mono);font-size:12px;color:var(--tx2);padding:5px 8px;border-radius:6px;cursor:pointer;transition:all .12s;display:flex;align-items:center;gap:6px}
+.term-suggestion:hover{background:var(--bgH);color:var(--tx)}
+.term-suggestion .term-caret{color:var(--acc);font-weight:700}
 
 /* ── My Corpora view ── */
 .mc-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--brd)}
