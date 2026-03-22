@@ -1,10 +1,12 @@
 """SQLite database initialisation and access."""
 
 import sqlite3
+import threading
 from pathlib import Path
 from noosphere.core.config import DATA_DIR, DB_PATH
 
 _conn: sqlite3.Connection | None = None
+_lock = threading.Lock()
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS corpora (
@@ -92,18 +94,21 @@ CREATE INDEX IF NOT EXISTS idx_queries_corpus ON query_logs(corpus_id, created_a
 
 def get_conn() -> sqlite3.Connection:
     global _conn
-    if _conn is None:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA foreign_keys=ON")
-        _conn.executescript(SCHEMA_SQL)
-    return _conn
+    with _lock:
+        if _conn is None:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+            _conn.row_factory = sqlite3.Row
+            _conn.execute("PRAGMA journal_mode=WAL")
+            _conn.execute("PRAGMA foreign_keys=ON")
+            _conn.execute("PRAGMA busy_timeout=5000")
+            _conn.executescript(SCHEMA_SQL)
+        return _conn
 
 
 def close():
     global _conn
-    if _conn:
-        _conn.close()
-        _conn = None
+    with _lock:
+        if _conn:
+            _conn.close()
+            _conn = None

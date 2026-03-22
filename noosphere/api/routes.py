@@ -3,16 +3,78 @@
 import json as _json
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
 from pydantic import BaseModel
 
 from noosphere import __version__
 from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus
-from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document
+from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
+from noosphere.core.access import check_access, AccessDenied
 from noosphere.core.db import get_conn
 
 router = APIRouter()
+
+_registry_connected: bool = False
+
+
+def set_registry_connected(value: bool):
+    global _registry_connected
+    _registry_connected = value
+
+
+def _extract_bearer(request: Request) -> str | None:
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return None
+
+
+def _is_owner_request(request: Request) -> bool:
+    """Check if the request comes from the owner (local web UI or localhost).
+
+    In self-hosted mode, the person running the server is the owner.
+    Access control only restricts external agent/API consumers.
+    Owner is identified by: connecting from localhost, or having a
+    same-origin Referer, or not having an X-Agent-ID header while
+    connecting from the local network.
+    """
+    if request.headers.get("x-agent-id"):
+        return False
+
+    client = request.client
+    if client:
+        host = client.host or ""
+        if host in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+            return True
+
+    referer = request.headers.get("referer", "")
+    if referer:
+        base = str(request.base_url).rstrip("/")
+        if referer.startswith(base):
+            return True
+        if "://localhost:" in referer or "://127.0.0.1:" in referer:
+            return True
+
+    origin = request.headers.get("origin", "")
+    if origin and ("://localhost:" in origin or "://127.0.0.1:" in origin):
+        return True
+
+    return False
+
+
+def _check_corpus_access(corpus: dict, request: Request) -> str | None:
+    """Enforce access control. Returns token_id if token auth was used.
+
+    Owner requests from the web UI bypass access control (self-hosted
+    mode: the person running the server owns all corpora).
+    """
+    if _is_owner_request(request):
+        return None
+    try:
+        return check_access(corpus, _extract_bearer(request))
+    except AccessDenied as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
 class SearchRequest(BaseModel):
@@ -48,9 +110,20 @@ class UpdateCorpusRequest(BaseModel):
     tags: Optional[list[str]] = None
 
 
+class UpdateDocumentRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
 class IngestURLRequest(BaseModel):
     url: str
     doc_type: str = "blog"
+
+
+class CreateTokenRequest(BaseModel):
+    label: str = ""
+    permissions: str = "read"
+    expires_at: str | None = None
 
 
 @router.post("/terminal")
@@ -69,15 +142,28 @@ def _resolve_corpus(corpus_id: str) -> dict:
 
 @router.get("/health")
 async def api_health():
-    corpora = list_corpora()
-    return {"status": "ok", "version": __version__, "corpus_count": len(corpora)}
+    corpora = list_corpora(include_private=True)
+    return {
+        "status": "ok",
+        "version": __version__,
+        "corpus_count": len(corpora),
+        "registry_connected": _registry_connected,
+    }
+
+
+# ── Profile ──
+
+@router.get("/me")
+async def api_me():
+    from noosphere.core.config import OWNER_NAME
+    return {"name": OWNER_NAME}
 
 
 # ── Corpus CRUD ──
 
 @router.get("/corpora")
-async def api_list_corpora():
-    return list_corpora()
+async def api_list_corpora(request: Request):
+    return list_corpora(include_private=_is_owner_request(request))
 
 
 @router.post("/corpora")
@@ -90,8 +176,8 @@ async def api_create_corpus(req: CreateCorpusRequest):
 
 
 @router.get("/corpora/network")
-async def api_corpus_network():
-    corpora = list_corpora()
+async def api_corpus_network(request: Request):
+    corpora = list_corpora(include_private=_is_owner_request(request))
     nodes = []
     for c in corpora:
         tags = c.get("tags", [])
@@ -129,8 +215,10 @@ async def api_corpus_network():
 
 
 @router.get("/corpora/{corpus_id}")
-async def api_get_corpus(corpus_id: str):
-    return _resolve_corpus(corpus_id)
+async def api_get_corpus(corpus_id: str, request: Request):
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    return corpus
 
 
 @router.patch("/corpora/{corpus_id}")
@@ -153,18 +241,32 @@ async def api_delete_corpus(corpus_id: str):
 # ── Documents ──
 
 @router.get("/corpora/{corpus_id}/documents")
-async def api_list_documents(corpus_id: str):
+async def api_list_documents(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     return get_documents(corpus["id"])
 
 
 @router.get("/corpora/{corpus_id}/documents/{doc_id}")
-async def api_get_document(corpus_id: str, doc_id: str):
-    _resolve_corpus(corpus_id)
+async def api_get_document(corpus_id: str, doc_id: str, request: Request):
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     doc = get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+
+@router.patch("/corpora/{corpus_id}/documents/{doc_id}")
+async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest):
+    _resolve_corpus(corpus_id)
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = update_document(doc_id, **updates)
+    if not result:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return result
 
 
 @router.delete("/corpora/{corpus_id}/documents/{doc_id}")
@@ -304,23 +406,35 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest):
 async def api_index_corpus(corpus_id: str, background_tasks: BackgroundTasks = None):
     corpus = _resolve_corpus(corpus_id)
     from noosphere.core.indexer import index_corpus
-    result = index_corpus(corpus["id"])
-    return result
+    try:
+        result = index_corpus(corpus["id"])
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Search ──
 
 @router.post("/corpora/{corpus_id}/search")
-async def api_search(corpus_id: str, req: SearchRequest):
+async def api_search(corpus_id: str, req: SearchRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
-    return search_corpus(corpus["id"], req.query, top_k=req.top_k, include_context=req.include_context)
+    token_id = _check_corpus_access(corpus, request)
+    agent_id = request.headers.get("x-agent-id", "")
+    return search_corpus(
+        corpus["id"], req.query, top_k=req.top_k,
+        include_context=req.include_context,
+        agent_id=agent_id, token_id=token_id,
+    )
 
 
 # ── Stats & Topics ──
 
 @router.get("/corpora/{corpus_id}/stats")
-async def api_stats(corpus_id: str):
+async def api_stats(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     return {
         "corpus_id": corpus["id"], "name": corpus["name"],
         "document_count": corpus["document_count"],
@@ -334,8 +448,9 @@ async def api_stats(corpus_id: str):
 
 
 @router.get("/corpora/{corpus_id}/topics")
-async def api_topics(corpus_id: str):
+async def api_topics(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     docs = get_documents(corpus["id"])
     topics = set()
     for src in [corpus.get("tags", [])]:
@@ -354,13 +469,58 @@ async def api_topics(corpus_id: str):
     return {"topics": sorted(topics)}
 
 
+# ── Export ──
+
+@router.get("/corpora/{corpus_id}/export")
+async def api_export_corpus(corpus_id: str):
+    """Export a corpus as a ZIP file."""
+    corpus = _resolve_corpus(corpus_id)
+    from noosphere.core.export import export_corpus
+    from fastapi.responses import StreamingResponse
+    buf = export_corpus(corpus["id"])
+    slug = corpus.get("slug", corpus_id)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.zip"'},
+    )
+
+
+# ── Access Tokens ──
+
+@router.post("/corpora/{corpus_id}/tokens")
+async def api_create_token(corpus_id: str, req: CreateTokenRequest):
+    """Create an access token for a corpus. Returns plaintext token (one-time)."""
+    corpus = _resolve_corpus(corpus_id)
+    from noosphere.core.tokens import create_token
+    return create_token(corpus["id"], label=req.label, permissions=req.permissions, expires_at=req.expires_at)
+
+
+@router.get("/corpora/{corpus_id}/tokens")
+async def api_list_tokens(corpus_id: str):
+    """List all access tokens for a corpus (without hashes)."""
+    corpus = _resolve_corpus(corpus_id)
+    from noosphere.core.tokens import list_tokens
+    return list_tokens(corpus["id"])
+
+
+@router.delete("/corpora/{corpus_id}/tokens/{token_id}")
+async def api_revoke_token(corpus_id: str, token_id: str):
+    """Revoke an access token."""
+    _resolve_corpus(corpus_id)
+    from noosphere.core.tokens import revoke_token
+    if not revoke_token(token_id):
+        raise HTTPException(status_code=404, detail="Token not found")
+    return {"status": "revoked"}
+
+
 # ── Query Logs / Analytics ──
 
 @router.post("/search")
 async def api_global_search(req: SearchRequest):
     """Search across ALL public corpora."""
     corpora = list_corpora()
-    ready = [c for c in corpora if c.get("status") == "ready"]
+    ready = [c for c in corpora if c.get("status") == "ready" and c.get("access_level") == "public"]
     if not ready:
         return {"results": [], "corpora_searched": 0}
 
@@ -392,16 +552,18 @@ async def api_global_chat(req: ChatRequest):
 
 
 @router.post("/corpora/{corpus_id}/chat")
-async def api_corpus_chat(corpus_id: str, req: ChatRequest):
+async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     """Chat with a specific corpus."""
     corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     from noosphere.core.chat import chat_with_corpus
     return chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
 
 
 @router.get("/corpora/{corpus_id}/analytics")
-async def api_analytics(corpus_id: str, limit: int = 50):
+async def api_analytics(corpus_id: str, request: Request, limit: int = 50):
     corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM query_logs WHERE corpus_id=? ORDER BY created_at DESC LIMIT ?",

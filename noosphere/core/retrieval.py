@@ -126,6 +126,8 @@ def search_corpus(
     top_k: int = 5,
     include_context: bool = True,
     provider: str = "",
+    agent_id: str = "",
+    token_id: str | None = None,
 ) -> dict:
     """Semantic search over a corpus. Returns ranked results with citations."""
     start = time.time()
@@ -202,7 +204,7 @@ def search_corpus(
 
     latency = int((time.time() - start) * 1000)
 
-    _log_query(corpus_id, query, len(results), latency)
+    _log_query(corpus_id, query, len(results), latency, agent_id=agent_id, token_id=token_id)
 
     return {
         "results": results,
@@ -233,12 +235,22 @@ def search_chunks(corpus_id: str, query_vec: np.ndarray, top_k: int = 5) -> list
     return [{"score": s, **r} for s, r in scored[:top_k]]
 
 
-def _log_query(corpus_id: str, query_text: str, result_count: int, latency_ms: int):
+def _log_query(
+    corpus_id: str,
+    query_text: str,
+    result_count: int,
+    latency_ms: int,
+    *,
+    agent_id: str = "",
+    token_id: str | None = None,
+):
     try:
         conn = get_conn()
         conn.execute(
-            "INSERT INTO query_logs (id, corpus_id, query_text, result_count, latency_ms, created_at) VALUES (?,?,?,?,?,?)",
-            (uuid.uuid4().hex[:12], corpus_id, query_text, result_count, latency_ms, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO query_logs (id, corpus_id, query_text, result_count, token_id, agent_id, latency_ms, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (uuid.uuid4().hex[:12], corpus_id, query_text, result_count,
+             token_id or "", agent_id or "", latency_ms, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     except Exception:

@@ -77,10 +77,15 @@ def get_corpus_by_slug(slug: str) -> dict | None:
     return _row_to_dict(row)
 
 
-def list_corpora() -> list[dict]:
-    rows = get_conn().execute(
-        "SELECT * FROM corpora WHERE access_level != 'private' ORDER BY updated_at DESC"
-    ).fetchall()
+def list_corpora(*, include_private: bool = False) -> list[dict]:
+    if include_private:
+        rows = get_conn().execute(
+            "SELECT * FROM corpora ORDER BY updated_at DESC"
+        ).fetchall()
+    else:
+        rows = get_conn().execute(
+            "SELECT * FROM corpora WHERE access_level != 'private' ORDER BY updated_at DESC"
+        ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 

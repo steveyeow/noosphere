@@ -481,16 +481,21 @@ Deliverables:
 - [x] Health endpoint + /.well-known/noosphere.json
 - [x] Registry client (auto-registration)
 - [x] RetrievalEngine abstraction (local + remote)
-- [ ] Web frontend redesign: agent-native UX (global search, prominent endpoints, inline docs)
-- [ ] Global search across all corpora
-- [ ] README with quick start guide
+- [x] Web frontend redesign: agent-native UX (terminal, prominent endpoints, inline docs)
+- [x] Global search across all corpora
+- [x] README with quick start guide
+- [x] Token-gated access (generate/revoke access keys)
+- [x] PDF / DOCX / CSV / JSON ingestion
+- [x] Export (SPEC-compliant ZIP format)
+- [x] RAG chat with corpus and cross-corpus chat
+- [x] Access control (public / private / token / paid placeholder)
+- [x] Query logging with agent_id tracking
+- [x] Test suite (115+ tests, CI for Python 3.11–3.13)
 
-### Phase 2: Access control + payments
+### Phase 2: Payments + cloud
 
-- [ ] Token-gated access (generate/revoke access keys)
 - [ ] Stripe integration for paid corpora (self-hosted: own keys)
 - [ ] `noosphere/cloud/` — managed auth, quota, Stripe Connect (BSL)
-- [ ] PDF ingestion
 
 ### Phase 3: Registry + hosted platform
 

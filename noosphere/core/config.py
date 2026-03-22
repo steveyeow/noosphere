@@ -24,6 +24,12 @@ CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "50"))
 
 ENABLE_CLOUD = os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes")
 
+import getpass as _getpass
+_raw = os.getenv("OWNER_EMAIL", "") or os.getenv("OWNER_NAME", "")
+if _raw and "@" in _raw:
+    _raw = _raw.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ")
+OWNER_NAME = _raw.strip().title() if _raw.strip() else _getpass.getuser().title()
+
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 

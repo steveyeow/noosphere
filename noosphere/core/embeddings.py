@@ -89,11 +89,19 @@ class GeminiEmbedder(EmbeddingProvider):
 
 
 def get_embedder(provider: str = "") -> EmbeddingProvider:
-    """Auto-detect available provider or use the specified one."""
-    if provider == "openai" or (not provider and OPENAI_API_KEY):
+    """Auto-detect available provider or use the specified one.
+
+    When both keys are configured and no provider is specified,
+    Gemini is preferred (higher free-tier rate limits).
+    """
+    if provider == "openai":
         return OpenAIEmbedder()
-    if provider == "gemini" or (not provider and GEMINI_API_KEY):
+    if provider == "gemini":
         return GeminiEmbedder()
+    if GEMINI_API_KEY:
+        return GeminiEmbedder()
+    if OPENAI_API_KEY:
+        return OpenAIEmbedder()
     raise ValueError("No embedding provider configured. Set OPENAI_API_KEY or GEMINI_API_KEY in .env")
 
 

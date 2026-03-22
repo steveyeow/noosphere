@@ -47,11 +47,63 @@ def _is_url(text: str) -> bool:
     return bool(re.match(r'https?://', text.strip()))
 
 
+def _resolve_corpus_or_prompt(*, url: str = "", write_content: str = "", write_title: str = "") -> dict:
+    """Pick a corpus automatically or prompt the user to choose.
+
+    - 0 corpora → create "My Knowledge" and use it
+    - 1 corpus → use it directly
+    - 2+ corpora → show numbered list + "New corpus" option, enter pick_corpus state
+    """
+    corpora = list_corpora(include_private=True)
+
+    if len(corpora) == 0:
+        corpus = create_corpus("My Knowledge", access_level="public")
+        return {"corpus": corpus, "prompt": None}
+
+    if len(corpora) == 1:
+        return {"corpus": corpora[0], "prompt": None}
+
+    lines = [{"type": "resp", "text": "Which corpus should this go into?"}]
+    ids = []
+    for i, c in enumerate(corpora, 1):
+        lines.append({
+            "type": "option",
+            "text": f"[{i}] {c['name']} ({c['document_count']} documents)",
+            "value": str(i),
+        })
+        ids.append(c["id"])
+    lines.append({
+        "type": "option",
+        "text": f"[{len(corpora) + 1}] + Create new corpus",
+        "value": str(len(corpora) + 1),
+    })
+
+    return {
+        "corpus": None,
+        "prompt": {
+            "lines": lines,
+            "context": {
+                "state": "pick_corpus",
+                "corpora_ids": ids,
+                "url": url,
+                "write_content": write_content,
+                "write_title": write_title,
+            },
+        },
+    }
+
+
 def _handle_url(url: str) -> dict:
     lines = [{"type": "resp", "text": f"Fetching {url}..."}]
 
-    corpora = list_corpora()
-    corpus = corpora[0] if corpora else create_corpus("My Knowledge", access_level="public")
+    result = _resolve_corpus_or_prompt(url=url)
+    if result["prompt"]:
+        fetch_lines = list(lines)
+        prompt = result["prompt"]
+        prompt["lines"] = fetch_lines + prompt["lines"]
+        return prompt
+
+    corpus = result["corpus"]
     corpus_name = corpus["name"]
     cid = corpus["id"]
 
@@ -59,11 +111,11 @@ def _handle_url(url: str) -> dict:
         doc = ingest_url(cid, url)
         lines.append({"type": "resp", "text": f'✓ Extracted: "{doc["title"]}" · {doc["word_count"]} words'})
         lines.append({"type": "resp", "text": f"Indexing into {corpus_name}..."})
-        result = index_corpus(cid)
-        lines.append({"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"})
+        idx = index_corpus(cid)
+        lines.append({"type": "resp", "text": f"✓ Indexed: {idx['chunk_count']} chunks"})
         lines.append({"type": "card", "label": "Source Added", "status": "READY",
                        "detail": f'{doc["title"]} · {corpus_name}',
-                       "val": f'{result["chunk_count"]} chunks · {doc["word_count"]} words',
+                       "val": f'{idx["chunk_count"]} chunks · {doc["word_count"]} words',
                        "corpus_id": cid})
         lines.append({"type": "resp", "text": "Agents can now cite this content."})
     except Exception as e:
@@ -99,8 +151,7 @@ def _handle_corpus_pick(text: str, ctx: dict) -> dict:
     try:
         if url:
             doc = ingest_url(cid, url)
-            lines.append({"type": "resp", "text": f'✓ Extracted: "{doc["title"]}"'})
-            lines.append({"type": "resp", "text": f'✓ {doc["word_count"]} words'})
+            lines.append({"type": "resp", "text": f'✓ Extracted: "{doc["title"]}" · {doc["word_count"]} words'})
         elif write_content:
             doc = ingest_text(cid, title=write_title or "Untitled", content=write_content)
             lines.append({"type": "resp", "text": f'✓ Saved: "{doc["title"]}"'})
@@ -133,13 +184,13 @@ def _handle_slash(text: str) -> dict:
         }
 
     if cmd == "/status":
-        corpora = list_corpora()
+        corpora = list_corpora(include_private=True)
         if not corpora:
             return {"lines": [{"type": "resp", "text": "No corpora yet. Paste a URL to get started."}], "context": {"state": "idle"}}
         lines = [{"type": "resp", "text": f"{len(corpora)} corpora:"}]
         for c in corpora:
             lines.append({"type": "card", "label": c["name"], "status": c["status"].upper(),
-                          "detail": f'{c["document_count"]} sources · {c["chunk_count"]} chunks · {c["word_count"]} words',
+                          "detail": f'{c["document_count"]} documents · {c["chunk_count"]} chunks · {c["word_count"]} words',
                           "corpus_id": c["id"]})
         return {"lines": lines, "context": {"state": "idle"}}
 
@@ -172,16 +223,19 @@ def _suggest_write_or_search(text: str) -> dict:
 def _handle_write_confirm(text: str, ctx: dict) -> dict:
     original = ctx.get("original_text", "")
     if text.strip() == "1":
-        corpora = list_corpora()
-        corpus = corpora[0] if corpora else create_corpus("My Knowledge", access_level="public")
+        result = _resolve_corpus_or_prompt(write_content=original, write_title="Note")
+        if result["prompt"]:
+            return result["prompt"]
+
+        corpus = result["corpus"]
         doc = ingest_text(corpus["id"], title="Note", content=original)
-        result = index_corpus(corpus["id"])
+        idx = index_corpus(corpus["id"])
         return {
             "lines": [
                 {"type": "resp", "text": f'✓ Saved to "{corpus["name"]}"'},
-                {"type": "resp", "text": f"✓ Indexed: {result['chunk_count']} chunks"},
+                {"type": "resp", "text": f"✓ Indexed: {idx['chunk_count']} chunks"},
                 {"type": "card", "label": "Source Added", "status": "READY",
-                 "detail": f'{corpus["name"]} · {result["chunk_count"]} chunks',
+                 "detail": f'{corpus["name"]} · {idx["chunk_count"]} chunks',
                  "corpus_id": corpus["id"]},
             ],
             "context": {"state": "idle"},
@@ -194,7 +248,7 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
 
 
 def _handle_question(text: str) -> dict:
-    corpora = list_corpora()
+    corpora = list_corpora(include_private=True)
     ready = [c for c in corpora if c.get("status") == "ready"]
 
     if not ready:

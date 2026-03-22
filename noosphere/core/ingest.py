@@ -201,6 +201,36 @@ def _update_corpus_counts(corpus_id: str):
     conn.commit()
 
 
+def update_document(
+    doc_id: str,
+    *,
+    title: str | None = None,
+    content: str | None = None,
+) -> dict | None:
+    """Update a document's title and/or content. Re-calculates word count if content changes."""
+    conn = get_conn()
+    doc = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+    if not doc:
+        return None
+
+    new_title = title if title is not None else doc["title"]
+    new_content = content if content is not None else doc["content"]
+    new_wc = _word_count(new_content) if content is not None else doc["word_count"]
+
+    conn.execute(
+        "UPDATE documents SET title=?, content=?, word_count=? WHERE id=?",
+        (new_title, new_content, new_wc, doc_id),
+    )
+    conn.commit()
+
+    if content is not None:
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
+        conn.commit()
+
+    _update_corpus_counts(doc["corpus_id"])
+    return dict(conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone())
+
+
 def delete_document(doc_id: str) -> bool:
     conn = get_conn()
     doc = conn.execute("SELECT corpus_id FROM documents WHERE id=?", (doc_id,)).fetchone()

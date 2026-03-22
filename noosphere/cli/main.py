@@ -113,6 +113,8 @@ def serve(port, host, no_registry, registry_url, public_url):
     click.echo(f"  MCP:       http://{host}:{port}/mcp")
     click.echo(f"  Manifest:  http://{host}:{port}/.well-known/noosphere.json")
 
+    from noosphere.api.routes import set_registry_connected
+
     if not no_registry:
         registry = registry_url or NOOSPHERE_REGISTRY
         if registry:
@@ -122,6 +124,7 @@ def serve(port, host, no_registry, registry_url, public_url):
             ok = register_with_registry(endpoint, registry_url=registry)
             if ok:
                 click.echo("  Registered with discovery registry")
+                set_registry_connected(True)
             else:
                 click.echo("  Registry registration skipped (registry may be unreachable)")
     else:
@@ -135,7 +138,7 @@ def list_cmd():
     """List all corpora."""
     from noosphere.core.corpus import list_corpora
 
-    corpora = list_corpora()
+    corpora = list_corpora(include_private=True)
     if not corpora:
         click.echo("No corpora found. Create one with: noosphere init <directory> --name <name>")
         return
@@ -179,11 +182,9 @@ def search(corpus, query):
 @click.option("--corpus", required=True, help="Corpus ID or slug")
 @click.option("--output", default="", help="Output file path (default: <slug>.zip)")
 def export(corpus, output):
-    """Export a corpus as a portable zip package."""
-    import json
-    import zipfile
+    """Export a corpus as a portable zip package (SPEC-compliant format)."""
     from noosphere.core.corpus import get_corpus, get_corpus_by_slug
-    from noosphere.core.ingest import get_documents
+    from noosphere.core.export import export_corpus
 
     c = get_corpus(corpus) or get_corpus_by_slug(corpus)
     if not c:
@@ -191,18 +192,11 @@ def export(corpus, output):
         raise SystemExit(1)
 
     out_path = output or f"{c['slug']}.zip"
-    docs = get_documents(c["id"])
+    buf = export_corpus(c["id"])
+    with open(out_path, "wb") as f:
+        f.write(buf.read())
 
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("noosphere.json", json.dumps(c, indent=2, ensure_ascii=False))
-        for doc in docs:
-            filename = f"documents/{doc['id']}.md"
-            content = doc.get("content", "")
-            title = doc.get("title", "")
-            header = f"---\ntitle: {title}\ndate: {doc.get('date', '')}\n---\n\n"
-            zf.writestr(filename, header + content)
-
-    click.echo(f"Exported {len(docs)} documents to {out_path}")
+    click.echo(f"Exported to {out_path} (SPEC-compliant format)")
 
 
 def main():

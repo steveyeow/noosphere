@@ -8,6 +8,7 @@ import json
 from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug
 from noosphere.core.ingest import get_documents, get_document
 from noosphere.core.retrieval import search_corpus
+from noosphere.core.access import check_access, AccessDenied
 
 
 TOOLS = [
@@ -92,13 +93,37 @@ def _resolve(corpus_id: str) -> dict | None:
     return get_corpus(corpus_id) or get_corpus_by_slug(corpus_id)
 
 
-def handle_tool_call(name: str, arguments: dict) -> dict:
-    """Execute an MCP tool call and return the result."""
+def _check_mcp_access(corpus: dict, bearer_token: str | None):
+    """Enforce access control for MCP calls. Raises AccessDenied on failure."""
+    check_access(corpus, bearer_token)
+
+
+def handle_tool_call(
+    name: str,
+    arguments: dict,
+    *,
+    bearer_token: str | None = None,
+    agent_id: str = "",
+) -> dict:
+    """Execute an MCP tool call and return the result.
+
+    Raises AccessDenied if the corpus requires authentication.
+    """
     if name == "search":
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        result = search_corpus(c["id"], arguments["query"], top_k=arguments.get("top_k", 5))
+        token_id = None
+        if bearer_token:
+            from noosphere.core.tokens import validate_token
+            token_id = validate_token(c["id"], bearer_token)
+        _check_mcp_access(c, bearer_token)
+        result = search_corpus(
+            c["id"], arguments["query"],
+            top_k=arguments.get("top_k", 5),
+            agent_id=agent_id,
+            token_id=token_id,
+        )
         return result
 
     elif name == "list_corpora":
@@ -113,6 +138,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        _check_mcp_access(c, bearer_token)
         doc = get_document(arguments["document_id"])
         if not doc:
             return {"error": f"Document not found: {arguments['document_id']}"}
@@ -122,6 +148,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        _check_mcp_access(c, bearer_token)
         docs = get_documents(c["id"])
         return {"documents": [{"id": d["id"], "title": d["title"],
                                "doc_type": d.get("doc_type", ""),
@@ -132,6 +159,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        _check_mcp_access(c, bearer_token)
         return {
             "corpus_id": c["id"], "name": c["name"],
             "document_count": c["document_count"],
@@ -145,6 +173,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        _check_mcp_access(c, bearer_token)
         docs = get_documents(c["id"])
         topics = set()
         corpus_tags = c.get("tags", [])
@@ -167,6 +196,7 @@ def handle_tool_call(name: str, arguments: dict) -> dict:
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        _check_mcp_access(c, bearer_token)
         return c
 
     return {"error": f"Unknown tool: {name}"}

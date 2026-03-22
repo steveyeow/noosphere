@@ -1,6 +1,7 @@
 """FastAPI application — REST API + static frontend."""
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,9 +11,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from noosphere import __version__
 from noosphere.api.routes import router as api_router
 from noosphere.mcp.routes import router as mcp_router
-from noosphere.core.db import get_conn
+from noosphere.core.db import get_conn, close as db_close
 
-app = FastAPI(title="Noosphere", version=__version__)
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(app):
+    get_conn()
+    yield
+    db_close()
+
+
+app = FastAPI(title="Noosphere", version=__version__, lifespan=lifespan)
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(mcp_router)
@@ -26,13 +37,6 @@ if os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
         app.middleware("http")(quota_middleware)
     except ImportError:
         pass
-
-STATIC_DIR = Path(__file__).parent / "static"
-
-
-@app.on_event("startup")
-def startup():
-    get_conn()
 
 
 @app.get("/.well-known/noosphere.json")
@@ -74,7 +78,7 @@ if STATIC_DIR.is_dir():
 
     @app.get("/{path:path}")
     async def serve_spa(path: str):
-        if path.startswith("api/") or path.startswith(".well-known/"):
+        if path.startswith("api/") or path.startswith(".well-known/") or path.startswith("mcp"):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         file_path = STATIC_DIR / path
         if file_path.is_file():

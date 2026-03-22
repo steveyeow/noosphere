@@ -1,88 +1,55 @@
-# Next Session: Terminal Polish — Copy AigisPay Dashboard Style
+# Completed: Open-Source Launch Readiness
 
-## Reference
-AigisPay dashboard screenshot: `assets/image-cfe40437-3a4a-4e3e-87f8-80dc6f316e68.png`
+All features from the launch plan have been implemented. Here's what was done:
 
-The AigisPay dashboard has this exact layout that we need to replicate:
+## Phase A: Access Control (Security Baseline)
+- [x] `noosphere/core/access.py` — `check_access()` middleware enforcing public/private/token/paid levels
+- [x] `noosphere/core/tokens.py` — Token CRUD: create, list, revoke, validate (SHA-256 hashed)
+- [x] API endpoints: POST/GET/DELETE `/corpora/:id/tokens`
+- [x] Access checks on all read endpoints (REST + MCP)
+- [x] Token management UI in right panel (generate, copy, revoke)
+- [x] `paid` access level disabled with "Phase 2" tooltip
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│                   Evening, Alice                            │
-│                       🤖                                    │
-│               $4,087.75  $740 in escrow                     │
-│            ● Bronze · 1 trade · 0x742b...                   │
-│                                                       + New │
-│─────────────────────────────────────────────────────────────│
-│                                                             │
-│  > █ Describe a trade, or pick one below                    │
-│                                                             │
-│    / for shortcuts                                          │
-│                                                             │
-│    > Sell a Steam account with 500 hours on CS2             │
-│    > Trade in-game currency for 50 USDC                     │
-│    > Freelance logo design, 3 revisions included            │
-│    > Pay my driver $25 for an airport ride                  │
-│                                                             │
-│                                                             │
-│                                                             │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
+## Phase B: Global Search UI
+- [x] Terminal handler renders search results with score/title/source cards
+- [x] Corpus detail: Search | Chat tab toggle
+- [x] Search tab calls `POST /corpora/:id/search` and displays cited passages
 
-## Exact Changes Needed
+## Phase C: Fix Fake Features
+- [x] Corpus card "..." menu with Rename, Export, Delete (with confirmation)
+- [x] Removed "Register to the Noosphere" checkbox from Upload page
+- [x] Token-gated selectable, Paid disabled in access dropdown
+- [x] Registry status: "Registered in the Noosphere" / "Local only" in right panel
+- [x] "Back to Noosphere" link at top of corpus detail
 
-### 1. Sidebar logo font
-- Change "Noosphere" in sidebar to Libre Baskerville (same as landing page hero)
+## Phase D: Complete Missing Features
+- [x] Query logging with `agent_id` (X-Agent-ID header) and `token_id` tracking
+- [x] Agent activity pulses on network graph (nodes with queries glow)
+- [x] Export API endpoint: `GET /corpora/:id/export` returns ZIP
+- [x] Export button in corpus right panel
+- [x] SPEC-compliant export format: `noosphere.json`, `documents/`, `index/chunks.jsonl`, `meta/`
+- [x] CLI export refactored to use shared `noosphere/core/export.py`
 
-### 2. Pixel icon redesign  
-- Current one is too crude
-- Needs to be cleaner, cuter — reference AigisPay's pixel robot quality
-- Pixel art style, 8x8 or 10x10 grid, crisp edges
+## Phase E: Tests
+- [x] 115 tests across 8 files
+- [x] `tests/conftest.py` — temp DB fixtures
+- [x] `tests/test_corpus.py` — corpus CRUD
+- [x] `tests/test_ingest.py` — ingestion pipeline
+- [x] `tests/test_access.py` — access control
+- [x] `tests/test_tokens.py` — token management
+- [x] `tests/test_export.py` — export format
+- [x] `tests/test_api.py` — FastAPI integration
+- [x] `tests/test_mcp.py` — MCP protocol
+- [x] `.github/workflows/test.yml` — CI config (Python 3.11-3.13)
 
-### 3. Header layout
-- Icon CENTERED above greeting (like AigisPay: name centered, robot below)
-- "Evening, [username]" — add username (hardcode for now)
-- Stats below greeting: "3 corpora · 5 sources · 173 words"
-- Divider line separating header from input area
-- "+ New chat" button on the right side of the divider (like AigisPay's "+ New chat")
+## Phase F: Launch Polish
+- [x] Fixed FastAPI deprecation warning (on_event -> lifespan)
+- [x] MCP SSE transport: `GET /mcp/sse` + `POST /mcp/message` (Claude Desktop compatible)
+- [x] Toast notification system for frontend errors
+- [x] Graceful DB shutdown on app exit
 
-### 4. Terminal input
-- `> █` with blinking cursor (the █ character with CSS animation)
-- Placeholder: "Paste a URL, upload a file, or write something"
-- Input area has clear visual separation from header
-
-### 5. Suggestions — THREE main actions
-```
-/ for shortcuts
-
-> Paste a link to import
-> Upload a file  
-> Write something
-```
-These are the 3 primary ways to add knowledge. NOT "Ask the Noosphere" or "/status" — those are secondary.
-
-### 6. Greeting font
-- "Evening" should use Libre Baskerville (serif) — same as landing page hero
-- All terminal output uses JetBrains Mono (monospace)
-
-### 7. History / New Chat
-- Sidebar "+ New" should clear the terminal and reset to initial state
-- Consider adding "/ for shortcuts" hint like AigisPay's "/ for shortcuts"
-
-### 8. The AigisPay terminal CSS to reference
-The AigisPay landing page has terminal styles at:
-`/Users/steveyao/Projects/GitHub/aigispay.com/landingpage.html` (lines 430-591)
-
-Key styles to copy:
-- `.terminal-prompt` — font-family, font-size, color, line-height
-- `.terminal-caret` — font-weight: 700, color
-- `.terminal-cursor` — animation: cursor-blink 1.1s step-end infinite
-- `.terminal-response` — color: #8b949e
-- `.terminal-card` — border, background, border-radius
-- `@keyframes cursor-blink` — 0%,100% opacity:0.6, 50% opacity:0
-
-## Files to Modify
-- `noosphere/api/static/app.js` — renderHome()
-- `noosphere/api/static/styles.css` — terminal styles  
-- `noosphere/api/static/index.html` — sidebar logo font
+## Next: Commercial Layer (Phase 2+)
+- [ ] `noosphere/cloud/` directory (BSL): auth, quota, Stripe Connect
+- [ ] Stripe integration for paid corpora
+- [ ] Cloud deployment (PostgreSQL, Vercel/Railway)
+- [ ] User registration + billing tiers

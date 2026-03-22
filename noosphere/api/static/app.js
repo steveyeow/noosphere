@@ -1,20 +1,46 @@
-/* Noosphere v8 — Terminal + My Corpora + Network + Chat */
+/* Noosphere v8 — Terminal + Corpora + Network + Chat */
 const API='/api/v1';
-let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[];
+let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[],_ownerName='';
 const isDark=()=>document.documentElement.classList.contains('dark')||(!document.documentElement.classList.contains('light')&&window.matchMedia('(prefers-color-scheme: dark)').matches);
 const PAL=['#e76f51','#2a9d8f','#264653','#e9c46a','#f4a261','#588157','#457b9d','#9b2226','#6d6875','#b56576','#355070','#6c757d','#e07a5f','#3d405b','#81b29a'];
 const cC=n=>{let h=0;for(let i=0;i<n.length;i++)h=((h<<5)-h+n.charCodeAt(i))|0;return PAL[Math.abs(h)%PAL.length]};
 const hR=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
+const fmtN=n=>{if(n>=1e6)return(n/1e6).toFixed(1).replace(/\.0$/,'')+'M';if(n>=1e4)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';return n.toLocaleString()};
 const cp=(t,b)=>{navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=o,1200)}})};
+function toast(msg,type='error'){const t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},4000)}
+function pickCorpusInline(container){
+  return new Promise(resolve=>{
+    const wrap=document.createElement('div');wrap.className='term-pick-wrap';
+    wrap.innerHTML='<div class="term-resp" style="padding-left:0;margin-bottom:4px">Which corpus?</div>'+
+      _corpora.map(c=>'<div class="term-pick-opt" data-id="'+c.id+'"><span class="term-caret" style="font-size:12px;opacity:.4">&gt;</span> '+esc(c.name)+' <span style="color:var(--tx3);font-size:11px">('+c.document_count+')</span></div>').join('')+
+      '<div class="term-pick-opt term-pick-new" data-id="_new"><span class="term-caret" style="font-size:12px;opacity:.4">+</span> Create new corpus</div>'+
+      '<div class="term-pick-opt term-pick-cancel" data-id=""><span class="term-caret" style="font-size:12px;opacity:.4">&times;</span> Cancel</div>';
+    container.appendChild(wrap);
+    const sc=document.getElementById('term-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
+    wrap.querySelectorAll('.term-pick-opt').forEach(o=>{o.onclick=async()=>{
+      let id=o.dataset.id;
+      if(id==='_new'){
+        wrap.innerHTML='<div class="term-resp" style="padding-left:0">Name for the new corpus:</div><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="text" class="term-input" id="tp-name" placeholder="Corpus name..." style="flex:1;font-size:13px" /><button class="btn-sm" id="tp-go">Create</button><button class="btn-sm-ghost" id="tp-cc">Cancel</button></div>';
+        if(sc)sc.scrollTop=sc.scrollHeight;
+        wrap.querySelector('#tp-name').focus();
+        wrap.querySelector('#tp-cc').onclick=()=>{wrap.remove();resolve(null)};
+        const goFn=async()=>{const nm=wrap.querySelector('#tp-name').value.trim();if(!nm){toast('Name is required');return}
+          try{const r=await fetch(API+'/corpora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,access_level:'public'})});const c=await r.json();id=c.id;await loadC();wrap.remove();resolve(id)}catch(e){toast('Failed to create corpus');wrap.remove();resolve(null)}};
+        wrap.querySelector('#tp-go').onclick=goFn;
+        wrap.querySelector('#tp-name').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();goFn()}};
+        return;
+      }
+      wrap.remove();resolve(id||null);
+    }});
+  });
+}
 
 async function route(){const h=location.hash||'#/';stopAll();
   if(h==='#/'||h===''||h==='#/landing'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLP();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
-  await loadC();setSBActive(h);
+  await Promise.all([loadC(),loadMe()]);setSBActive(h);renderSBChats();
   if(h==='#/main')renderHome();
-  else if(h==='#/write')renderWrite();
-  else if(h==='#/upload')renderUpload();
   else if(h==='#/corpora')renderMyCorpora();
   else if(h==='#/network')renderNet();
   else if(h.startsWith('#/corpus/'))await renderCorpus(h.split('/')[2]);
@@ -22,6 +48,43 @@ async function route(){const h=location.hash||'#/';stopAll();
 }
 function stopAll(){if(_lpAnim){cancelAnimationFrame(_lpAnim);_lpAnim=null}if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}if(_termAnim){cancelAnimationFrame(_termAnim);_termAnim=null}}
 async function loadC(){try{const r=await fetch(`${API}/corpora`);_corpora=await r.json()}catch(e){_corpora=[]}}
+async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.json();_ownerName=d.name||''}catch(e){}}
+
+/* ── Chat session persistence ── */
+const CHAT_STORE='noosphere-chats';
+function saveChatSession(corpusId,corpusName,firstMsg){
+  const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]');
+  const now=new Date().toISOString();
+  const existing=chats.find(c=>c.corpusId===corpusId);
+  if(existing){existing.updatedAt=now;chats.splice(chats.indexOf(existing),1);chats.unshift(existing)}
+  else{chats.unshift({corpusId,corpusName,title:firstMsg.slice(0,60),createdAt:now,updatedAt:now})}
+  localStorage.setItem(CHAT_STORE,JSON.stringify(chats.slice(0,20)));
+  renderSBChats();
+}
+/* ── Noos icon (landing page logo SVG) ── */
+const NOOS_ICON_SVG=`<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/><circle cx="18" cy="42" r="3" fill="currentColor" opacity="0.5"/><line x1="20" y1="24" x2="44" y2="20" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="20" y1="24" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="44" y1="20" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="18" y1="42" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>`;
+const NOOS_DOT=`<span class="term-noos-dot">●</span>`;
+const PROMPT_CHEVRON=`<span class="term-user-chevron">❯</span>`;
+function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">Noos</span></div>`}
+
+/* ── Command picker ── */
+const TERM_CMDS=[{cmd:'/upload',desc:'Add a file to a corpus'},{cmd:'/write',desc:'Write a note'},{cmd:'/history',desc:'View recent conversations'},{cmd:'/new',desc:'Create a new corpus'},{cmd:'/help',desc:'Show all commands'}];
+function showCmdPicker(input,matches){
+  let p=document.getElementById('term-cmd-picker');
+  if(!p){p=document.createElement('div');p.id='term-cmd-picker';p.className='term-cmd-picker';document.getElementById('term-input-area')?.appendChild(p)}
+  if(!matches.length){p.style.display='none';return}
+  p.style.display='block';
+  p.innerHTML=matches.map((c,i)=>`<div class="term-cmd-item${i===0?' focused':''}" data-cmd="${c.cmd}"><span class="term-cmd-name">${c.cmd}</span><span class="term-cmd-desc">${c.desc}</span></div>`).join('');
+  p.querySelectorAll('.term-cmd-item').forEach(item=>{item.onmousedown=e=>{e.preventDefault();input.value=item.dataset.cmd;hideCmdPicker();input.focus()}});
+}
+function hideCmdPicker(){const p=document.getElementById('term-cmd-picker');if(p)p.style.display='none'}
+
+function renderSBChats(){
+  const el=document.getElementById('sb-chats');if(!el)return;
+  const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]').slice(0,8);
+  if(!chats.length){el.innerHTML='';return}
+  el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpusId}" class="sb-chat-item" title="${esc(c.title)}">${esc(c.title)}</a>`).join('');
+}
 function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-net').classList.toggle('active',h==='#/network')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
@@ -84,59 +147,101 @@ const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
 let _termCtx={};
 
 function renderHome(){
-  hideRP();const ct=document.getElementById('content');
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   const hour=new Date().getHours();
   const greet=hour<12?'Morning':hour<18?'Afternoon':'Evening';
   const totalDocs=_corpora.reduce((a,c)=>a+(c.document_count||0),0);
   const totalWords=_corpora.reduce((a,c)=>a+(c.word_count||0),0);
   const pubCount=_corpora.filter(c=>(c.access_level||'public')==='public').length;
-  const statsText=_corpora.length?`${_corpora.length} corpora · ${totalDocs} sources · ${totalWords.toLocaleString()} words`:'No corpora yet';
+  const statsText=_corpora.length?`${fmtN(_corpora.length)} corpora · ${fmtN(totalDocs)} docs · ${fmtN(totalWords)} words`:'No corpora yet';
   const statsText2=_corpora.length?`${pubCount} public · ${_corpora.length-pubCount} private`:'';
+  const recentC=[..._corpora].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||'')).slice(0,5);
+  const recentRows=recentC.map(c=>`<div class="term-wrec-row"><a href="#/corpus/${c.id}" class="term-wrec-link">${esc(c.name)}</a><span class="term-wrec-meta">${fmtN(c.document_count||0)} docs</span></div>`).join('');
 
   ct.innerHTML=`<div class="term-full">
     <div class="term-top">
-      <div class="term-header">
-        <svg class="term-icon" width="48" height="44" viewBox="0 0 12 11" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
-          <rect x="2" y="0" width="2" height="1" fill="#e8a87c"/>
-          <rect x="8" y="0" width="2" height="1" fill="#e8a87c"/>
-          <rect x="1" y="1" width="3" height="1" fill="#d4956b"/>
-          <rect x="8" y="1" width="3" height="1" fill="#d4956b"/>
-          <rect x="1" y="2" width="10" height="1" fill="#c48055"/>
-          <rect x="1" y="3" width="10" height="5" fill="#d4956b"/>
-          <rect x="3" y="4" width="2" height="2" fill="#fff"/>
-          <rect x="7" y="4" width="2" height="2" fill="#fff"/>
-          <rect x="4" y="5" width="1" height="1" fill="#3d2b1a"/>
-          <rect x="8" y="5" width="1" height="1" fill="#3d2b1a"/>
-          <rect x="5" y="6" width="2" height="1" fill="#e8a87c"/>
-          <rect x="0" y="3" width="1" height="3" fill="#e8a87c" opacity=".5"/>
-          <rect x="11" y="3" width="1" height="3" fill="#e8a87c" opacity=".5"/>
-          <rect x="1" y="8" width="10" height="1" fill="#c48055"/>
-          <rect x="2" y="9" width="8" height="1" fill="#c48055" opacity=".6"/>
-          <rect x="1" y="9" width="2" height="2" fill="#d4956b" opacity=".5"/>
-          <rect x="9" y="9" width="2" height="2" fill="#d4956b" opacity=".5"/>
-        </svg>
-        <div class="term-header-text">
-          <div class="term-hi"><strong>Good ${greet.toLowerCase()}, explorer</strong></div>
-          <div class="term-stats">${statsText}</div>
-          <div class="term-stats">${statsText2}</div>
+      <div class="term-welcome">
+        <div class="term-wl">
+          <canvas class="term-dragon" id="dragon-cv" width="60" height="60"></canvas>
+          <div class="term-winfo">
+            <div class="term-wname">Good ${greet.toLowerCase()}${_ownerName?', '+_ownerName:''}</div>
+            <div class="term-wmeta">${statsText}</div>
+            ${statsText2?`<div class="term-wmeta">${statsText2}</div>`:''}
+          </div>
+        </div>
+        <div class="term-wsep"></div>
+        <div class="term-wr">
+          <div class="term-wlbl">Recent activity</div>
+          ${recentRows||`<div class="term-wmeta">No corpora yet — start by adding one</div>`}
         </div>
       </div>
-      <div class="term-divider"></div>
-      <div class="term-input-area">
+    </div>
+    <div class="term-scroll" id="term-scroll">
+      <div class="term-output" id="term-output"></div>
+      <div class="term-input-area" id="term-input-area">
         <div class="term-input-wrap">
-          <span class="term-caret">&gt;</span>
+          <span class="term-user-chevron">❯</span>
           <span class="term-cursor">\u2588</span>
           <input type="text" class="term-input" id="term-input" placeholder="Paste a URL, upload a file, or write something" autofocus />
         </div>
       </div>
       <div class="term-hints" id="term-hints">
-        <div class="term-sg" data-cmd="https://"><span class="term-caret">&gt;</span> Paste a link to import</div>
-        <div class="term-sg" data-cmd="/upload"><span class="term-caret">&gt;</span> Upload a file</div>
-        <div class="term-sg" data-cmd="/write"><span class="term-caret">&gt;</span> Write something</div>
+        <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link to import</div>
+        <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload — add a file</div>
+        <div class="term-sg" data-cmd="/write"><span class="term-caret">/</span> write — write a note</div>
+        <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history — recent chats</div>
+        <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new — create corpus</div>
       </div>
     </div>
-    <div class="term-output" id="term-output"></div>
   </div>`;
+
+  (function drawDragon(){
+    const cv=document.getElementById('dragon-cv');if(!cv)return;
+    const x=cv.getContext('2d');
+    const P=5,_='',O='#c8956c',L='#dba882';
+    let blink=false,frame=0,nextBlink=90+Math.random()*120|0;
+    function draw(){
+      const dk=isDark();
+      const E=dk?'#d0cfc8':'#1d1d1f';
+      const W=dk?'#a87048':'#f5e6d3';
+      const base=[
+        [_,_,_,L,_,_,_,_,_,L,_,_],
+        [_,_,L,_,_,_,_,_,_,L,_,_],
+        [_,_,O,O,O,O,O,O,O,O,_,_],
+        [_,O,_,_,_,_,_,_,_,_,O,_],
+        [_,O,_,E,E,_,_,E,E,_,O,_],
+        [_,_,O,_,_,_,_,_,_,O,_,_],
+        [_,_,O,_,_,E,E,_,_,O,_,_],
+        [_,_,_,O,W,W,W,W,O,_,_,_],
+        [_,_,_,O,_,_,_,_,O,_,_,_],
+        [L,O,O,_,_,_,_,_,_,O,O,L],
+        [_,L,_,O,_,_,_,_,O,_,L,_],
+        [_,_,_,E,_,_,_,_,E,_,_,_],
+      ];
+      x.clearRect(0,0,cv.width,cv.height);
+      const rows=base.map(r=>[...r]);
+      if(blink){rows[4]=[_,O,_,O,O,_,_,O,O,_,O,_]}
+      const t=frame*0.04;
+      const breathOff=Math.sin(t)*1.5;
+      const wingPhase=Math.sin(t*1.8);
+      if(wingPhase>0){
+        rows[9]=[_,O,O,_,_,_,_,_,_,O,O,_];
+        rows[10]=[L,L,_,O,_,_,_,_,O,_,L,L];
+      }else{
+        rows[9]=[_,_,O,_,_,_,_,_,_,O,_,_];
+        rows[10]=[_,_,L,O,_,_,_,_,O,L,_,_];
+      }
+      const oY=Math.round(breathOff);
+      rows.forEach((r,y)=>r.forEach((c,xi)=>{if(c){x.fillStyle=c;x.fillRect(xi*P,y*P+oY+2,P,P)}}));
+    }
+    function tick(){
+      frame++;
+      if(frame>=nextBlink&&!blink){blink=true;setTimeout(()=>{blink=false;nextBlink=frame+90+Math.random()*180|0},100+Math.random()*60)}
+      draw();
+      requestAnimationFrame(tick);
+    }
+    tick();
+  })();
 
   const input=document.getElementById('term-input');
   const output=document.getElementById('term-output');
@@ -144,22 +249,58 @@ function renderHome(){
   const cursorEl=document.querySelector('.term-cursor');
   _termCtx={};
 
+  // Noos greeting
+  const greetEl=document.createElement('div');greetEl.className='noos-msg';
+  greetEl.innerHTML=`${NOOS_DOT}<span><span class="noos-nm">Noos</span><span class="noos-body">Hi, ${_ownerName||'explorer'}. What would you like to add to Noosphere today?</span></span>`;
+  output.appendChild(greetEl);
+
   input.addEventListener('focus',()=>{if(cursorEl)cursorEl.style.display='none'});
-  input.addEventListener('blur',()=>{if(cursorEl&&!input.value)cursorEl.style.display=''});
-  input.addEventListener('input',()=>{if(cursorEl)cursorEl.style.display=input.value?'none':''});
+  input.addEventListener('blur',()=>{if(cursorEl&&!input.value)cursorEl.style.display='';hideCmdPicker()});
+  input.addEventListener('input',()=>{
+    if(cursorEl)cursorEl.style.display=input.value?'none':'';
+    const v=input.value;
+    if(v.startsWith('/')){const q=v.toLowerCase();showCmdPicker(input,TERM_CMDS.filter(c=>c.cmd.startsWith(q)))}
+    else hideCmdPicker();
+  });
 
   document.querySelectorAll('.term-sg').forEach(s=>{s.onclick=()=>{
     const cmd=s.dataset.cmd;
-    if(cmd==='/upload'){hints.style.display='none';showTermUpload(output,input,hints);return}
+    if(cmd==='/upload'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermUpload(output,input,hints);return}
+    if(cmd==='/write'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints);return}
+    if(cmd==='url'){input.value='';input.placeholder='Paste a URL and press Enter...';input.focus();return}
     input.value=cmd;input.focus();
-    if(cmd!=='/write'&&!cmd.startsWith('https://'))sendInput();
   }});
 
   let _sending=false;
   async function sendInput(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
-    if(val.toLowerCase()==='/upload'){input.value='';hints.style.display='none';addLine(output,'prompt',val);showTermUpload(output,input,hints);return}
+    if(val.toLowerCase()==='/upload'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermUpload(output,input,hints);return}
+    if(val.toLowerCase()==='/write'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints);return}
+    if(val.toLowerCase()==='/history'){
+      input.value='';hints.style.display='none';
+      const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]');
+      if(!chats.length){addLine(output,'resp','No chat history yet.')}
+      else{addLine(output,'resp','Recent conversations:');chats.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpusName)+'</span>'+esc(c.title)+'</span>';el.onclick=()=>{location.hash='#/corpus/'+c.corpusId};output.appendChild(el)})}
+      input.focus();return;
+    }
+    if(val.toLowerCase()==='/help'){
+      input.value='';hints.style.display='none';
+      [['URL','Paste any URL to import a page'],['  /upload','Add a file to a corpus'],['  /write','Write a note directly'],['  /history','View recent conversations'],['  /new','Create a new corpus']].forEach(([cmd,desc])=>addLine(output,'hint',cmd.padEnd(12)+desc));
+      input.focus();return;
+    }
+    if(val.toLowerCase()==='/new'){
+      input.value='';hints.style.display='none';
+      addLine(output,'resp','Enter a name for the new corpus:');
+      document.getElementById('term-input-area').style.display='none';
+      const wrap=document.createElement('div');wrap.style.cssText='margin-left:18px;margin-top:8px;display:flex;gap:8px;align-items:center';
+      wrap.innerHTML='<input type="text" class="term-input" id="new-corpus-input" placeholder="Corpus name..." style="flex:1;font-size:13px;border:1px solid var(--brd);border-radius:8px;padding:6px 10px;background:var(--bg2)" /><button class="btn-sm" id="new-corpus-btn">Create</button>';
+      output.appendChild(wrap);
+      const ni=document.getElementById('new-corpus-input');ni.focus();
+      async function doCreate(){const name=ni.value.trim();if(!name)return;wrap.remove();document.getElementById('term-input-area').style.display='';try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,access_level:'public'})});const c=await r.json();await loadC();addLine(output,'card',null,null,{type:'card',label:name,status:'CREATED',detail:'New corpus created',corpus_id:c.id});renderSBChats()}catch(e){addLine(output,'resp','Failed: '+e.message)}input.focus()}
+      document.getElementById('new-corpus-btn').onclick=doCreate;ni.onkeydown=e=>{if(e.key==='Enter')doCreate();if(e.key==='Escape'){wrap.remove();document.getElementById('term-input-area').style.display='';input.focus()}};
+      return;
+    }
     _sending=true;input.value='';input.disabled=true;
     hints.style.display='none';
     addLine(output,'prompt',val);
@@ -171,7 +312,7 @@ function renderHome(){
       document.getElementById(loadId)?.remove();
       _termCtx=d.context||{};
       for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
-      if(d.context?.action==='open_write'){setTimeout(()=>{location.hash='#/write'},500)}
+      if(d.context?.action==='open_write'){document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints)}
     }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+err.message)}
     input.disabled=false;input.focus();
     _sending=false;
@@ -183,40 +324,45 @@ function addLine(container,type,text,id,line){
   const el=document.createElement('div');
   if(id)el.id=id;
   const ln=line||{};
-  if(type==='prompt'){el.className='term-line term-prompt';el.innerHTML='<span class="term-caret">&gt;</span> '+esc(text||ln.text||'')}
-  else if(type==='resp'){el.className='term-line term-resp';el.textContent=text||ln.text||''}
-  else if(type==='hint'){el.className='term-line term-resp';el.style.opacity='.5';el.textContent=ln.text||''}
+  if(type==='prompt'){el.className='term-line term-prompt';el.innerHTML=PROMPT_CHEVRON+'<span class="term-prompt-text">'+esc(text||ln.text||'')+'</span>'}
+  else if(type==='resp'){el.className='term-line term-resp';el.innerHTML=NOOS_DOT+'<span>'+esc(text||ln.text||'')+'</span>'}
+  else if(type==='hint'){el.className='term-line term-resp';el.style.opacity='.5';el.innerHTML=NOOS_DOT+'<span>'+esc(ln.text||'')+'</span>'}
   else if(type==='option'){el.className='term-line term-option';el.textContent=ln.text||'';
     el.onclick=()=>{const input=document.getElementById('term-input');if(input&&ln.value){input.value=ln.value;input.focus();setTimeout(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})),50)}}}
   else if(type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><span class="term-card-lbl">${esc(ln.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[ln.status]||'var(--tx3)'}">${esc(ln.status||'')}</span></div><div class="term-card-det">${esc(ln.detail||'')}</div>${ln.val?`<div class="term-card-val">${esc(ln.val)}</div>`:''}`;
     if(ln.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+ln.corpus_id}}}
+  else if(type==='search_result'){el.className='sr-card';el.innerHTML=`<div class="sr-top"><span class="sr-score">${((ln.score||0)*100).toFixed(0)}%</span><span class="sr-title">${esc(ln.title||'')}</span>${ln.source?`<span class="sr-source">${esc(ln.source)}</span>`:''}</div><div class="sr-text">${esc(ln.text||'')}</div>`}
   else return;
-  container.appendChild(el);container.scrollTop=container.scrollHeight;
+  container.appendChild(el);
+  const sc=document.getElementById('term-scroll');
+  if(sc)sc.scrollTop=sc.scrollHeight;
 }
 
 /* ══════ TERMINAL UPLOAD ══════ */
 function showTermUpload(output,input,hints){
   const wrap=document.createElement('div');wrap.className='term-upload-wrap';
   let _uFiles=[];
-  wrap.innerHTML=`<div class="term-upload-dz" id="tu-dz"><input type="file" id="tu-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="term-upload-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="term-upload-txt">Drop files here, or <span class="term-upload-browse">browse</span></div><div class="term-upload-formats">PDF, Markdown, DOCX, TXT, CSV, JSON</div><div class="term-upload-list" id="tu-list"></div></div><div class="term-upload-actions"><button class="btn-primary btn-sm" id="tu-go" disabled>Upload & Index</button><button class="btn-ghost btn-sm" id="tu-cancel">Cancel</button></div>`;
-  output.appendChild(wrap);output.scrollTop=output.scrollHeight;
+  wrap.innerHTML=`<div class="term-upload-dz" id="tu-dz"><input type="file" id="tu-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="term-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="term-upload-txt">Drop files here, or <span class="term-upload-browse">browse</span></div><div class="term-upload-formats">PDF, Markdown, DOCX, TXT, CSV, JSON</div></div><div class="term-upload-list" id="tu-list"></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Upload & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+  output.appendChild(wrap);
+  const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
 
   const dz=wrap.querySelector('#tu-dz'),fi=wrap.querySelector('#tu-fi'),list=wrap.querySelector('#tu-list');
   const goBtn=wrap.querySelector('#tu-go'),cancelBtn=wrap.querySelector('#tu-cancel');
 
   function refreshList(){
-    list.innerHTML=_uFiles.map((f,i)=>`<div class="term-upload-file"><span>${esc(f.name)}</span><span class="term-upload-size">${(f.size/1024).toFixed(1)}KB</span></div>`).join('');
+    list.innerHTML=_uFiles.map((f,i)=>`<div class="term-upload-file"><span>${esc(f.name)}</span><span style="display:flex;align-items:center;gap:8px"><span class="term-upload-size">${(f.size/1024).toFixed(1)}KB</span><button class="term-upload-remove" data-idx="${i}" title="Remove">&times;</button></span></div>`).join('');
+    list.querySelectorAll('.term-upload-remove').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();_uFiles.splice(parseInt(btn.dataset.idx),1);refreshList()}});
     goBtn.disabled=!_uFiles.length;
   }
   function addFiles(fl){for(const f of fl)_uFiles.push(f);refreshList()}
 
-  dz.onclick=e=>{if(e.target===goBtn||e.target===cancelBtn||goBtn.contains(e.target)||cancelBtn.contains(e.target))return;fi.click()};
+  dz.onclick=()=>fi.click();
   dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
   dz.ondragleave=()=>dz.classList.remove('drag-over');
   dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files)};
   fi.onchange=()=>{addFiles(fi.files);fi.value=''};
 
-  cancelBtn.onclick=()=>{wrap.remove();hints.style.display='';input.focus()};
+  cancelBtn.onclick=()=>{wrap.remove();hints.style.display='';document.getElementById('term-input-area').style.display='';input.focus()};
 
   goBtn.onclick=async()=>{
     if(!_uFiles.length)return;
@@ -224,9 +370,14 @@ function showTermUpload(output,input,hints){
     cancelBtn.style.display='none';
 
     let cid;
-    if(_corpora.length){cid=_corpora[0].id}
-    else{
+    await loadC();
+    if(_corpora.length===1){cid=_corpora[0].id}
+    else if(_corpora.length===0){
       try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();input.focus();return}
+    }else{
+      const picked=await pickCorpusInline(output);
+      if(!picked){wrap.remove();hints.style.display='';document.getElementById('term-input-area').style.display='';input.focus();return}
+      cid=picked;
     }
 
     const fd=new FormData();
@@ -236,12 +387,14 @@ function showTermUpload(output,input,hints){
       const d=await r.json();
       wrap.remove();
       addLine(output,'resp',`Uploaded ${d.uploaded||_uFiles.length} file${_uFiles.length>1?'s':''}`);
-    }catch(e){wrap.remove();addLine(output,'resp','Upload failed: '+e.message);input.focus();return}
+    }catch(e){wrap.remove();document.getElementById('term-input-area').style.display='';addLine(output,'resp','Upload failed: '+e.message);input.focus();return}
 
+    document.getElementById('term-input-area').style.display='';
     addLine(output,'resp','Indexing...');
     try{
       const r=await fetch(`${API}/corpora/${cid}/index`,{method:'POST'});
       const d=await r.json();
+      if(!r.ok){addLine(output,'resp','Indexing failed: '+(d.detail||r.statusText));input.focus();return}
       addLine(output,'resp',`Indexed: ${d.chunk_count||'?'} chunks`);
       const corpus=_corpora.find(c=>c.id===cid);
       addLine(output,'card',null,null,{type:'card',label:'Files Added',status:'READY',detail:`${corpus?corpus.name:'My Knowledge'}`,val:`${_uFiles.length} file${_uFiles.length>1?'s':''} uploaded & indexed`,corpus_id:cid});
@@ -252,34 +405,49 @@ function showTermUpload(output,input,hints){
   };
 }
 
-/* ══════ WRITE ══════ */
-function renderWrite(){hideRP();const ct=document.getElementById('content');ct.innerHTML=`<div class="write-page"><div class="write-top"><input type="text" id="w-title" placeholder="Title..." /></div><div class="write-editor"><textarea id="w-body" placeholder="Start writing your knowledge here...\n\nYou can write in Markdown. This becomes a source that agents can search and cite."></textarea></div><div class="write-bar"><div style="display:flex;gap:8px;align-items:center"><label style="font-size:12px;color:var(--tx2)">Corpus:</label><select id="w-corpus" style="padding:4px 8px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:12px"><option value="_new">+ Create new corpus</option>${_corpora.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div><div style="display:flex;gap:8px"><button class="btn-ghost" onclick="location.hash='#/main'">Cancel</button><button class="btn-primary" id="w-save">Save & Index</button></div></div></div>`;
-  document.getElementById('w-save').onclick=async()=>{const title=document.getElementById('w-title').value.trim(),body=document.getElementById('w-body').value.trim();if(!title||!body)return;const btn=document.getElementById('w-save');btn.disabled=true;btn.textContent='Saving...';let cid=document.getElementById('w-corpus').value;if(cid==='_new'){try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:title,access_level:'public'})});cid=(await r.json()).id}catch(e){btn.disabled=false;btn.textContent='Save & Index';return}}const fd=new FormData();fd.append('files',new Blob([`---\ntitle: ${title}\n---\n\n${body}`],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');try{await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}catch(e){}btn.textContent='Indexing...';try{await fetch(`${API}/corpora/${cid}/index`,{method:'POST'})}catch(e){}location.hash='#/corpus/'+cid}}
+/* ══════ TERMINAL INLINE WRITE ══════ */
+function showTermWrite(output,input,hints){
+  const wrap=document.createElement('div');wrap.className='term-write-wrap';
+  wrap.innerHTML='<input type="text" class="term-write-title" id="tw-title" placeholder="Title" /><textarea class="term-write-body" id="tw-body" placeholder="Write your knowledge here... (Markdown supported)" rows="6"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save & Index</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
+  output.appendChild(wrap);
+  const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
+  wrap.querySelector('#tw-title').focus();
 
-/* ══════ UPLOAD ══════ */
-function renderUpload(){hideRP();_files=[];const ct=document.getElementById('content');ct.innerHTML=`<div class="upload-page"><div class="term-title" style="text-align:left;font-size:20px;margin-bottom:4px">Upload Knowledge</div><div style="font-size:13px;color:var(--tx2);margin-bottom:16px">Upload files or import from a URL</div><label class="fl">Corpus</label><select id="u-co" class="fi" style="margin-bottom:8px"><option value="_new">+ Create new corpus</option>${_corpora.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><div id="u-nf"><label class="fl">Name *</label><input type="text" id="u-nm" class="fi" placeholder="e.g. My Blog" /><label class="fl">Tags</label><input type="text" id="u-tg" class="fi" placeholder="AI, startups (comma-separated)" /></div><label class="fl">Files (PDF, MD, DOCX, TXT, CSV, JSON)</label><div class="dz" id="u-dz"><input type="file" id="u-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="dz-tx">Drop files here or <span class="dz-br">browse</span></div><div class="dz-ls" id="u-dl"></div></div><label class="fl">Or paste a URL</label><input type="text" id="u-url" class="fi" placeholder="https://example.com/article" /><label class="fck"><input type="checkbox" id="u-idx" checked /> Auto-index after upload</label><div class="reg-p"><strong>🌐 Join the Noosphere?</strong> Register so agents worldwide can discover your knowledge.<br/><label class="fck"><input type="checkbox" id="u-reg" checked /> Register to the Noosphere</label></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn-ghost" onclick="location.hash='#/main'">Cancel</button><button class="btn-primary" id="u-sub">Publish</button></div><div class="hidden" id="u-st" style="font-size:12px;color:var(--acc);margin-top:8px"></div></div>`;
-  document.getElementById('u-co').onchange=()=>{document.getElementById('u-nf').style.display=document.getElementById('u-co').value==='_new'?'':'none'};
-  const dz=document.getElementById('u-dz'),fi=document.getElementById('u-fi');dz.onclick=()=>fi.click();dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};dz.ondragleave=()=>dz.classList.remove('drag-over');dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');addF(e.dataTransfer.files)};fi.onchange=()=>addF(fi.files);
-  document.getElementById('u-sub').onclick=async()=>{const st=document.getElementById('u-st'),btn=document.getElementById('u-sub');btn.disabled=true;st.classList.remove('hidden');let cid=document.getElementById('u-co').value;
-    if(cid==='_new'){const nm=document.getElementById('u-nm').value.trim();if(!nm){st.textContent='Name required';btn.disabled=false;return}st.textContent='Creating...';const tg=document.getElementById('u-tg').value.split(',').map(t=>t.trim()).filter(Boolean);try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,tags:tg,access_level:'public'})});cid=(await r.json()).id}catch(e){st.textContent='Failed';btn.disabled=false;return}}
-    if(_files.length){st.textContent=`Uploading ${_files.length} files...`;const fd=new FormData();for(const f of _files)fd.append('files',f);try{await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}catch(e){}}
-    const url=document.getElementById('u-url').value.trim();if(url){st.textContent='Fetching URL...';try{await fetch(`${API}/corpora/${cid}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})}catch(e){}}
-    if(document.getElementById('u-idx').checked){st.textContent='Indexing...';try{await fetch(`${API}/corpora/${cid}/index`,{method:'POST'})}catch(e){}}
-    st.textContent='Done!';btn.disabled=false;setTimeout(()=>{location.hash='#/corpus/'+cid},400)}}
-function addF(fl){for(const f of fl)_files.push(f);const el=document.getElementById('u-dl');if(el)el.innerHTML=_files.map(f=>`<div>${esc(f.name)} (${(f.size/1024).toFixed(1)}KB)</div>`).join('')}
+  function restoreInput(){document.getElementById('term-input-area').style.display='';if(hints)hints.style.display='';if(input)input.focus()}
+
+  wrap.querySelector('#tw-cancel').onclick=()=>{wrap.remove();restoreInput()};
+  wrap.querySelector('#tw-save').onclick=async()=>{
+    const title=wrap.querySelector('#tw-title').value.trim(),body=wrap.querySelector('#tw-body').value.trim();
+    if(!title||!body){toast('Title and content are required');return}
+    const btn=wrap.querySelector('#tw-save');btn.disabled=true;btn.textContent='Saving...';
+    await loadC();let cid;
+    if(_corpora.length===0){try{const r=await fetch(API+'/corpora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});cid=(await r.json()).id;await loadC()}catch(e){toast('Failed to create corpus');btn.disabled=false;btn.textContent='Save & Index';return}}
+    else if(_corpora.length===1){cid=_corpora[0].id}
+    else{const picked=await pickCorpusInline(output);if(!picked){btn.disabled=false;btn.textContent='Save & Index';return}cid=picked}
+    const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
+    try{await fetch(API+'/corpora/'+cid+'/upload',{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save & Index';return}
+    btn.textContent='Indexing...';
+    try{await fetch(API+'/corpora/'+cid+'/index',{method:'POST'})}catch(e){}
+    wrap.remove();restoreInput();
+    const corpus=_corpora.find(c=>c.id===cid);
+    addLine(output,'resp','Saved: "'+title+'"');
+    addLine(output,'card',null,null,{type:'card',label:'Source Added',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
+    await loadC();
+  };
+}
 
 /* ══════ MY CORPORA ══════ */
 let _mcView='list';
 function renderMyCorpora(){
-  hideRP();const ct=document.getElementById('content'),host=location.origin;
+  hideRP();const ct=document.getElementById('content'),host=location.origin;ct.classList.remove('content--corpus');
   ct.innerHTML=`<div class="mc-wrap">
     <div class="mc-top">
-      <h1 class="mc-title">My Corpora</h1>
-      <button class="mc-new-btn" id="mc-new-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New Corpus</button>
+      <h1 class="mc-title">Corpora</h1>
+      <button class="mc-new-btn" id="mc-new-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New</button>
     </div>
     <div class="mc-search-wrap">
       <svg class="mc-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" class="mc-search" id="mc-search" placeholder="Search your corpora..." />
+      <input type="text" class="mc-search" id="mc-search" placeholder="Search corpora…" />
     </div>
     <div class="mc-sub"><span class="mc-sub-label">${_corpora.length} corpora</span><div class="mc-toggle"><button class="${_mcView==='list'?'active':''}" id="mc-list-btn">List</button><button class="${_mcView==='graph'?'active':''}" id="mc-graph-btn">Network</button></div></div>
     <div id="mc-content" style="flex:1;overflow:hidden"></div>
@@ -298,19 +466,45 @@ function renderMyCorpora(){
   });
 }
 
+function _timeAgo(iso){
+  if(!iso)return'';
+  const d=new Date(iso),now=new Date(),s=Math.floor((now-d)/1000);
+  if(s<60)return'just now';if(s<3600)return Math.floor(s/60)+' min ago';
+  if(s<86400)return Math.floor(s/3600)+' hours ago';
+  const days=Math.floor(s/86400);
+  if(days===1)return'yesterday';if(days<30)return days+' days ago';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:d.getFullYear()!==now.getFullYear()?'numeric':undefined});
+}
+
 function renderMCList(host){
   const el=document.getElementById('mc-content');
   if(!_corpora.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';return}
   el.className='mc-list';
   el.innerHTML=_corpora.map(c=>{
-    const meta=[];
-    if(c.document_count)meta.push(c.document_count+' source'+(c.document_count===1?'':'s'));
-    if(c.word_count)meta.push((c.word_count).toLocaleString()+' words');
+    const al=c.access_level||'public';
+    const tg=Array.isArray(c.tags)?c.tags:[];
+    const desc=c.description||'';
+    const updatedLabel=_timeAgo(c.updated_at);
     return`<div class="mc-card" data-id="${c.id}">
-      <div class="mc-card-body"><div class="mc-card-name">${esc(c.name)}</div><div class="mc-card-desc">${meta.join(' · ')}</div></div>
-      <button class="mc-card-more" onclick="event.stopPropagation()">···</button>
+      <div class="mc-card-body">
+        <div class="mc-card-top"><a class="mc-card-name" href="#/corpus/${c.id}">${esc(c.name)}</a><span class="mc-badge mc-badge-${al}">${al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1)}</span></div>
+        ${desc?'<div class="mc-card-desc">'+esc(desc)+'</div>':''}
+        <div class="mc-card-meta">${c.document_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> '+c.document_count+'</span>':''}${c.word_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/><polyline points="14 2 14 8 20 8"/><line x1="2" y1="15" x2="12" y2="15"/></svg> '+(c.word_count).toLocaleString()+'</span>':''}${tg.length?'<span class="mc-meta-tags">'+tg.slice(0,3).map(t=>'<span class="mc-meta-tag">'+esc(t)+'</span>').join('')+'</span>':''}${updatedLabel?'<span class="mc-meta-item mc-meta-updated">Updated '+updatedLabel+'</span>':''}</div>
+      </div>
+      <div class="mc-card-actions"><button class="mc-card-more" data-id="${c.id}">···</button><div class="mc-menu hidden" data-for="${c.id}"><button class="mc-menu-item" data-action="rename" data-id="${c.id}">Rename</button><button class="mc-menu-item" data-action="export" data-id="${c.id}">Export</button><button class="mc-menu-item mc-menu-danger" data-action="delete" data-id="${c.id}">Delete</button></div></div>
     </div>`}).join('');
-  el.querySelectorAll('.mc-card').forEach(card=>{card.addEventListener('click',()=>{location.hash='#/corpus/'+card.dataset.id})});
+  el.querySelectorAll('.mc-card').forEach(card=>{card.addEventListener('click',e=>{if(e.target.closest('.mc-card-actions')||e.target.closest('.mc-card-name'))return;location.hash='#/corpus/'+card.dataset.id})});
+  el.querySelectorAll('.mc-card-more').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();el.querySelectorAll('.mc-menu').forEach(m=>m.classList.add('hidden'));const menu=el.querySelector(`.mc-menu[data-for="${btn.dataset.id}"]`);if(menu)menu.classList.toggle('hidden')}});
+  document.addEventListener('click',()=>{el.querySelectorAll('.mc-menu').forEach(m=>m.classList.add('hidden'))},{once:true});
+  el.querySelectorAll('.mc-menu-item').forEach(item=>{item.onclick=async e=>{
+    e.stopPropagation();const action=item.dataset.action,cid=item.dataset.id;
+    el.querySelectorAll('.mc-menu').forEach(m=>m.classList.add('hidden'));
+    if(action==='rename'){const c=_corpora.find(x=>x.id===cid);const name=prompt('Rename corpus:',c?.name||'');if(!name)return;
+      try{await fetch(`${API}/corpora/${cid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});await loadC();renderMyCorpora()}catch(e){}}
+    else if(action==='delete'){const c=_corpora.find(x=>x.id===cid);if(!confirm(`Delete "${c?.name||cid}" and all its documents? This cannot be undone.`))return;
+      try{await fetch(`${API}/corpora/${cid}`,{method:'DELETE'});await loadC();renderMyCorpora()}catch(e){}}
+    else if(action==='export'){window.open(`${API}/corpora/${cid}/export`,'_blank')}
+  }});
 }
 
 function renderMCGraph(){
@@ -321,7 +515,7 @@ function renderMCGraph(){
 
 /* ══════ NETWORK ══════ */
 function renderNet(){
-  hideRP();const ct=document.getElementById('content');
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   ct.innerHTML=`<div class="nv-wrap"><canvas id="nv-cv" class="nv-canvas"></canvas><div class="nv-tt hidden" id="nv-tt"></div></div>`;
 
   const cv=document.getElementById('nv-cv');if(!cv)return;
@@ -330,9 +524,11 @@ function renderNet(){
 }
 
 /* ══════ SHARED GRAPH DRAWING ══════ */
-function drawGraphIn(container,corpora,existingCanvas){
+async function drawGraphIn(container,corpora,existingCanvas){
   if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}
-  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:cC(c.name),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk}});
+  const _activity={};
+  await Promise.all(corpora.map(async c=>{try{const r=await fetch(`${API}/corpora/${c.id}/analytics?limit=1`);if(r.ok){const a=await r.json();_activity[c.id]=a.total_queries||0}else{_activity[c.id]=0}}catch(e){_activity[c.id]=0}}));
+  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:cC(c.name),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
   const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=new Set(ns[i].tk);const sh=[...new Set(ns[j].tk)].filter(t=>s.has(t));if(sh.length)lk.push({source:ns[i].id,target:ns[j].id,s:sh.length})}
 
   const bottomEl=container.querySelector('.nv-bottom');
@@ -349,7 +545,7 @@ function drawGraphIn(container,corpora,existingCanvas){
   let drag=null,hov=null,mp=null;const tt=container.querySelector('.nv-tt')||document.getElementById('nv-tt');
   function getN(x,y){for(const n of ns)if(Math.hypot(n.x-x,n.y-y)<BR+6)return n;return null}
   cv.onmousedown=e=>{const r=cv.getBoundingClientRect();drag=getN(e.clientX-r.left,e.clientY-r.top);if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart()}};
-  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;mp=[x,y];if(drag){drag.fx=x;drag.fy=y;cv.style.cursor='grabbing';return}hov=getN(x,y);cv.style.cursor=hov?'pointer':'grab';if(hov&&tt){tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} sources · ${hov.access_level} · Click to chat</div>`;tt.classList.remove('hidden');tt.style.left=(x+12)+'px';tt.style.top=(y-8)+'px'}else if(tt){tt.classList.add('hidden')}};
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;mp=[x,y];if(drag){drag.fx=x;drag.fy=y;cv.style.cursor='grabbing';return}hov=getN(x,y);cv.style.cursor=hov?'pointer':'grab';if(hov&&tt){tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level} · Click to chat</div>`;tt.classList.remove('hidden');tt.style.left=(x+12)+'px';tt.style.top=(y-8)+'px'}else if(tt){tt.classList.add('hidden')}};
   cv.onmouseup=()=>{if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
   cv.onclick=()=>{if(!drag&&hov)location.hash='#/corpus/'+hov.id};
   cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
@@ -361,48 +557,210 @@ function drawGraphIn(container,corpora,existingCanvas){
       const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${h?.12:.05})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
       if(h){cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},.5)`;cx.lineWidth=2;cx.stroke()}
       cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);cx.fillStyle=n.color;cx.fill();cx.strokeStyle='rgba(255,255,255,.25)';cx.lineWidth=1.5;cx.stroke();
+      if(n.queries>0){const pulseR=rr+4+Math.sin(now*.003+n.queries)*(3+Math.min(n.queries,20)*.3);const pulseOp=.15+Math.sin(now*.004+n.name.length)*.1;cx.beginPath();cx.arc(n.x,n.y,pulseR,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${pulseOp})`;cx.lineWidth=2;cx.stroke()}
       cx.fillStyle='rgba(255,255,255,.95)';cx.font=`700 ${rr*.55}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);
       const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${h?.95:.7})`:`rgba(30,35,50,${h?.9:.6})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
-      cx.fillStyle=dk?'rgba(200,200,210,.4)':'rgba(100,110,130,.4)';cx.font='400 9px Inter,sans-serif';cx.fillText(n.document_count+' sources',n.x,n.y+rr+26)}
+      cx.fillStyle=dk?'rgba(200,200,210,.4)':'rgba(100,110,130,.4)';cx.font='400 9px Inter,sans-serif';cx.fillText((n.queries>0?n.queries+' queries':n.document_count+' docs'),n.x,n.y+rr+26)}
     cx.restore();_gAnim=requestAnimationFrame(draw)}
   sim.on('tick',()=>{});_gAnim=requestAnimationFrame(draw);
 }
 
+/* ══════ INLINE ADD DOCUMENT ══════ */
+function showCorpusAddDoc(corpusId){
+  const container=document.getElementById('cv-docs');if(!container)return;
+  if(document.getElementById('cv-add-panel'))return;
+  const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
+  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
+  container.parentNode.insertBefore(panel,container);
+
+  const body=panel.querySelector('#cv-add-body');
+  const tabs=panel.querySelectorAll('.cv-add-tab');
+  let _files=[];
+
+  function setTab(tab){
+    tabs.forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+    if(tab==='upload'){
+      body.innerHTML=`<div class="cv-add-dz" id="cv-add-dz"><input type="file" id="cv-add-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div style="color:var(--tx3);font-size:13px">Drop files here, or <span style="color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px" id="cv-add-browse">browse</span></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">PDF, Markdown, DOCX, TXT, CSV, JSON</div><div id="cv-add-flist"></div></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Upload & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      const dz=body.querySelector('#cv-add-dz'),fi=body.querySelector('#cv-add-fi'),flist=body.querySelector('#cv-add-flist');
+      const goBtn=body.querySelector('#cv-add-go'),cancelBtn=body.querySelector('#cv-add-cancel');
+      function refreshFL(){flist.innerHTML=_files.map(f=>`<div style="font-size:12px;padding:2px 0;color:var(--tx2)">${esc(f.name)} <span style="color:var(--tx3)">${(f.size/1024).toFixed(1)}KB</span></div>`).join('');goBtn.disabled=!_files.length}
+      body.querySelector('#cv-add-browse').onclick=()=>fi.click();
+      dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
+      dz.ondragleave=()=>dz.classList.remove('drag-over');
+      dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');for(const f of e.dataTransfer.files)_files.push(f);refreshFL()};
+      fi.onchange=()=>{for(const f of fi.files)_files.push(f);fi.value='';refreshFL()};
+      cancelBtn.onclick=()=>{_files=[];panel.remove()};
+      goBtn.onclick=async()=>{
+        if(!_files.length)return;goBtn.disabled=true;goBtn.textContent='Uploading...';
+        const fd=new FormData();for(const f of _files)fd.append('files',f);
+        try{await fetch(`${API}/corpora/${corpusId}/upload`,{method:'POST',body:fd})}catch(e){toast('Upload failed');goBtn.disabled=false;goBtn.textContent='Upload & Index';return}
+        goBtn.textContent='Indexing...';
+        try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
+        _files=[];panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='write'){
+      body.innerHTML=`<input type="text" class="term-write-title" id="cv-add-title" placeholder="Title" style="margin-bottom:6px" /><textarea class="term-write-body" id="cv-add-text" placeholder="Write your knowledge here... (Markdown supported)" rows="6" style="min-height:100px"></textarea><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Save & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.querySelector('#cv-add-title').focus();
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      body.querySelector('#cv-add-go').onclick=async()=>{
+        const title=body.querySelector('#cv-add-title').value.trim(),text=body.querySelector('#cv-add-text').value.trim();
+        if(!title||!text){toast('Title and content are required');return}
+        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Saving...';
+        const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+text],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
+        try{await fetch(`${API}/corpora/${corpusId}/upload`,{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save & Index';return}
+        btn.textContent='Indexing...';
+        try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='url'){
+      body.innerHTML=`<input type="text" class="fi" id="cv-add-url" placeholder="https://example.com/article" style="font-size:13px" /><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.querySelector('#cv-add-url').focus();
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      body.querySelector('#cv-add-go').onclick=async()=>{
+        const url=body.querySelector('#cv-add-url').value.trim();
+        if(!url){toast('Enter a URL');return}
+        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Fetching...';
+        try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});if(!r.ok)throw new Error((await r.json()).detail||'Failed')}catch(e){toast('Fetch failed: '+e.message);btn.disabled=false;btn.textContent='Fetch & Index';return}
+        btn.textContent='Indexing...';
+        try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
+        panel.remove();renderCorpus(corpusId);
+      };
+    }
+  }
+  tabs.forEach(t=>t.onclick=()=>setTab(t.dataset.tab));
+  setTab('upload');
+}
+
 /* ══════ CORPUS DETAIL + CHAT ══════ */
 async function renderCorpus(id){
-  stopAll();_chatH=[];const ct=document.getElementById('content');ct.innerHTML='<div class="empty">Loading...</div>';
-  let c;try{const r=await fetch(`${API}/corpora/${id}`);c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
-  let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);docs=await r.json()}catch(e){}
-  let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);an=await r.json()}catch(e){}
-  ct.innerHTML=`<div class="cv-sec"><div class="cv-st">Sources (${docs.length}) <button class="btn-add" id="cv-add">+ Add</button></div><div id="cv-docs">${docs.length===0?'<div class="empty">No sources yet</div>':docs.map((d,i)=>`<div class="src-item${i===0?' expanded':''}" data-id="${d.id}"><div class="src-hd"><span class="src-tt">${esc(d.title)}</span><span class="src-mt">${d.word_count||0}w${d.date?' · '+d.date:''}</span><span class="src-ar">▸</span></div>${i===0?'<div class="src-bd" id="sb0">Loading...</div>':''}</div>`).join('')}</div></div><div class="chat-area" id="chat-area"></div><div class="chat-bottom"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Chat with ${esc(c.name)}..." rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div>`;
+  stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
+  let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${r.status===401?'Access denied — this corpus requires authentication':r.status===403?e.detail||'Access denied':'Corpus not found'}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
+  let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
+  let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);if(r.ok)an=await r.json()}catch(e){}
+  ct.classList.add('content--corpus');
+  const al=c.access_level||'public';const tg=Array.isArray(c.tags)?c.tags:[];
+  const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="cv-header-actions"><button class="cv-act-btn" id="cv-reindex" title="Re-index"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-index</button><button class="cv-act-btn" id="cv-export" title="Export"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button></div></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="cv-sec"><div class="cv-st">Documents (${docs.length}) <button class="btn-add" id="cv-add">+ Add</button></div><div id="cv-docs">${docs.length===0?'<div class="empty">No documents yet</div>':docs.map((d,i)=>{const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');return`<div class="doc-item${i===0?' expanded':''}" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''}</span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div>${i===0?'<div class="doc-bd" id="sb0">Loading...</div>':''}</div>`}).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div></div>`;
   showRP(c,an);
+  document.getElementById('cv-reindex').onclick=async()=>{const btn=document.getElementById('cv-reindex');btn.disabled=true;btn.textContent='Indexing...';try{await fetch(`${API}/corpora/${id}/index`,{method:'POST'})}catch(e){}renderCorpus(id)};
+  document.getElementById('cv-export').onclick=()=>{window.open(`${API}/corpora/${id}/export`,'_blank')};
+  document.getElementById('cv-desc-edit').onclick=()=>{
+    const wrap=document.querySelector('.cv-desc-wrap');const descEl=document.getElementById('cv-desc');
+    const cur=c.description||'';
+    wrap.innerHTML=`<input type="text" class="cv-desc-input" id="cv-desc-inp" value="${esc(cur)}" placeholder="Add a description..." /><div class="cv-desc-inp-actions"><button class="btn-sm" id="cv-desc-sv">Save</button><button class="btn-sm-ghost" id="cv-desc-cc">Cancel</button></div>`;
+    document.getElementById('cv-desc-inp').focus();
+    document.getElementById('cv-desc-cc').onclick=()=>renderCorpus(id);
+    document.getElementById('cv-desc-sv').onclick=async()=>{
+      const v=document.getElementById('cv-desc-inp').value.trim();
+      if(v===cur){renderCorpus(id);return}
+      try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save description')}
+    };
+  };
   if(docs.length>0){try{const r=await fetch(`${API}/corpora/${id}/documents/${docs[0].id}`);const d=await r.json();const b=document.getElementById('sb0');if(b)b.textContent=d.content||''}catch(e){}}
-  document.getElementById('cv-add').onclick=()=>{location.hash='#/upload'};
-  ct.querySelectorAll('.src-item').forEach(item=>{item.addEventListener('click',async()=>{if(item.classList.contains('expanded')){const b=item.querySelector('.src-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='src-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
+  document.getElementById('cv-add').onclick=()=>showCorpusAddDoc(id);
+  ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
+    e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
+    if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;
+    try{await fetch(`${API}/corpora/${id}/documents/${did}`,{method:'DELETE'});renderCorpus(id)}catch(e){toast('Failed to delete document')}
+  }});
+  ct.querySelectorAll('.doc-edit-btn').forEach(btn=>{btn.onclick=async e=>{
+    e.stopPropagation();const did=btn.dataset.id;const item=btn.closest('.doc-item');if(!item)return;
+    if(item.classList.contains('editing'))return;
+    try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
+  }});
+  ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{if(e.target.closest('.doc-actions')||item.classList.contains('editing'))return;if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='doc-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
+  setupCorpusInteract(id);
+}
+
+function showDocInlineEdit(corpusId,item,doc){
+  const existing=item.querySelector('.doc-bd');if(existing)existing.remove();
+  item.classList.remove('expanded');item.classList.add('editing');
+  const ed=document.createElement('div');ed.className='doc-edit-inline';
+  ed.innerHTML=`<input type="text" class="doc-edit-title" value="${esc(doc.title||'')}" placeholder="Title" /><textarea class="doc-edit-content" rows="8" placeholder="Content (Markdown supported)...">${esc(doc.content||'')}</textarea><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-cancel">Cancel</button><button class="btn-sm doc-edit-save">Save</button></div>`;
+  ed.onclick=e=>e.stopPropagation();
+  item.appendChild(ed);
+  ed.querySelector('.doc-edit-title').focus();
+  ed.querySelector('.doc-edit-cancel').onclick=()=>{ed.remove();item.classList.remove('editing')};
+  ed.querySelector('.doc-edit-save').onclick=async()=>{
+    const title=ed.querySelector('.doc-edit-title').value.trim();
+    const content=ed.querySelector('.doc-edit-content').value.trim();
+    if(!title){toast('Title is required');return}
+    const btn=ed.querySelector('.doc-edit-save');btn.disabled=true;btn.textContent='Saving...';
+    const body={};
+    if(title!==doc.title)body.title=title;
+    if(content!==doc.content)body.content=content;
+    if(!Object.keys(body).length){ed.remove();item.classList.remove('editing');return}
+    try{
+      const r=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok)throw new Error((await r.json()).detail||'Failed');
+      if(body.content){btn.textContent='Re-indexing...';try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}}
+      renderCorpus(corpusId);
+    }catch(e){toast('Save failed: '+e.message);btn.disabled=false;btn.textContent='Save'}
+  };
+}
+
+function setupCorpusInteract(id){
   const ci=document.getElementById('c-ci'),send=document.getElementById('c-send'),area=document.getElementById('chat-area');
+  if(!ci||!send||!area)return;
   ci.addEventListener('input',()=>{ci.style.height='auto';ci.style.height=Math.min(ci.scrollHeight,120)+'px'});
-  async function chat(){const msg=ci.value.trim();if(!msg)return;ci.value='';ci.style.height='auto';area.innerHTML+=`<div class="chat-msg user">${esc(msg)}</div>`;area.scrollTop=area.scrollHeight;send.disabled=true;area.innerHTML+=`<div class="chat-msg assistant" id="c-ld" style="color:var(--tx3)">Thinking...</div>`;area.scrollTop=area.scrollHeight;_chatH.push({role:'user',content:msg});
-    try{const r=await fetch(`${API}/corpora/${id}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:_chatH,top_k:5})});const d=await r.json();document.getElementById('c-ld')?.remove();_chatH.push({role:'assistant',content:d.response});area.innerHTML+=`<div class="chat-msg assistant">${esc(d.response)}${d.citations&&d.citations.length?`<div class="chat-cites">${d.citations.map(c=>`<span class="chat-cite">${esc(c.title||'')}</span>`).join('')}</div>`:''}</div>`}
-    catch(e){document.getElementById('c-ld')?.remove();area.innerHTML+=`<div class="chat-msg assistant" style="color:var(--tx3)">Failed. Check LLM API keys.</div>`}send.disabled=false;area.scrollTop=area.scrollHeight}
+  async function chat(){const msg=ci.value.trim();if(!msg)return;ci.value='';ci.style.height='auto';area.innerHTML+=`<div class="chat-msg user">${esc(msg)}</div>`;area.scrollTop=area.scrollHeight;send.disabled=true;area.innerHTML+=`<div class="chat-msg assistant" id="c-ld">${noosHd()}<span style="color:var(--tx3)">Thinking...</span></div>`;area.scrollTop=area.scrollHeight;_chatH.push({role:'user',content:msg});
+    const corpus=_corpora.find(c=>c.id===id);saveChatSession(id,corpus?.name||id,msg);
+    try{const r=await fetch(`${API}/corpora/${id}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:_chatH,top_k:5})});const d=await r.json();document.getElementById('c-ld')?.remove();_chatH.push({role:'assistant',content:d.response});area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="noos-body">${esc(d.response)}${d.citations&&d.citations.length?`<div class="chat-cites">${d.citations.map(ct=>`<span class="chat-cite">${esc(ct.title||'')}</span>`).join('')}</div>`:''}</div></div>`}
+    catch(e){document.getElementById('c-ld')?.remove();area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<span style="color:var(--tx3)">Failed. Check LLM API keys.</span></div>`}send.disabled=false;area.scrollTop=area.scrollHeight}
   send.onclick=chat;ci.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}};
 }
 
-const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access keys. (Coming soon)',paid:'Agents pay per query. (Coming soon)'};
-function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const tg=Array.isArray(c.tags)?c.tags:[];const al=c.access_level||'public';
-  rp.innerHTML=`<div class="rp-name">${esc(c.name)}</div>${c.author_name?`<div class="rp-author">by ${esc(c.author_name)}</div>`:''}${c.description?`<div class="rp-desc">${esc(c.description)}</div>`:''}${tg.length?`<div class="rp-tags">${tg.map(t=>`<span class="rp-tag">${esc(t)}</span>`).join('')}</div>`:''}
-    <div class="rp-sec"><div class="rp-lbl">Connect Agents</div><div class="rp-ep"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">API</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Stats</div><div class="rp-stats"><div><div class="rp-sv">${c.document_count}</div><div class="rp-sl">sources</div></div><div><div class="rp-sv">${c.chunk_count}</div><div class="rp-sl">chunks</div></div><div><div class="rp-sv">${(c.word_count||0).toLocaleString()}</div><div class="rp-sl">words</div></div><div><div class="rp-sv">${an.total_queries||0}</div><div class="rp-sl">queries</div></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div></div>
-    <div class="rp-sec"><button class="btn-primary" id="rp-idx" style="width:100%;margin-bottom:6px">Re-index</button>${c.embedding_model?`<div style="font-size:10px;color:var(--tx3)">Model: ${c.embedding_model}</div>`:''}<div style="font-size:10px;color:var(--tx3)">Status: ${c.status}</div></div>`;
-  document.getElementById('rp-acc').onchange=()=>{document.getElementById('rp-msg').textContent=ACC_MSG[document.getElementById('rp-acc').value]||''};
+const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query. (Requires Stripe — Phase 2)'};
+async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const al=c.access_level||'public';
+  let regStatus='';
+  try{const hr=await fetch(`${API}/health`);const h=await hr.json();regStatus=al!=='private'&&h.registry_connected?'<div class="rp-reg ok">Registered in the Noosphere</div>':'<div class="rp-reg local">Local only</div>'}catch(e){regStatus='<div class="rp-reg local">Local only</div>'}
+
+  rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl">Connect Agents</div><div class="rp-ep"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">API</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></div>
+    <div class="rp-sec"><div class="rp-lbl">Stats</div><div class="rp-stats"><div><div class="rp-sv">${fmtN(c.document_count||0)}</div><div class="rp-sl">documents</div></div><div><div class="rp-sv">${fmtN(c.chunk_count||0)}</div><div class="rp-sl">chunks</div></div><div><div class="rp-sv">${fmtN(c.word_count||0)}</div><div class="rp-sl">words</div></div><div><div class="rp-sv">${fmtN(an.total_queries||0)}</div><div class="rp-sl">queries</div></div></div></div>
+    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}disabled title="Coming in Phase 2 — Stripe integration">Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div>${regStatus}</div>
+    <div id="rp-tokens" class="rp-sec" style="display:${al==='token'?'block':'none'}"><div class="rp-lbl">Access Tokens</div><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate Token</button><div id="rp-tk-list"></div></div>
+    <div class="rp-sec"><div class="rp-lbl">Details</div>${c.author_name?`<div class="rp-detail-row"><span class="rp-detail-label">Author</span><span>${esc(c.author_name)}</span></div>`:''}${c.embedding_model?`<div class="rp-detail-row"><span class="rp-detail-label">Model</span><span>${esc(c.embedding_model)}</span></div>`:''}<div class="rp-detail-row"><span class="rp-detail-label">Status</span><span>${esc(c.status)}</span></div></div>`;
+
+  document.getElementById('rp-acc').onchange=()=>{
+    const v=document.getElementById('rp-acc').value;
+    document.getElementById('rp-msg').textContent=ACC_MSG[v]||'';
+    document.getElementById('rp-tokens').style.display=v==='token'?'block':'none';
+  };
   document.getElementById('rp-sv').onclick=async()=>{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:document.getElementById('rp-acc').value})});await loadC();renderCorpus(c.id)};
-  document.getElementById('rp-idx').onclick=async()=>{document.getElementById('rp-idx').textContent='Indexing...';document.getElementById('rp-idx').disabled=true;try{await fetch(`${API}/corpora/${c.id}/index`,{method:'POST'})}catch(e){}renderCorpus(c.id)};
+
+  /* Token management */
+  async function loadTokens(){
+    const list=document.getElementById('rp-tk-list');if(!list)return;
+    try{const r=await fetch(`${API}/corpora/${c.id}/tokens`);const tks=await r.json();
+      if(!tks.length){list.innerHTML='<div style="font-size:11px;color:var(--tx3)">No tokens yet</div>';return}
+      list.innerHTML=tks.map(t=>`<div class="rp-tk-item"><div class="rp-tk-info"><span class="rp-tk-label">${esc(t.label||'Untitled')}</span><span class="rp-tk-meta">${t.usage_count||0} uses</span></div><button class="btn-sm-ghost rp-tk-revoke" data-id="${t.id}" style="color:#ef4444;border-color:#ef4444">Revoke</button></div>`).join('');
+      list.querySelectorAll('.rp-tk-revoke').forEach(b=>{b.onclick=async()=>{await fetch(`${API}/corpora/${c.id}/tokens/${b.dataset.id}`,{method:'DELETE'});loadTokens()}});
+    }catch(e){list.innerHTML='<div style="font-size:11px;color:var(--tx3)">Failed to load tokens</div>'}
+  }
+
+  document.getElementById('rp-gen-tk').onclick=async()=>{
+    const label=prompt('Token label (optional):','');
+    if(label===null)return;
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/tokens`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:label||'API Token'})});
+      const tk=await r.json();
+      const list=document.getElementById('rp-tk-list');
+      const notice=document.createElement('div');notice.className='rp-tk-created';
+      notice.innerHTML=`<div style="font-size:11px;color:var(--acc);margin-bottom:4px">Token created — copy it now (shown only once):</div><div class="rp-tk-val"><code>${esc(tk.token)}</code><button class="btn-sm" onclick="cp('${tk.token}',this)">Copy</button></div>`;
+      list.prepend(notice);
+      setTimeout(()=>{notice.remove();loadTokens()},15000);
+    }catch(e){alert('Failed to create token')}
+  };
+
+  if(al==='token')loadTokens();
 }
 
 function toggleTheme(){if(isDark()){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');localStorage.setItem('noosphere-theme','light')}else{document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');localStorage.setItem('noosphere-theme','dark')}}
 
 document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('dark-btn')?.addEventListener('click',toggleTheme);
-  document.getElementById('sb-toggle')?.addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('collapsed'));
+  const sbToggle=()=>document.getElementById('sidebar').classList.toggle('collapsed');
+  document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
+  document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
   window.addEventListener('hashchange',route);route()});
