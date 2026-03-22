@@ -39,11 +39,17 @@ function pickCorpusInline(container){
 async function route(){const h=location.hash||'#/';stopAll();
   if(h==='#/'||h===''||h==='#/landing'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLP();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
-  await Promise.all([loadC(),loadMe()]);setSBActive(h);renderSBChats();
+  await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
   if(h==='#/main')renderHome();
   else if(h==='#/corpora')renderMyCorpora();
   else if(h==='#/network')renderNet();
-  else if(h.startsWith('#/corpus/'))await renderCorpus(h.split('/')[2]);
+  else if(h.startsWith('#/corpus/')){
+    const parts=h.split('/')[2];
+    const [corpusId,query]=parts.split('?');
+    const params=new URLSearchParams(query||'');
+    const sessionId=params.get('session');
+    await renderCorpus(corpusId,sessionId);
+  }
   else renderHome();
 }
 function stopAll(){if(_lpAnim){cancelAnimationFrame(_lpAnim);_lpAnim=null}if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}if(_termAnim){cancelAnimationFrame(_termAnim);_termAnim=null}}
@@ -51,14 +57,9 @@ async function loadC(){try{const r=await fetch(`${API}/corpora`);_corpora=await 
 async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.json();_ownerName=d.name||''}catch(e){}}
 
 /* ── Chat session persistence ── */
-const CHAT_STORE='noosphere-chats';
-function saveChatSession(corpusId,corpusName,firstMsg){
-  const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]');
-  const now=new Date().toISOString();
-  const existing=chats.find(c=>c.corpusId===corpusId);
-  if(existing){existing.updatedAt=now;chats.splice(chats.indexOf(existing),1);chats.unshift(existing)}
-  else{chats.unshift({corpusId,corpusName,title:firstMsg.slice(0,60),createdAt:now,updatedAt:now})}
-  localStorage.setItem(CHAT_STORE,JSON.stringify(chats.slice(0,20)));
+let _chatSessions=[];
+async function loadChatSessions(){
+  try{const r=await fetch(`${API}/chat-sessions?limit=20`);_chatSessions=await r.json()}catch(e){_chatSessions=[]}
   renderSBChats();
 }
 /* ── Noos icon (landing page logo SVG) ── */
@@ -81,17 +82,17 @@ function hideCmdPicker(){const p=document.getElementById('term-cmd-picker');if(p
 
 function renderSBChats(){
   const el=document.getElementById('sb-chats');if(!el)return;
-  const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]').slice(0,8);
+  const chats=_chatSessions.slice(0,8);
   if(!chats.length){el.innerHTML='';return}
-  el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpusId}" class="sb-chat-item" title="${esc(c.title)}">${esc(c.title)}</a>`).join('');
+  el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a>`).join('');
 }
 function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-net').classList.toggle('active',h==='#/network')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
 const DM=[{n:"Lenny's Newsletter",d:'product, growth',c:'#e76f51'},{n:'Paul Graham',d:'startups, philosophy',c:'#2a9d8f'},{n:'AI Research',d:'AI, ML',c:'#264653'},{n:'Feynman Lectures',d:'physics, science',c:'#f4a261'},{n:'Stoic Philosophy',d:'philosophy, ethics',c:'#588157'},{n:'YC Startup School',d:'startups, growth',c:'#457b9d'},{n:'Design Patterns',d:'software, design',c:'#e9c46a'},{n:'World History',d:'history, culture',c:'#b56576'}];
-function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><button class="lp-cta" id="lp-cta">Get Started</button></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge for agents.</h1><p class="lp-sub">Turn any knowledge base into an agent-readable corpus. AI agents discover, query, and cite your knowledge via MCP and API.</p><button class="lp-go" id="lp-go">Get Started →</button></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div></div>`;
-  document.getElementById('lp-cta').onclick=document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph();animateLPTerm()}
+function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-social-link" title="GitHub"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a><a href="https://discord.gg/XyjUb8nKCD" target="_blank" rel="noopener" class="lp-social-link" title="Discord"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a></div></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge for agents.</h1><p class="lp-sub">Turn any knowledge into an agent-readable corpus — discoverable, citable, and get paid. Every corpus you publish expands the collective enlightenment.</p><button class="lp-go" id="lp-go">Get Started →</button></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div><div class="lp-mission">Expand the scope and scale of collective enlightenment.</div></div>`;
+  document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph();animateLPTerm()}
 
 function animateLPTerm(){
   const body=document.getElementById('lp-term-body');if(!body)return;
@@ -279,9 +280,9 @@ function renderHome(){
     if(val.toLowerCase()==='/write'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints);return}
     if(val.toLowerCase()==='/history'){
       input.value='';hints.style.display='none';
-      const chats=JSON.parse(localStorage.getItem(CHAT_STORE)||'[]');
-      if(!chats.length){addLine(output,'resp','No chat history yet.')}
-      else{addLine(output,'resp','Recent conversations:');chats.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpusName)+'</span>'+esc(c.title)+'</span>';el.onclick=()=>{location.hash='#/corpus/'+c.corpusId};output.appendChild(el)})}
+      await loadChatSessions();
+      if(!_chatSessions.length){addLine(output,'resp','No chat history yet.')}
+      else{addLine(output,'resp','Recent conversations:');_chatSessions.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpus_name||'')+'</span>'+esc(c.title||'Untitled')+'</span>';el.onclick=()=>{location.hash='#/corpus/'+c.corpus_id+'?session='+c.id};output.appendChild(el)})}
       input.focus();return;
     }
     if(val.toLowerCase()==='/help'){
@@ -632,7 +633,7 @@ function showCorpusAddDoc(corpusId){
 }
 
 /* ══════ CORPUS DETAIL + CHAT ══════ */
-async function renderCorpus(id){
+async function renderCorpus(id,sessionId){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${r.status===401?'Access denied — this corpus requires authentication':r.status===403?e.detail||'Access denied':'Corpus not found'}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
   let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
@@ -669,7 +670,7 @@ async function renderCorpus(id){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{if(e.target.closest('.doc-actions')||item.classList.contains('editing'))return;if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='doc-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
-  setupCorpusInteract(id);
+  setupCorpusInteract(id,sessionId);
 }
 
 function showDocInlineEdit(corpusId,item,doc){
@@ -699,13 +700,55 @@ function showDocInlineEdit(corpusId,item,doc){
   };
 }
 
-function setupCorpusInteract(id){
+async function setupCorpusInteract(id,sessionId){
   const ci=document.getElementById('c-ci'),send=document.getElementById('c-send'),area=document.getElementById('chat-area');
   if(!ci||!send||!area)return;
+  let _sessionId=sessionId||null;
+
+  if(_sessionId){
+    try{
+      const r=await fetch(`${API}/chat-sessions/${_sessionId}`);
+      if(r.ok){
+        const session=await r.json();
+        for(const m of(session.messages||[])){
+          _chatH.push({role:m.role,content:m.content});
+          if(m.role==='user'){
+            area.innerHTML+=`<div class="chat-msg user">${esc(m.content)}</div>`;
+          }else{
+            area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="noos-body">${esc(m.content)}${m.citations&&m.citations.length?`<div class="chat-cites">${m.citations.map(ct=>`<span class="chat-cite">${esc(ct.title||'')}</span>`).join('')}</div>`:''}</div></div>`;
+          }
+        }
+        area.scrollTop=area.scrollHeight;
+      }else{_sessionId=null}
+    }catch(e){_sessionId=null}
+  } else {
+    const sessions=_chatSessions.filter(s=>s.corpus_id===id);
+    if(sessions.length){
+      _sessionId=sessions[0].id;
+      try{
+        const r=await fetch(`${API}/chat-sessions/${_sessionId}`);
+        if(r.ok){
+          const session=await r.json();
+          for(const m of(session.messages||[])){
+            _chatH.push({role:m.role,content:m.content});
+            if(m.role==='user'){
+              area.innerHTML+=`<div class="chat-msg user">${esc(m.content)}</div>`;
+            }else{
+              area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="noos-body">${esc(m.content)}${m.citations&&m.citations.length?`<div class="chat-cites">${m.citations.map(ct=>`<span class="chat-cite">${esc(ct.title||'')}</span>`).join('')}</div>`:''}</div></div>`;
+            }
+          }
+          area.scrollTop=area.scrollHeight;
+        }else{_sessionId=null}
+      }catch(e){_sessionId=null}
+    }
+  }
+
   ci.addEventListener('input',()=>{ci.style.height='auto';ci.style.height=Math.min(ci.scrollHeight,120)+'px'});
   async function chat(){const msg=ci.value.trim();if(!msg)return;ci.value='';ci.style.height='auto';area.innerHTML+=`<div class="chat-msg user">${esc(msg)}</div>`;area.scrollTop=area.scrollHeight;send.disabled=true;area.innerHTML+=`<div class="chat-msg assistant" id="c-ld">${noosHd()}<span style="color:var(--tx3)">Thinking...</span></div>`;area.scrollTop=area.scrollHeight;_chatH.push({role:'user',content:msg});
-    const corpus=_corpora.find(c=>c.id===id);saveChatSession(id,corpus?.name||id,msg);
-    try{const r=await fetch(`${API}/corpora/${id}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:_chatH,top_k:5})});const d=await r.json();document.getElementById('c-ld')?.remove();_chatH.push({role:'assistant',content:d.response});area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="noos-body">${esc(d.response)}${d.citations&&d.citations.length?`<div class="chat-cites">${d.citations.map(ct=>`<span class="chat-cite">${esc(ct.title||'')}</span>`).join('')}</div>`:''}</div></div>`}
+    try{const r=await fetch(`${API}/corpora/${id}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:_chatH,top_k:5,session_id:_sessionId||undefined})});const d=await r.json();document.getElementById('c-ld')?.remove();_chatH.push({role:'assistant',content:d.response});
+      if(d.session_id)_sessionId=d.session_id;
+      loadChatSessions();
+      area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="noos-body">${esc(d.response)}${d.citations&&d.citations.length?`<div class="chat-cites">${d.citations.map(ct=>`<span class="chat-cite">${esc(ct.title||'')}</span>`).join('')}</div>`:''}</div></div>`}
     catch(e){document.getElementById('c-ld')?.remove();area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<span style="color:var(--tx3)">Failed. Check LLM API keys.</span></div>`}send.disabled=false;area.scrollTop=area.scrollHeight}
   send.onclick=chat;ci.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}};
 }

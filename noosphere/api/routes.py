@@ -87,6 +87,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[dict] = []
     top_k: int = 5
+    session_id: Optional[str] = None
 
 
 class TerminalRequest(BaseModel):
@@ -554,10 +555,92 @@ async def api_global_chat(req: ChatRequest):
 @router.post("/corpora/{corpus_id}/chat")
 async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     """Chat with a specific corpus."""
+    import uuid
+    from datetime import datetime, timezone
+
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
     from noosphere.core.chat import chat_with_corpus
-    return chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
+    result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
+
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    session_id = req.session_id
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        title = req.message[:80]
+        conn.execute(
+            "INSERT INTO chat_sessions (id, corpus_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, corpus["id"], title, now, now),
+        )
+    else:
+        conn.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
+
+    user_msg_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_msg_id, session_id, "user", req.message, now),
+    )
+
+    asst_msg_id = str(uuid.uuid4())
+    citations_json = _json.dumps(result.get("citations")) if result.get("citations") else None
+    conn.execute(
+        "INSERT INTO chat_messages (id, session_id, role, content, citations_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (asst_msg_id, session_id, "assistant", result.get("response", ""), citations_json, now),
+    )
+    conn.commit()
+
+    result["session_id"] = session_id
+    return result
+
+
+@router.get("/chat-sessions")
+async def api_list_chat_sessions(limit: int = 20):
+    """List recent chat sessions across all corpora."""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT s.id, s.corpus_id, s.title, s.created_at, s.updated_at,
+                  c.name as corpus_name,
+                  (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as message_count
+           FROM chat_sessions s
+           LEFT JOIN corpora c ON c.id = s.corpus_id
+           ORDER BY s.updated_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/chat-sessions/{session_id}")
+async def api_get_chat_session(session_id: str):
+    """Get a chat session with all its messages."""
+    conn = get_conn()
+    session = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (session_id,)).fetchone()
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    messages = conn.execute(
+        "SELECT id, role, content, citations_json, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at ASC",
+        (session_id,),
+    ).fetchall()
+    result = dict(session)
+    result["messages"] = []
+    for m in messages:
+        msg = dict(m)
+        if msg.get("citations_json"):
+            msg["citations"] = _json.loads(msg["citations_json"])
+        msg.pop("citations_json", None)
+        result["messages"].append(msg)
+    return result
+
+
+@router.delete("/chat-sessions/{session_id}")
+async def api_delete_chat_session(session_id: str):
+    """Delete a chat session and all its messages."""
+    conn = get_conn()
+    conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
+    conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))
+    conn.commit()
+    return {"ok": True}
 
 
 @router.get("/corpora/{corpus_id}/analytics")
