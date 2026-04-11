@@ -1,5 +1,6 @@
 """Ingestion pipeline — read files, fetch URLs, store as documents."""
 
+import hashlib
 import json
 import re
 import uuid
@@ -15,6 +16,10 @@ def _now() -> str:
 
 def _word_count(text: str) -> int:
     return len(text.split())
+
+
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _extract_markdown_title(text: str) -> str:
@@ -91,7 +96,7 @@ def ingest_directory(
 
     docs = []
     for filepath in files:
-        doc = ingest_file(corpus_id, filepath, doc_type=doc_type)
+        doc = ingest_file(corpus_id, filepath, doc_type=doc_type, base_dir=directory)
         if doc:
             docs.append(doc)
 
@@ -104,6 +109,7 @@ def ingest_file(
     filepath: str | Path,
     *,
     doc_type: str = "doc",
+    base_dir: str | Path | None = None,
 ) -> dict | None:
     filepath = Path(filepath)
     if not filepath.is_file():
@@ -122,6 +128,13 @@ def ingest_file(
     elif not tags:
         tags = []
 
+    if base_dir:
+        try:
+            rel = str(filepath.relative_to(base_dir))
+        except ValueError:
+            rel = str(filepath)
+        metadata["source_path"] = rel
+
     return ingest_text(corpus_id, title=title, content=body, doc_type=doc_type, date=date, tags=tags, metadata=metadata)
 
 
@@ -138,17 +151,18 @@ def ingest_text(
     """Ingest raw text content as a document."""
     doc_id = uuid.uuid4().hex[:12]
     wc = _word_count(content)
+    c_hash = _content_hash(content)
     now = _now()
 
     conn = get_conn()
     conn.execute(
         """INSERT INTO documents
            (id, corpus_id, title, content, doc_type, date,
-            word_count, tags, metadata_json, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            word_count, content_hash, tags, metadata_json, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             doc_id, corpus_id, title, content, doc_type, date,
-            wc, json.dumps(tags or []), json.dumps(metadata or {}), now,
+            wc, c_hash, json.dumps(tags or []), json.dumps(metadata or {}), now,
         ),
     )
     conn.commit()
@@ -255,3 +269,103 @@ def get_documents(corpus_id: str) -> list[dict]:
 def get_document(doc_id: str) -> dict | None:
     row = get_conn().execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
     return dict(row) if row else None
+
+
+# ── Incremental sync ────────────────────────────────────────────────
+
+def sync_directory(
+    corpus_id: str,
+    directory: str | Path,
+    *,
+    doc_type: str = "doc",
+    prune: bool = False,
+    file_extensions: tuple[str, ...] = (".md", ".txt", ".text"),
+) -> dict:
+    """Sync a directory to a corpus: add new files, update changed, optionally prune deleted.
+
+    Returns dict with counts: new, updated, pruned, unchanged.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Directory not found: {directory}")
+
+    conn = get_conn()
+
+    existing_docs = conn.execute(
+        "SELECT id, content_hash, metadata_json FROM documents WHERE corpus_id=?",
+        (corpus_id,),
+    ).fetchall()
+
+    path_to_doc: dict[str, dict] = {}
+    for doc in existing_docs:
+        try:
+            meta = json.loads(doc["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        sp = meta.get("source_path", "")
+        if sp:
+            path_to_doc[sp] = dict(doc)
+
+    files = sorted(
+        f for f in directory.rglob("*")
+        if f.is_file() and f.suffix.lower() in file_extensions
+    )
+
+    new_count = 0
+    updated_count = 0
+    unchanged_count = 0
+    pruned_count = 0
+
+    seen_paths: set[str] = set()
+
+    for filepath in files:
+        try:
+            rel = str(filepath.relative_to(directory))
+        except ValueError:
+            rel = str(filepath)
+
+        seen_paths.add(rel)
+        content = filepath.read_text(encoding="utf-8", errors="replace")
+        if not content.strip():
+            continue
+
+        file_hash = _content_hash(content)
+
+        if rel in path_to_doc:
+            existing = path_to_doc[rel]
+            if existing.get("content_hash") == file_hash:
+                unchanged_count += 1
+                continue
+
+            metadata, body = _extract_markdown_metadata(content)
+            title = metadata.get("title") or _extract_markdown_title(body) or filepath.stem
+            metadata["source_path"] = rel
+
+            conn.execute(
+                "UPDATE documents SET title=?, content=?, word_count=?, content_hash=?, "
+                "metadata_json=?, indexed_at=NULL WHERE id=?",
+                (title, body, _word_count(body), _content_hash(body),
+                 json.dumps(metadata), existing["id"]),
+            )
+            conn.execute("DELETE FROM chunks WHERE document_id=?", (existing["id"],))
+            conn.commit()
+            updated_count += 1
+        else:
+            doc = ingest_file(corpus_id, filepath, doc_type=doc_type, base_dir=directory)
+            if doc:
+                new_count += 1
+
+    if prune:
+        for rel_path, doc in path_to_doc.items():
+            if rel_path not in seen_paths:
+                delete_document(doc["id"])
+                pruned_count += 1
+
+    _update_corpus_counts(corpus_id)
+
+    return {
+        "new": new_count,
+        "updated": updated_count,
+        "unchanged": unchanged_count,
+        "pruned": pruned_count,
+    }

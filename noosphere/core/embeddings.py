@@ -1,13 +1,11 @@
 """Pluggable embedding providers — OpenAI and Gemini."""
 
-import json
-import struct
 from abc import ABC, abstractmethod
 
 import httpx
 import numpy as np
 
-from noosphere.core.config import OPENAI_API_KEY, GEMINI_API_KEY, DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM
+from noosphere.core.config import OPENAI_API_KEY, GEMINI_API_KEY
 
 
 class EmbeddingProvider(ABC):

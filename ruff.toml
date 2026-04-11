@@ -1,0 +1,14 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",   # import ordering — we use logger setup before local imports
+    "E501",   # line length handled by formatter
+    "E701",   # multiple statements on one line (compact try/except)
+    "E731",   # lambda assignments
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F841"]  # unused vars in tests are fine (setup assignments)

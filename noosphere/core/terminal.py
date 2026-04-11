@@ -2,7 +2,7 @@
 
 import re
 from noosphere.core.corpus import list_corpora, create_corpus
-from noosphere.core.ingest import ingest_url, ingest_text, _update_corpus_counts
+from noosphere.core.ingest import ingest_url, ingest_text
 from noosphere.core.indexer import index_corpus
 
 
@@ -228,7 +228,7 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
             return result["prompt"]
 
         corpus = result["corpus"]
-        doc = ingest_text(corpus["id"], title="Note", content=original)
+        ingest_text(corpus["id"], title="Note", content=original)
         idx = index_corpus(corpus["id"])
         return {
             "lines": [
@@ -248,8 +248,8 @@ def _handle_write_confirm(text: str, ctx: dict) -> dict:
 
 
 def _handle_question(text: str) -> dict:
-    corpora = list_corpora(include_private=True)
-    ready = [c for c in corpora if c.get("status") == "ready"]
+    corpora = list_corpora(include_private=False)
+    ready = [c for c in corpora if c.get("status") == "ready" and c.get("access_level") == "public"]
 
     if not ready:
         return {
@@ -285,9 +285,11 @@ def _handle_question(text: str) -> dict:
         chunk_text = r.get("text", "")
         if len(chunk_text) > 200:
             chunk_text = chunk_text[:200] + "..."
+        cite = r.get("citation", {})
+        title = cite.get("document_title", "") or r.get("text", "")[:60]
         lines.append({
             "type": "search_result",
-            "title": r.get("document_title", r.get("title", "")),
+            "title": title,
             "text": chunk_text,
             "score": r.get("score", 0),
             "source": r.get("corpus_name", ""),

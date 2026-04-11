@@ -18,7 +18,9 @@ def cli():
 @click.option("--description", default="", help="Corpus description")
 @click.option("--provider", default="", help="Embedding provider: openai, gemini (auto-detect if empty)")
 @click.option("--doc-type", default="doc", help="Document type label (e.g. doc, newsletter, podcast)")
-def init(directory, name, author, description, provider, doc_type):
+@click.option("--chunk-strategy", default="paragraph", type=click.Choice(["paragraph", "recursive", "semantic"]),
+              help="Chunking strategy: paragraph (default), recursive (transcripts), semantic (papers)")
+def init(directory, name, author, description, provider, doc_type, chunk_strategy):
     """Initialize a new corpus from a directory of documents."""
     from noosphere.core.corpus import create_corpus
     from noosphere.core.ingest import ingest_directory
@@ -30,11 +32,16 @@ def init(directory, name, author, description, provider, doc_type):
     click.echo(f"  ID: {corpus_id}")
     click.echo(f"  Slug: {corpus['slug']}")
 
+    if chunk_strategy != "paragraph":
+        from noosphere.core.corpus import update_corpus as uc
+        uc(corpus_id, chunk_strategy=chunk_strategy)
+        click.echo(f"  Chunk strategy: {chunk_strategy}")
+
     click.echo(f"\nIngesting documents from {directory}...")
     docs = ingest_directory(corpus_id, directory, doc_type=doc_type)
     click.echo(f"  Ingested {len(docs)} documents")
 
-    click.echo(f"\nIndexing (chunking + embedding)...")
+    click.echo("\nIndexing (chunking + embedding)...")
 
     def progress(stage, current, total):
         if stage == "chunking":
@@ -44,8 +51,8 @@ def init(directory, name, author, description, provider, doc_type):
         elif stage == "done":
             click.echo(f"  Indexing complete: {current} chunks")
 
-    result = index_corpus(corpus_id, provider=provider, on_progress=progress)
-    click.echo(f"\nCorpus ready!")
+    result = index_corpus(corpus_id, provider=provider, on_progress=progress, chunk_strategy=chunk_strategy)
+    click.echo("\nCorpus ready!")
     click.echo(f"  Chunks: {result['chunk_count']}")
     click.echo(f"  Model: {result['embedding_model']}")
     click.echo(f"\nServe with: noosphere serve --port {PORT}")
@@ -74,8 +81,11 @@ def ingest(directory, corpus, doc_type):
 @cli.command()
 @click.option("--corpus", required=True, help="Corpus ID or slug")
 @click.option("--provider", default="", help="Embedding provider")
-def index(corpus, provider):
-    """Re-index a corpus (re-chunk and re-embed all documents)."""
+@click.option("--force", is_flag=True, help="Force re-index all documents (ignore content hashes)")
+@click.option("--chunk-strategy", default="", type=click.Choice(["", "paragraph", "recursive", "semantic"]),
+              help="Override chunking strategy for this index run")
+def index(corpus, provider, force, chunk_strategy):
+    """Re-index a corpus (incremental by default, --force for full re-index)."""
     from noosphere.core.corpus import get_corpus, get_corpus_by_slug
     from noosphere.core.indexer import index_corpus
 
@@ -84,16 +94,24 @@ def index(corpus, provider):
         click.echo(f"Corpus not found: {corpus}", err=True)
         raise SystemExit(1)
 
-    click.echo(f"Indexing: {c['name']} ({c['id']})")
+    mode = "full" if force else "incremental"
+    click.echo(f"Indexing ({mode}): {c['name']} ({c['id']})")
 
     def progress(stage, current, total):
-        if stage == "embedding":
+        if stage == "chunking":
+            click.echo(f"  Chunked: {current} segments")
+        elif stage == "embedding":
             click.echo(f"  Embedding: {current}/{total}")
         elif stage == "done":
-            click.echo(f"  Done: {current} chunks")
+            click.echo(f"  Done: {current} chunks embedded")
 
-    result = index_corpus(c["id"], provider=provider, on_progress=progress)
-    click.echo(f"\nIndexing complete: {result['chunk_count']} chunks")
+    result = index_corpus(c["id"], provider=provider, on_progress=progress,
+                          force=force, chunk_strategy=chunk_strategy)
+    click.echo(f"\nIndexing complete: {result['chunk_count']} total chunks")
+    if result.get("skipped"):
+        click.echo(f"  Skipped (unchanged): {result['skipped']}")
+    if result.get("embedded"):
+        click.echo(f"  Newly embedded: {result['embedded']}")
 
 
 @cli.command()
@@ -176,6 +194,45 @@ def search(corpus, query):
         click.echo(f"\n{r['text'][:500]}")
 
     click.echo(f"\n({results['usage']['latency_ms']}ms, {results['usage']['chunks_searched']} chunks searched)")
+
+
+@cli.command()
+@click.argument("directory")
+@click.option("--corpus", required=True, help="Corpus ID or slug")
+@click.option("--doc-type", default="doc", help="Document type for new files")
+@click.option("--prune", is_flag=True, help="Remove documents whose source files no longer exist")
+@click.option("--provider", default="", help="Embedding provider")
+def sync(directory, corpus, doc_type, prune, provider):
+    """Sync a directory to an existing corpus (add new, update changed, optionally prune deleted)."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.ingest import sync_directory
+    from noosphere.core.indexer import index_corpus
+
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Syncing {directory} → {c['name']} ({c['id']})")
+    result = sync_directory(c["id"], directory, doc_type=doc_type, prune=prune)
+    click.echo(f"  {result['new']} new, {result['updated']} updated, "
+               f"{result['pruned']} pruned, {result['unchanged']} unchanged")
+
+    if result["new"] or result["updated"]:
+        click.echo("\nIndexing changed documents...")
+
+        def progress(stage, current, total):
+            if stage == "embedding":
+                click.echo(f"  Embedding: {current}/{total}")
+            elif stage == "done":
+                click.echo(f"  Done: {current} chunks embedded")
+
+        idx_result = index_corpus(c["id"], provider=provider, on_progress=progress)
+        click.echo(f"  Total chunks: {idx_result['chunk_count']}")
+        if idx_result.get("skipped"):
+            click.echo(f"  Skipped (unchanged): {idx_result['skipped']}")
+    else:
+        click.echo("  Nothing to re-index.")
 
 
 @cli.command()

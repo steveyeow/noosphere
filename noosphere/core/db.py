@@ -2,7 +2,6 @@
 
 import sqlite3
 import threading
-from pathlib import Path
 from noosphere.core.config import DATA_DIR, DB_PATH
 
 _conn: sqlite3.Connection | None = None
@@ -30,6 +29,8 @@ CREATE TABLE IF NOT EXISTS corpora (
     owner_id TEXT,
     source_type TEXT,
     source_url TEXT,
+    chunk_strategy TEXT DEFAULT 'paragraph',
+    stale_threshold_days INTEGER DEFAULT 365,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -42,6 +43,8 @@ CREATE TABLE IF NOT EXISTS documents (
     doc_type TEXT,
     date TEXT,
     word_count INTEGER,
+    content_hash TEXT,
+    indexed_at TEXT,
     tags TEXT DEFAULT '[]',
     metadata_json TEXT DEFAULT '{}',
     created_at TEXT NOT NULL
@@ -110,6 +113,47 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at);
 """
 
+FTS_SCHEMA_SQL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    text,
+    content=chunks, content_rowid=rowid
+);
+"""
+
+MIGRATION_SQL = [
+    "ALTER TABLE documents ADD COLUMN content_hash TEXT",
+    "ALTER TABLE documents ADD COLUMN indexed_at TEXT",
+    "ALTER TABLE corpora ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph'",
+    "ALTER TABLE corpora ADD COLUMN stale_threshold_days INTEGER DEFAULT 365",
+]
+
+
+def _run_migrations(conn: sqlite3.Connection):
+    """Apply additive migrations, silently skipping already-applied ones."""
+    for stmt in MIGRATION_SQL:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+
+
+def _init_fts(conn: sqlite3.Connection):
+    """Create FTS5 virtual tables and populate from existing data."""
+    conn.executescript(FTS_SCHEMA_SQL)
+
+    count = conn.execute(
+        "SELECT COUNT(*) as n FROM chunks_fts"
+    ).fetchone()["n"]
+    if count == 0:
+        existing = conn.execute("SELECT rowid, text FROM chunks").fetchall()
+        if existing:
+            conn.executemany(
+                "INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)",
+                [(r["rowid"], r["text"]) for r in existing],
+            )
+            conn.commit()
+
 
 def get_conn() -> sqlite3.Connection:
     global _conn
@@ -122,6 +166,8 @@ def get_conn() -> sqlite3.Connection:
             _conn.execute("PRAGMA foreign_keys=ON")
             _conn.execute("PRAGMA busy_timeout=5000")
             _conn.executescript(SCHEMA_SQL)
+            _run_migrations(_conn)
+            _init_fts(_conn)
         return _conn
 
 

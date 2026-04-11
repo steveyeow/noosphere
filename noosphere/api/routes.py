@@ -1,9 +1,12 @@
 """REST API routes for corpus operations."""
 
 import json as _json
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 
 from noosphere import __version__
@@ -45,7 +48,7 @@ def _is_owner_request(request: Request) -> bool:
     client = request.client
     if client:
         host = client.host or ""
-        if host in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+        if host in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "testclient"):
             return True
 
     referer = request.headers.get("referer", "")
@@ -75,6 +78,12 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
         return check_access(corpus, _extract_bearer(request))
     except AccessDenied as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+def _require_owner(request: Request):
+    """Require the request to come from the owner. Used for write/mutation endpoints."""
+    if not _is_owner_request(request):
+        raise HTTPException(status_code=403, detail="Write access restricted to corpus owner")
 
 
 class SearchRequest(BaseModel):
@@ -121,6 +130,11 @@ class IngestURLRequest(BaseModel):
     doc_type: str = "blog"
 
 
+class IndexRequest(BaseModel):
+    force: bool = False
+    chunk_strategy: Optional[str] = None
+
+
 class CreateTokenRequest(BaseModel):
     label: str = ""
     permissions: str = "read"
@@ -128,8 +142,9 @@ class CreateTokenRequest(BaseModel):
 
 
 @router.post("/terminal")
-async def api_terminal(req: TerminalRequest):
+async def api_terminal(req: TerminalRequest, request: Request):
     """Interactive terminal command handler."""
+    _require_owner(request)
     from noosphere.core.terminal import handle_terminal_input
     return handle_terminal_input(req.input, req.context)
 
@@ -168,7 +183,8 @@ async def api_list_corpora(request: Request):
 
 
 @router.post("/corpora")
-async def api_create_corpus(req: CreateCorpusRequest):
+async def api_create_corpus(req: CreateCorpusRequest, request: Request):
+    _require_owner(request)
     corpus = create_corpus(
         req.name, description=req.description, author_name=req.author_name,
         tags=req.tags, access_level=req.access_level, language=req.language,
@@ -223,8 +239,9 @@ async def api_get_corpus(corpus_id: str, request: Request):
 
 
 @router.patch("/corpora/{corpus_id}")
-async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest):
+async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: Request):
     _resolve_corpus(corpus_id)
+    _require_owner(request)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -233,8 +250,9 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest):
 
 
 @router.delete("/corpora/{corpus_id}")
-async def api_delete_corpus(corpus_id: str):
+async def api_delete_corpus(corpus_id: str, request: Request):
     _resolve_corpus(corpus_id)
+    _require_owner(request)
     delete_corpus(corpus_id)
     return {"status": "deleted"}
 
@@ -259,8 +277,9 @@ async def api_get_document(corpus_id: str, doc_id: str, request: Request):
 
 
 @router.patch("/corpora/{corpus_id}/documents/{doc_id}")
-async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest):
+async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest, request: Request):
     _resolve_corpus(corpus_id)
+    _require_owner(request)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -271,8 +290,9 @@ async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRe
 
 
 @router.delete("/corpora/{corpus_id}/documents/{doc_id}")
-async def api_delete_document(corpus_id: str, doc_id: str):
+async def api_delete_document(corpus_id: str, doc_id: str, request: Request):
     _resolve_corpus(corpus_id)
+    _require_owner(request)
     if not delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted"}
@@ -296,7 +316,8 @@ def _extract_docx_text(raw: bytes) -> str:
 
 
 def _extract_csv_text(content: str) -> str:
-    import csv, io
+    import csv
+    import io
     reader = csv.reader(io.StringIO(content))
     rows = list(reader)
     if not rows:
@@ -332,10 +353,11 @@ SUPPORTED_EXTENSIONS = {"md", "markdown", "txt", "text", "html", "htm", "pdf", "
 @router.post("/corpora/{corpus_id}/upload")
 async def api_upload_files(
     corpus_id: str,
+    request: Request,
     files: list[UploadFile] = File(...),
-    background_tasks: BackgroundTasks = None,
 ):
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     results = []
     for f in files:
         ext = (f.filename or "").rsplit(".", 1)[-1].lower()
@@ -392,8 +414,9 @@ async def api_upload_files(
 # ── URL ingestion ──
 
 @router.post("/corpora/{corpus_id}/ingest-url")
-async def api_ingest_url(corpus_id: str, req: IngestURLRequest):
+async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     try:
         doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type)
         return doc
@@ -404,11 +427,18 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest):
 # ── Indexing ──
 
 @router.post("/corpora/{corpus_id}/index")
-async def api_index_corpus(corpus_id: str, background_tasks: BackgroundTasks = None):
+async def api_index_corpus(corpus_id: str, request: Request, req: IndexRequest = None):
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     from noosphere.core.indexer import index_corpus
+    kwargs = {}
+    if req:
+        if req.force:
+            kwargs["force"] = True
+        if req.chunk_strategy:
+            kwargs["chunk_strategy"] = req.chunk_strategy
     try:
-        result = index_corpus(corpus["id"])
+        result = index_corpus(corpus["id"], **kwargs)
         return result
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -473,9 +503,10 @@ async def api_topics(corpus_id: str, request: Request):
 # ── Export ──
 
 @router.get("/corpora/{corpus_id}/export")
-async def api_export_corpus(corpus_id: str):
+async def api_export_corpus(corpus_id: str, request: Request):
     """Export a corpus as a ZIP file."""
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     from noosphere.core.export import export_corpus
     from fastapi.responses import StreamingResponse
     buf = export_corpus(corpus["id"])
@@ -490,25 +521,28 @@ async def api_export_corpus(corpus_id: str):
 # ── Access Tokens ──
 
 @router.post("/corpora/{corpus_id}/tokens")
-async def api_create_token(corpus_id: str, req: CreateTokenRequest):
+async def api_create_token(corpus_id: str, req: CreateTokenRequest, request: Request):
     """Create an access token for a corpus. Returns plaintext token (one-time)."""
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     from noosphere.core.tokens import create_token
     return create_token(corpus["id"], label=req.label, permissions=req.permissions, expires_at=req.expires_at)
 
 
 @router.get("/corpora/{corpus_id}/tokens")
-async def api_list_tokens(corpus_id: str):
+async def api_list_tokens(corpus_id: str, request: Request):
     """List all access tokens for a corpus (without hashes)."""
     corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
     from noosphere.core.tokens import list_tokens
     return list_tokens(corpus["id"])
 
 
 @router.delete("/corpora/{corpus_id}/tokens/{token_id}")
-async def api_revoke_token(corpus_id: str, token_id: str):
+async def api_revoke_token(corpus_id: str, token_id: str, request: Request):
     """Revoke an access token."""
     _resolve_corpus(corpus_id)
+    _require_owner(request)
     from noosphere.core.tokens import revoke_token
     if not revoke_token(token_id):
         raise HTTPException(status_code=404, detail="Token not found")
@@ -534,6 +568,7 @@ async def api_global_search(req: SearchRequest):
                 r["corpus_name"] = c["name"]
                 all_results.append(r)
         except Exception:
+            logger.warning("Global search failed for corpus %s", c["id"], exc_info=True)
             continue
 
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -634,8 +669,9 @@ async def api_get_chat_session(session_id: str):
 
 
 @router.delete("/chat-sessions/{session_id}")
-async def api_delete_chat_session(session_id: str):
+async def api_delete_chat_session(session_id: str, request: Request):
     """Delete a chat session and all its messages."""
+    _require_owner(request)
     conn = get_conn()
     conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))

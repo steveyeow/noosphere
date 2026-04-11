@@ -8,7 +8,7 @@ import json
 from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug
 from noosphere.core.ingest import get_documents, get_document
 from noosphere.core.retrieval import search_corpus
-from noosphere.core.access import check_access, AccessDenied
+from noosphere.core.access import check_access
 
 
 TOOLS = [
@@ -93,9 +93,9 @@ def _resolve(corpus_id: str) -> dict | None:
     return get_corpus(corpus_id) or get_corpus_by_slug(corpus_id)
 
 
-def _check_mcp_access(corpus: dict, bearer_token: str | None):
-    """Enforce access control for MCP calls. Raises AccessDenied on failure."""
-    check_access(corpus, bearer_token)
+def _check_mcp_access(corpus: dict, bearer_token: str | None) -> str | None:
+    """Enforce access control for MCP calls. Returns token_id or None. Raises AccessDenied on failure."""
+    return check_access(corpus, bearer_token)
 
 
 def handle_tool_call(
@@ -113,11 +113,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        token_id = None
-        if bearer_token:
-            from noosphere.core.tokens import validate_token
-            token_id = validate_token(c["id"], bearer_token)
-        _check_mcp_access(c, bearer_token)
+        token_id = _check_mcp_access(c, bearer_token)
         result = search_corpus(
             c["id"], arguments["query"],
             top_k=arguments.get("top_k", 5),

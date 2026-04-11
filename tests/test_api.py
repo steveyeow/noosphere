@@ -185,20 +185,24 @@ def test_get_corpora_export_returns_zip(client, corpus):
 
 
 def test_access_private_blocks_get_and_list(client):
+    """Non-owner (agent) requests are blocked from private corpora."""
+    agent_headers = {"x-agent-id": "test-agent"}
     r = client.post("/api/v1/corpora", json={"name": "Secret", "access_level": "public"})
     cid = r.json()["id"]
 
     client.patch(f"/api/v1/corpora/{cid}", json={"access_level": "private"})
 
-    r = client.get(f"/api/v1/corpora/{cid}")
+    r = client.get(f"/api/v1/corpora/{cid}", headers=agent_headers)
     assert r.status_code == 403
     assert "private" in r.json()["detail"].lower()
 
-    r = client.get("/api/v1/corpora")
+    r = client.get("/api/v1/corpora", headers=agent_headers)
     assert cid not in {c["id"] for c in r.json()}
 
 
 def test_access_token_requires_bearer_header(client):
+    """Non-owner (agent) requests need a valid bearer token for token-gated corpora."""
+    agent_headers = {"x-agent-id": "test-agent"}
     r = client.post("/api/v1/corpora", json={"name": "Gated", "access_level": "public"})
     cid = r.json()["id"]
 
@@ -208,19 +212,19 @@ def test_access_token_requires_bearer_header(client):
 
     client.patch(f"/api/v1/corpora/{cid}", json={"access_level": "token"})
 
-    r = client.get(f"/api/v1/corpora/{cid}")
+    r = client.get(f"/api/v1/corpora/{cid}", headers=agent_headers)
     assert r.status_code == 401
     assert "token" in r.json()["detail"].lower()
 
     r = client.get(
         f"/api/v1/corpora/{cid}",
-        headers={"Authorization": f"Bearer {raw_token}"},
+        headers={**agent_headers, "Authorization": f"Bearer {raw_token}"},
     )
     assert r.status_code == 200
     assert r.json()["id"] == cid
 
     r = client.get(
         f"/api/v1/corpora/{cid}",
-        headers={"Authorization": "Bearer wrong-token"},
+        headers={**agent_headers, "Authorization": "Bearer wrong-token"},
     )
     assert r.status_code == 401

@@ -72,16 +72,25 @@ Then:
 # Initialize a corpus from a directory
 noosphere init ./my-docs --name "My Blog" --author "Jane Doe"
 
+# Use semantic chunking for academic papers
+noosphere init ./papers --name "Research" --chunk-strategy semantic
+
 # Ingest more documents into an existing corpus
 noosphere ingest ./more-docs --corpus my-blog
 
-# Re-index a corpus (re-chunk and re-embed)
+# Re-index (incremental — only re-embeds changed documents)
 noosphere index --corpus my-blog
+
+# Force full re-index (all documents)
+noosphere index --corpus my-blog --force
+
+# Sync a directory (add new, update changed, prune deleted)
+noosphere sync ./my-docs --corpus my-blog --prune
 
 # List all corpora
 noosphere list
 
-# Search a corpus
+# Search a corpus (hybrid: keyword + vector + RRF fusion)
 noosphere search --corpus my-blog "How does pricing work?"
 
 # Start the server

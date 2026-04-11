@@ -347,9 +347,10 @@ Input sources → Ingest → Clean → Chunk → Embed → Index → Publish
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python / FastAPI |
-| Database | SQLite (self-hosted) / PostgreSQL (cloud) |
+| Database | SQLite + FTS5 (self-hosted) / PostgreSQL (cloud) |
 | Embeddings | Pluggable: OpenAI, Gemini, local models |
-| Vector storage | NumPy cosine similarity |
+| Retrieval | Hybrid: FTS5 keyword + vector cosine + RRF fusion |
+| Chunking | Pluggable: paragraph, recursive, semantic |
 | MCP server | JSON-RPC over HTTP |
 | CLI | Click |
 | Frontend | Vanilla JS SPA + D3.js (served by FastAPI) |
@@ -461,7 +462,7 @@ Self-hosted users who set up their own Stripe keep 100%.
 
 ## Implementation roadmap
 
-### Phase 1: Open core MVP (current)
+### Phase 1: Open core MVP
 
 Goal: working open-source tool — ingest, index, search, serve via MCP/API/CLI/Web.
 
@@ -491,6 +492,24 @@ Deliverables:
 - [x] Access control (public / private / token / paid placeholder)
 - [x] Query logging with agent_id tracking
 - [x] Test suite (115+ tests, CI for Python 3.11–3.13)
+
+### Phase 1.5: Retrieval & knowledge quality (current)
+
+Goal: production-grade retrieval that works at scale — hybrid search, smart chunking, incremental sync.
+
+Deliverables:
+- [x] Hybrid search: FTS5 keyword + vector cosine + RRF fusion
+- [x] Multi-query expansion (Gemini Flash / GPT-4o-mini)
+- [x] 4-layer result dedup (best-per-doc, cosine similarity, type diversity, freshness boost)
+- [x] Freshness signals in search results (stale detection, age metadata)
+- [x] Chunking strategy profiles: paragraph (default), recursive (transcripts), semantic (papers)
+- [x] Content-hash idempotent indexing (skip unchanged documents)
+- [x] Incremental sync: `noosphere sync` command (add new, update changed, optionally prune deleted)
+- [x] FTS5 virtual tables with auto-population for existing databases
+- [x] Schema migrations (additive, backward-compatible)
+- [ ] Semantic chunking quality benchmarks
+
+See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
 ### Phase 2: Payments + cloud
 

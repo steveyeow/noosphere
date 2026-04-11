@@ -1,6 +1,5 @@
 """Chat with a corpus — RAG retrieval + LLM response generation."""
 
-import json
 import httpx
 
 from noosphere.core.config import (
@@ -10,7 +9,7 @@ from noosphere.core.config import (
 from noosphere.core.retrieval import search_corpus
 
 
-SYSTEM_PROMPT = """You are a knowledgeable assistant that answers questions based on the provided source material. 
+SYSTEM_PROMPT = """You are a knowledgeable assistant that answers questions based on the provided source material.
 
 Rules:
 - Answer ONLY based on the provided sources. If the sources don't contain relevant information, say so.
@@ -78,7 +77,7 @@ def chat_with_noosphere(
     """Chat across ALL public corpora."""
     from noosphere.core.corpus import list_corpora
 
-    corpora = [c for c in list_corpora() if c.get("status") == "ready"]
+    corpora = [c for c in list_corpora() if c.get("status") == "ready" and c.get("access_level") == "public"]
     all_chunks = []
 
     for c in corpora:

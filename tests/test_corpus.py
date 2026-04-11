@@ -1,6 +1,5 @@
 """Tests for corpus CRUD (``noosphere.core.corpus``)."""
 
-import pytest
 
 from noosphere.core.corpus import (
     create_corpus,

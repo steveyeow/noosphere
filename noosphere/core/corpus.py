@@ -96,6 +96,7 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
         "language", "license", "tags", "access_level", "status",
         "document_count", "chunk_count", "word_count",
         "embedding_model", "embedding_dim",
+        "chunk_strategy", "stale_threshold_days",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
@@ -114,6 +115,12 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
 
 def delete_corpus(corpus_id: str) -> bool:
     conn = get_conn()
+    session_ids = conn.execute(
+        "SELECT id FROM chat_sessions WHERE corpus_id=?", (corpus_id,)
+    ).fetchall()
+    for row in session_ids:
+        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (row["id"],))
+    conn.execute("DELETE FROM chat_sessions WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM chunks WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM documents WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM access_tokens WHERE corpus_id=?", (corpus_id,))
