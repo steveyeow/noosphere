@@ -257,3 +257,116 @@ def test_upload_blocked_for_agents(client, corpus):
         headers={"x-agent-id": "external-agent"},
     )
     assert r.status_code == 403
+
+
+# ── Knowledge growth API ──
+
+def test_capture_to_corpus(client, corpus, monkeypatch):
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.index_corpus",
+        lambda *a, **k: {"chunk_count": 0, "skipped": 0},
+    )
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/capture",
+        json={"content": "# Cap\n\nhello world", "title": "From UI", "question": "Why?"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("doc_type") == "capture"
+    assert body.get("title") == "From UI"
+
+
+def test_knowledge_health_endpoint(client, corpus_with_doc):
+    r = client.get(f"/api/v1/corpora/{corpus_with_doc['id']}/knowledge-health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["document_count"] >= 1
+    assert "documents_without_chunks_count" in data
+
+
+def test_ingest_feed_api_mock(client, corpus, monkeypatch):
+    xml = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>T</title><link>https://example.invalid/only-xml</link><guid>g99</guid>
+<description>Body only</description></item></channel></rss>"""
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+        @property
+        def content(self):
+            return xml
+
+    def fake_get(*a, **k):
+        return FakeResp()
+
+    monkeypatch.setattr("noosphere.core.knowledge_growth.httpx.get", fake_get)
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.index_corpus",
+        lambda *a, **k: {"chunk_count": 0},
+    )
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/ingest-feed",
+        json={"feed_url": "https://example.com/feed.xml", "max_items": 5},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data.get("ingested", 0) >= 1
+
+
+def test_ingest_urls_bulk_mock(client, corpus, monkeypatch):
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.ingest_url",
+        lambda cid, url, doc_type="blog": {"id": "x1", "title": url, "corpus_id": cid},
+    )
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.index_corpus",
+        lambda *a, **k: {"chunk_count": 0},
+    )
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/ingest-urls",
+        json={"urls": ["https://a.example/x", "https://b.example/y"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["ingested"] == 2
+
+
+def test_maintain_endpoint(client, corpus, monkeypatch):
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.index_corpus",
+        lambda *a, **k: {"chunk_count": 0, "skipped": 0},
+    )
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/maintain",
+        json={"force": False},
+    )
+    assert r.status_code == 200
+
+
+def test_compile_endpoint_mock(client, corpus_with_doc, monkeypatch):
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.search_corpus",
+        lambda cid, q, top_k=5: {
+            "results": [
+                {
+                    "text": "Fact one about topic.",
+                    "score": 0.9,
+                    "citation": {"document_title": "Src", "document_id": "d1"},
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "noosphere.core.chat._call_llm",
+        lambda messages: "# Summary\n\nSynth.\n\n## Sources\n- Src",
+    )
+    monkeypatch.setattr(
+        "noosphere.core.knowledge_growth.index_corpus",
+        lambda *a, **k: {"chunk_count": 1},
+    )
+    r = client.post(
+        f"/api/v1/corpora/{corpus_with_doc['id']}/compile",
+        json={"topic": "topic", "top_k": 3},
+    )
+    assert r.status_code == 200
+    assert r.json().get("doc_type") == "concept"

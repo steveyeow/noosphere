@@ -1,53 +1,30 @@
 # Noosphere
 
-> Expand the scope and scale of collective enlightenment.
-
-**arXiv for all knowledge — built for agents.**
-
-Noosphere lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like arXiv, but open to all knowledge (not just academic papers) and built for agents instead of human readers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
-
-```
-                    Agent-native
-                        ↑
-                        |
-         Wolfram API    |    ← Noosphere
-                        |
-                        |
-  ──────────────────────┼──────────────────── Anyone can publish
-   Closed /             |
-   platform-controlled  |
-                        |    HuggingFace
-  Google Scholar        |    arXiv
-  Semantic Scholar      |    Wikipedia
-                        |
-         JSTOR          |
-         Elsevier       |
-                        ↓
-                    Human-readable
-```
-
-Every existing knowledge platform — Google Scholar, arXiv, Wikipedia, JSTOR — was built for humans to read. Noosphere is built for the world where agents are the primary consumers of knowledge, expanding both the scope (knowledge too niche to find becomes accessible through agent queries) and the scale (millions of agents querying thousands of knowledge bases simultaneously) of collective enlightenment.
+Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Keep it open, or charge for access.
 
 ## Why
 
-Two transformations drive Noosphere:
+Personal AI knowledge bases are clearly the future. But today they are all isolated, and there's no way to connect them or monetize the knowledge inside.
 
-1. **Anyone can publish.** Not just academics or institutions. Any person, community, or organization can turn their knowledge into a structured, queryable corpus — as easily as uploading files or pointing at a URL.
-2. **Agents are the primary audience.** Every corpus is designed to be discovered, queried, and cited by agents first. The primary interface for consumers is MCP and API, not a web browser.
+Noosphere is built on four ideas:
 
-Today, making your knowledge agent-friendly requires significant technical effort — structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments. Noosphere standardizes and democratizes the entire pipeline.
+1. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts — not just whatever one person uploaded.
+2. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution.
+3. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, and new documents. Not static file dumps, but compounding knowledge systems.
+4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 
 ## What it does
 
-1. **Ingest** — Point Noosphere at a directory of Markdown files, a blog, an RSS feed, or a set of documents. It converts everything into a structured corpus.
-2. **Index** — Documents are chunked, embedded, and indexed for semantic search.
-3. **Serve** — The corpus is exposed via MCP (for Claude, Cursor, Codex) and REST API. Every query returns cited passages, not hallucinated summaries.
-4. **Control** — Set access levels: public, private, token-gated, or paid.
+1. **Ingest** — Markdown directories, file upload, single URL, **multiple URLs in one request**, **RSS/Atom feeds** (recurring inflow), PDF/DOCX/CSV/JSON. Everything becomes documents in a corpus.
+2. **Grow** — **Save from chat** into the corpus (capture documents with provenance). **Compile** runs retrieval + LLM to add a fused “concept” note from existing material (similar in spirit to LLM-maintained wiki pages, but grounded on your stored sources).
+3. **Index** — Documents are chunked, embedded, and indexed for hybrid search (keyword + vector + fusion).
+4. **Serve** — Every corpus gets discovery and query endpoints. Agents connect directly; creators manage via the web UI.
+5. **Control** — Public, private, token-gated, or paid. Bring your own Stripe, keep 100% — or use the hosted platform.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/AcademiAI/noosphere.git
+git clone https://github.com/steveyeow/noosphere.git
 cd noosphere
 python -m venv .venv
 source .venv/bin/activate
@@ -62,6 +39,7 @@ python -m noosphere.cli serve --port 8420
 ```
 
 Then:
+
 - Open `http://localhost:8420` for the web UI with interactive corpus network
 - Connect your MCP client (Claude, Cursor, etc.) to `http://localhost:8420/mcp`
 - Use the REST API at `http://localhost:8420/api/v1/corpora`
@@ -86,6 +64,18 @@ noosphere index --corpus my-blog --force
 
 # Sync a directory (add new, update changed, prune deleted)
 noosphere sync ./my-docs --corpus my-blog --prune
+
+# Recurring inflow: RSS/Atom → new documents (deduped), then index
+noosphere ingest-feed --corpus my-blog "https://example.com/feed.xml"
+
+# Many URLs at once
+noosphere ingest-urls --corpus my-blog "https://a.example/p1" "https://a.example/p2"
+
+# LLM “compile” a concept note from retrieved passages (needs chat API keys in .env)
+noosphere compile --corpus my-blog "pricing strategy"
+
+# Corpus health (missing chunks, staleness, empty markdown links)
+noosphere health-knowledge --corpus my-blog
 
 # List all corpora
 noosphere list

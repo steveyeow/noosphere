@@ -235,6 +235,84 @@ def sync(directory, corpus, doc_type, prune, provider):
         click.echo("  Nothing to re-index.")
 
 
+@cli.command("ingest-feed")
+@click.option("--corpus", required=True, help="Corpus ID or slug")
+@click.argument("feed_url")
+@click.option("--max-items", default=25, help="Max feed entries to process")
+def ingest_feed_cmd(corpus, feed_url, max_items):
+    """Ingest new items from an RSS or Atom URL (recurring inflow)."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.knowledge_growth import ingest_rss_feed
+
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+    click.echo(f"Ingesting feed into {c['name']} ({c['id']})...")
+    result = ingest_rss_feed(c["id"], feed_url.strip(), max_items=max_items)
+    click.echo(f"  Fetched {result['fetched']} entries, ingested {result['ingested']}, skipped {result['skipped']}")
+    if result.get("index") and "chunk_count" in result["index"]:
+        click.echo(f"  Chunks: {result['index']['chunk_count']}")
+
+
+@cli.command("ingest-urls")
+@click.option("--corpus", required=True, help="Corpus ID or slug")
+@click.argument("urls", nargs=-1, required=True)
+@click.option("--doc-type", default="blog", help="Document type label")
+def ingest_urls_cmd(corpus, urls, doc_type):
+    """Ingest multiple URLs in one shot (paste many links)."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.knowledge_growth import ingest_urls_bulk
+
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+    if len(urls) > 40:
+        click.echo("Maximum 40 URLs", err=True)
+        raise SystemExit(1)
+    result = ingest_urls_bulk(c["id"], list(urls), doc_type=doc_type)
+    click.echo(f"Ingested {result['ingested']}, failed {result['failed']}")
+    for err in result.get("errors", [])[:5]:
+        click.echo(f"  ! {err.get('url')}: {err.get('error')}")
+
+
+@cli.command("compile")
+@click.option("--corpus", required=True, help="Corpus ID or slug")
+@click.argument("topic")
+@click.option("--top-k", default=10, help="Retrieval breadth")
+def compile_cmd(corpus, topic, top_k):
+    """LLM-compile a concept note from retrieved passages (requires chat API keys)."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.knowledge_growth import compile_concept_note
+
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+    doc = compile_concept_note(c["id"], topic, top_k=top_k)
+    click.echo(f"Created concept document: {doc['title']} ({doc['id']})")
+
+
+@cli.command("health-knowledge")
+@click.option("--corpus", required=True, help="Corpus ID or slug")
+def health_knowledge_cmd(corpus):
+    """Show corpus knowledge-health report (coverage, staleness)."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.knowledge_growth import corpus_knowledge_health
+
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+    r = corpus_knowledge_health(c["id"])
+    click.echo(f"Documents: {r['document_count']}")
+    click.echo(f"Without chunks: {r['documents_without_chunks_count']}")
+    click.echo(f"Capture docs: {r['capture_documents']} | Concept docs: {r['concept_documents']}")
+    click.echo(f"Suspected empty markdown links: {r['suspected_empty_markdown_links']}")
+    click.echo(f"Older than {r['stale_threshold_days']}d: {r['documents_older_than_threshold_count']}")
+
+
 @cli.command()
 @click.option("--corpus", required=True, help="Corpus ID or slug")
 @click.option("--output", default="", help="Output file path (default: <slug>.zip)")

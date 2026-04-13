@@ -135,6 +135,34 @@ class IndexRequest(BaseModel):
     chunk_strategy: Optional[str] = None
 
 
+class CaptureRequest(BaseModel):
+    """Save chat output or notes back into the corpus (chat → knowledge base)."""
+
+    content: str
+    title: str = ""
+    question: str = ""
+    session_id: Optional[str] = None
+
+
+class IngestFeedRequest(BaseModel):
+    feed_url: str
+    max_items: int = 25
+
+
+class IngestUrlsRequest(BaseModel):
+    urls: list[str]
+    doc_type: str = "blog"
+
+
+class CompileRequest(BaseModel):
+    topic: str
+    top_k: int = 10
+
+
+class MaintainRequest(BaseModel):
+    force: bool = False
+
+
 class CreateTokenRequest(BaseModel):
     label: str = ""
     permissions: str = "read"
@@ -422,6 +450,94 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request
         return doc
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/ingest-urls")
+async def api_ingest_urls_bulk(corpus_id: str, req: IngestUrlsRequest, request: Request):
+    """Batch URL ingestion (lower friction than one request per page)."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+    if len(req.urls) > 40:
+        raise HTTPException(status_code=400, detail="Maximum 40 URLs per request")
+    from noosphere.core.knowledge_growth import ingest_urls_bulk
+
+    try:
+        return ingest_urls_bulk(corpus["id"], req.urls, doc_type=req.doc_type)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/ingest-feed")
+async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Request):
+    """Ingest new entries from an RSS or Atom feed."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+    from noosphere.core.knowledge_growth import ingest_rss_feed
+
+    try:
+        return ingest_rss_feed(corpus["id"], req.feed_url.strip(), max_items=req.max_items)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/capture")
+async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
+    """Persist text into the corpus (e.g. assistant reply from chat)."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+    from noosphere.core.knowledge_growth import save_capture
+
+    try:
+        return save_capture(
+            corpus["id"],
+            content=req.content,
+            title=req.title,
+            question=req.question,
+            session_id=req.session_id or "",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/compile")
+async def api_compile_concept(corpus_id: str, req: CompileRequest, request: Request):
+    """LLM-compile a concept note from retrieved passages (knowledge fusion)."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+    from noosphere.core.knowledge_growth import compile_concept_note
+
+    try:
+        return compile_concept_note(corpus["id"], req.topic.strip(), top_k=req.top_k)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/corpora/{corpus_id}/knowledge-health")
+async def api_knowledge_health(corpus_id: str, request: Request):
+    """Corpus health / lint-style report (coverage, staleness, link hygiene)."""
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    from noosphere.core.knowledge_growth import corpus_knowledge_health
+
+    try:
+        return corpus_knowledge_health(corpus["id"])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/maintain")
+async def api_maintain_corpus(corpus_id: str, req: MaintainRequest, request: Request):
+    """Re-index corpus to repair search index drift (lightweight maintain pass)."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+    from noosphere.core.knowledge_growth import run_corpus_maintain
+
+    try:
+        return run_corpus_maintain(corpus["id"], force_reindex=req.force)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Indexing ──

@@ -1,23 +1,31 @@
 # Noosphere
 
-> Expand the scope and scale of collective enlightenment.
+> The knowledge network for the agent era.
 
-**arXiv for all knowledge — built for agents.**
-
-Noosphere is an open platform that lets anyone publish their knowledge — papers, blogs, newsletters, podcasts, docs, notes — as structured, agent-readable corpora that AI agents can discover, query, and cite. Like arXiv, but open to all knowledge (not just academic papers) and built for agents instead of human readers. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
+Noosphere is an open knowledge network. Build a living knowledge base that AI agents can discover, search, and cite. Connect it to a global network. Keep it open for everyone, or set it to paid — you control access, you keep the revenue.
 
 ---
 
 ## Origin story
 
-Platforms for human knowledge discovery already exist. Google Scholar indexes academic papers. arXiv lets anyone upload preprints. JSTOR and Elsevier sell access to journals. Wikipedia lets anyone contribute encyclopedic knowledge. But none of them were built for the emerging world where **agents are the primary consumers of knowledge**.
+A new kind of knowledge tool is emerging. People like [Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (LLM Wiki), [Garry Tan](https://github.com/garrytan/gbrain) (GBrain), and countless others are building personal knowledge bases that their AI agents can read — structured wikis and brains maintained by LLMs, growing from conversations and documents over time.
+
+This is clearly where knowledge is going. But there are two problems:
+
+**1. Every knowledge base is an island.** Karpathy's wiki can't talk to Garry's brain. There is no discovery layer — no way for an agent to search across multiple people's knowledge bases to find the right expert knowledge.
+
+**2. Building one requires serious technical skill.** Structuring content, chunking, embedding, hosting an MCP server, managing vector search, setting up access control — each personal knowledge base is a one-off engineering project. Most creators, researchers, and domain experts simply can't do this.
+
+Noosphere solves both problems. It is the infrastructure layer that:
+- **Democratizes** what Karpathy and Garry Tan built — anyone can create an agent-readable knowledge base by uploading files or pasting a URL, with zero technical setup.
+- **Connects** isolated knowledge bases into a shared discovery network — agents can search across all public knowledge bases at once, finding the right expert knowledge wherever it lives.
 
 ```
                     Agent-native
                         ↑
                         |
-         Wolfram API    |    ← Noosphere
-                        |
+   Karpathy LLM Wiki   |    ← Noosphere
+   GBrain              |    (networked + democratized)
                         |
   ──────────────────────┼──────────────────── Anyone can publish
    Closed /             |
@@ -32,9 +40,7 @@ Platforms for human knowledge discovery already exist. Google Scholar indexes ac
                     Human-readable
 ```
 
-The upper-right quadrant — open to any knowledge creator AND built for agent consumption — is empty. That is where Noosphere sits.
-
-The trend is clear: more products are being built for agents, and more knowledge needs to become machine-readable. But today, making your knowledge agent-friendly requires significant technical effort — structuring content, chunking, embedding, hosting an MCP server, setting up access control, handling payments. Some creators have started converting their content into agent-friendly formats manually, but each effort is a one-off technical project. Noosphere standardizes and democratizes the entire pipeline.
+Karpathy's LLM Wiki and Garry Tan's GBrain sit in the upper-left: agent-native, but single-user and technically demanding. Noosphere occupies the upper-right: agent-native AND open to anyone, with a network that connects them all.
 
 ## Connection to Feynman
 
@@ -61,23 +67,23 @@ Integration is optional. Feynman can import `noosphere` as a Python library (sam
 
 ## Mission
 
-**Expand the scope and scale of collective enlightenment.**
+**The knowledge network for the agent era.**
 
-Every existing knowledge platform was built for humans to read. Google Scholar helps researchers find papers. arXiv lets scientists share preprints. Wikipedia lets anyone contribute to a shared encyclopedia. These platforms expanded collective enlightenment within the bounds of human attention and reading speed.
+Personal AI knowledge bases are the future — but isolated knowledge bases are a transitional state. The real value comes when they're connected into a network, and when creators can control and monetize access.
 
-Noosphere asks: what happens when agents can discover, read, and cite knowledge on behalf of humans — across every knowledge base in the world, simultaneously? The scope expands — knowledge that was previously too niche, too specialized, or too buried to find becomes accessible through agent queries. The scale expands — millions of agents can query thousands of knowledge bases simultaneously, far beyond what any individual human could consume.
+Four things define Noosphere:
 
-Two transformations make this possible:
-
-1. **Anyone can publish.** Not just academics, not just institutions. Any person, community, or organization can turn their knowledge into a structured, queryable corpus — as easily as uploading files or pointing at a URL.
-2. **Agents are the primary audience.** Every corpus is designed to be discovered, queried, and cited by agents first. The web UI exists for creators to manage their knowledge and see how agents are using it. The primary interface for consumers is MCP and API.
+1. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts. The network makes every individual knowledge base more valuable — and creates a marketplace where knowledge finds the people (and agents) who need it.
+2. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution. Agents are the primary consumers. The web UI exists for creators to manage their knowledge.
+3. **Living knowledge.** Knowledge bases grow over time — from chat conversations, RSS feeds, URL imports, and LLM-powered compilation. They are compounding knowledge systems, not static file dumps.
+4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Lenny Rachitsky opened part of his newsletter to agents for free but kept the full archive behind a subscription. Domain experts, researchers, consultants — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need, without hiring consultants to train proprietary models.
 
 We believe that:
 
-- Human knowledge should not be locked inside formats that only humans can navigate.
+- Personal knowledge bases will become as common as personal websites — and they need a network, not just tools.
 - The emerging agent ecosystem needs trusted, structured, citable knowledge sources — not just raw web scraping.
-- Creators should control access to their knowledge and be able to monetize it if they choose.
-- An open protocol for agent-readable knowledge will create more value than any closed platform alone.
+- Isolated knowledge bases are a transitional state. The network is the product.
+- Creators should own and control access to their knowledge — including the right to get paid for it.
 
 ## Design principles
 
@@ -92,6 +98,24 @@ We believe that:
 5. **Open core, commercial convenience.** The full product is open-source and self-hostable — including paid access control. The commercial layer adds hosting convenience, not exclusive features.
 
 6. **One network.** Self-hosted and cloud-hosted corpora are equal participants in the Noosphere. The registry connects them all. Content stays on the creator's infrastructure; only metadata is shared for discovery.
+
+---
+
+## Knowledge lifecycle (growth, fusion, maintenance)
+
+Personal LLM wikis and agent brains emphasize **continuous compilation**: raw inputs → structured pages, chat that writes back, and periodic “lint” or overnight enrichment. Noosphere’s first job remains **publishable, citable corpora for agents**; the lifecycle features below **narrow the gap** with those workflows without changing the core product (network + APIs + access control).
+
+| Pattern (LLM wiki / agent brain) | Noosphere capability |
+|----------------------------------|------------------------|
+| Raw + compiled layers | **Compile:** `POST /corpora/{id}/compile` — retrieves top passages, calls the chat LLM to write a single Markdown **concept** document with sections (summary, key points, sources). Grounded in stored docs; does not replace human judgment for contradictions. |
+| Chat → knowledge | **Capture:** `POST /corpora/{id}/capture` — saves arbitrary Markdown (e.g. assistant reply) as `doc_type=capture` with optional `question` + `session_id` metadata. Web UI: **Save to corpus** on each assistant message. |
+| Feeds / recurring inflow | **RSS/Atom:** `POST /corpora/{id}/ingest-feed` — fetches feed, dedupes by `rss_guid` / link metadata, ingests new entries (fetch URL when possible; else summary body). CLI: `noosphere ingest-feed`. |
+| Batch URLs | **`POST /corpora/{id}/ingest-urls`** — up to 40 URLs per request. CLI: `noosphere ingest-urls`. |
+| Lint / health / repair | **`GET /corpora/{id}/knowledge-health`** — documents with no chunks, suspected empty `]()` links, counts of capture/concept docs, documents older than `stale_threshold_days`. **`POST /corpora/{id}/maintain`** — re-runs `index_corpus` (optional `force` for full rebuild). |
+| Nightly “dream” enrichment | **Not implemented** — possible future job using the same LLM stack; today, run `maintain` + `compile` on a schedule (e.g. cron) if desired. |
+| Automatic meeting/email/calendar ingest | **Out of scope for open core** — requires deep integrations; cloud roadmap may add connectors. |
+
+**Honest boundary:** Noosphere still does not auto-ingest your private digital life the way a personal OpenClaw + brain stack can. It **does** support **networked publishing**, **lower-friction inflow** (feeds, batch URLs, captures, compile), and **observable corpus health**.
 
 ---
 
@@ -173,18 +197,19 @@ The web UI serves **creators** — people who add knowledge to the Noosphere and
 | | Creator (human) | Consumer (agent) |
 |---|---|---|
 | **Interface** | Web UI | MCP / REST API |
-| **Actions** | Upload knowledge, configure access, view analytics | Search, retrieve, cite |
+| **Actions** | Upload knowledge, ingest feeds/URLs, save from chat, compile concept notes, run health/maintain, configure access, view analytics | Search, retrieve, cite |
 | **Sees** | Documents, endpoints, query activity | Chunks, scores, citations |
 
 ### User flow
 
 ```
 New user arrives
-  → Landing page: "Publish your knowledge for agents"
+  → Landing page: "Build your AI knowledge base. Connect it to the world."
   → Click "Get Started"
   → Main view: the Noosphere (network graph + global search + your corpora)
   → Click "+ Add Knowledge"
-  → Create corpus: name, description, upload files or paste URL
+  → Create corpus: name, description, upload files, paste URL, paste RSS, or batch URLs (API/CLI)
+  → Optional: chat with the corpus and **Save to corpus** to grow captures; run **Compile** (API/CLI) for fused concept notes
   → Choose access: public / private / token-gated
   → Choose whether to register in the Noosphere (recommended for public)
   → Done → See your corpus with MCP/API endpoints prominently displayed
@@ -297,6 +322,8 @@ MCP tools:
 | `get_stats` | Corpus statistics. |
 | `get_manifest` | Full corpus manifest. |
 
+Growth actions (**capture**, **compile**, **ingest-feed**, **ingest-urls**, **maintain**) are **REST/CLI-first** so agent consumers stay read/query-oriented; the corpus owner (or integrations with owner credentials) uses HTTP or CLI to grow the corpus.
+
 ### REST API
 
 ```
@@ -310,6 +337,12 @@ GET    /api/v1/corpora/:id/documents            # List documents
 GET    /api/v1/corpora/:id/documents/:doc_id    # Get a document
 POST   /api/v1/corpora/:id/upload               # Upload files
 POST   /api/v1/corpora/:id/ingest-url           # Ingest from URL
+POST   /api/v1/corpora/:id/ingest-urls          # Batch URL ingest (max 40)
+POST   /api/v1/corpora/:id/ingest-feed          # RSS or Atom feed → documents
+POST   /api/v1/corpora/:id/capture              # Save Markdown into corpus (chat → KB)
+POST   /api/v1/corpora/:id/compile              # LLM concept note from retrieved passages
+GET    /api/v1/corpora/:id/knowledge-health     # Health / lint-style report
+POST   /api/v1/corpora/:id/maintain             # Re-index (repair FTS/chunk drift)
 POST   /api/v1/corpora/:id/index                # Trigger indexing
 POST   /api/v1/corpora/:id/search               # Semantic search
 GET    /api/v1/corpora/:id/analytics            # Query logs
@@ -330,6 +363,8 @@ GET    /.well-known/noosphere.json              # Federated discovery manifest
 | Markdown files | Local directory, upload, GitHub repo |
 | Plain text | Upload |
 | HTML / Blog | URL fetch → auto-convert to markdown |
+| RSS / Atom | Feed URL → new documents per item (deduped); prefers fetching item link |
+| Batch URLs | `ingest-urls` API / CLI — multiple pages in one operation |
 | Audio transcription | Cloud only (Whisper API) — paid feature |
 
 ### Pipeline stages
@@ -495,7 +530,7 @@ Deliverables:
 
 ### Phase 1.5: Retrieval & knowledge quality (current)
 
-Goal: production-grade retrieval that works at scale — hybrid search, smart chunking, incremental sync.
+Goal: production-grade retrieval that works at scale — hybrid search, smart chunking, incremental sync — plus **knowledge lifecycle** primitives that align with LLM-wiki / agent-brain patterns (without changing the mission).
 
 Deliverables:
 - [x] Hybrid search: FTS5 keyword + vector cosine + RRF fusion
@@ -507,7 +542,13 @@ Deliverables:
 - [x] Incremental sync: `noosphere sync` command (add new, update changed, optionally prune deleted)
 - [x] FTS5 virtual tables with auto-population for existing databases
 - [x] Schema migrations (additive, backward-compatible)
+- [x] Chat → corpus: `POST …/capture` + “Save to corpus” in web UI
+- [x] RSS/Atom feed ingest + batch URL ingest
+- [x] LLM **compile** (concept note from retrieval + chat LLM)
+- [x] Knowledge health report + **maintain** (re-index / optional force)
 - [ ] Semantic chunking quality benchmarks
+- [ ] Scheduled / background “enrichment” job (dream-cycle style)
+- [ ] Web UI actions for feed URL, batch URLs, compile (API/CLI today)
 
 See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
@@ -533,10 +574,10 @@ See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
 ## Summary
 
-Noosphere is arXiv for all knowledge — built for agents. Anyone can publish their knowledge as structured, agent-readable corpora. Agents discover, query, and cite knowledge through MCP and API. Corpora are open by default; creators who choose to can set access to private, token-gated, or paid.
+Noosphere is the knowledge network for the agent era. Build a living knowledge base that grows over time. Connect it to a global network where AI agents can discover, search, and cite your knowledge. Keep it open for everyone, or set it to paid.
+
+The network connects all knowledge bases — self-hosted and cloud-hosted alike. Agents query the registry to discover knowledge, then connect directly to each node. Content stays on the creator's infrastructure; only metadata is shared for discovery.
 
 The full product is open-source and self-hostable — including paid access (bring your own Stripe, keep 100%). The commercial layer adds hosting convenience and charges a 10% commission only when payment flows through the platform.
 
-All nodes — self-hosted and cloud-hosted — participate in a shared discovery network via the registry. Self-hosted corpora register their metadata (not content) to the public registry, making them discoverable by any agent worldwide. Content stays on the creator's infrastructure.
-
-The mission is to expand the scope and scale of collective enlightenment — by making every person's knowledge accessible to every agent, on the creator's terms.
+Creators own their knowledge, control access, and keep the revenue. The network makes every knowledge base more valuable by connecting it to the agents and organizations that need it.

@@ -75,10 +75,9 @@ The landing page D3 graph uses hardcoded demo data (`DM` array). The network vie
 
 ## 6. URL Consistency
 
-- `app.js` line 94: links to `github.com/steveyeow/noosphere`
-- `pyproject.toml` line 41-42: links to `github.com/AcademiAI/noosphere`
+All URLs now unified to `github.com/steveyeow/noosphere`.
 
-**Fix:** Unify to `github.com/AcademiAI/noosphere`.
+**Status:** Fixed.
 
 ---
 
