@@ -33,13 +33,19 @@ OWNER_NAME = _raw.strip().title() if _raw.strip() else _getpass.getuser().title(
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 
+# App URL — used to build redirect URLs for Stripe, etc.
+APP_URL = os.getenv("APP_URL", f"http://localhost:{PORT}")
+
 # Stripe — self-hosted creators use their own keys, keep 100%
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "")  # e.g. http://localhost:8420/payment/success
-STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "")    # e.g. http://localhost:8420/payment/cancel
+STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", f"{APP_URL}/?payment=success")
+STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", f"{APP_URL}/?payment=cancel")
 
-DEFAULT_REGISTRY = "https://registry.noosphere.ai"
+# Registry — set NOOSPHERE_REGISTRY to the registry URL to join the Noosphere.
+# Self-hosted nodes register metadata with the registry for discovery.
+# Leave empty or "none" to run as a standalone node.
+DEFAULT_REGISTRY = ""
 NOOSPHERE_REGISTRY = os.getenv("NOOSPHERE_REGISTRY", DEFAULT_REGISTRY)
 if NOOSPHERE_REGISTRY.lower() == "none":
     NOOSPHERE_REGISTRY = ""

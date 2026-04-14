@@ -129,8 +129,8 @@ Following the same architecture as Feynman, Noosphere is a single repository wit
 noosphere/
 ├── LICENSE                    ← MIT (root)
 ├── noosphere/
-│   ├── core/                  ← MIT — ingestion, chunking, embedding, retrieval
-│   ├── api/                   ← MIT — REST API + web frontend
+│   ├── core/                  ← MIT — ingestion, chunking, embedding, retrieval, registry
+│   ├── api/                   ← MIT — REST API + web frontend + network discovery
 │   ├── cli/                   ← MIT — CLI commands
 │   ├── mcp/                   ← MIT — MCP server
 │   └── cloud/                 ← BSL — managed auth, quota, stripe connect (Phase 2+)
@@ -396,63 +396,75 @@ Input sources → Ingest → Clean → Chunk → Embed → Index → Publish
 
 ## Discovery and registry
 
-### Design: centralized registry, decentralized hosting
+### Design: the cloud app IS the registry
+
+The cloud deployment (`app.noosphere.wiki`) serves as both the hosted product for cloud users **and** the discovery registry for the entire network. There is no separate registry service — this keeps deployment simple (single service, single database) while still enabling a federated network.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                  Noosphere Registry                       │
-│           (registry.noosphere.ai)                         │
-│                                                           │
-│  Stores ONLY metadata:                                    │
-│    corpus name, description, tags, endpoint URL,          │
-│    document count, access level, last health check        │
-│                                                           │
-│  Does NOT store:                                          │
-│    document content, chunks, embeddings, auth tokens      │
-├───────────────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │ Self-    │  │ Self-    │  │ Cloud-   │               │
-│  │ hosted   │  │ hosted   │  │ hosted   │               │
-│  │ node A   │  │ node B   │  │ node C   │               │
-│  └──────────┘  └──────────┘  └──────────┘               │
-│       ▲              ▲             ▲                      │
-│       └──────────────┴─────────────┘                      │
-│         Agents connect DIRECTLY to each node              │
-└───────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────┐
+│           app.noosphere.wiki                          │
+│     (cloud app + built-in registry)                   │
+│                                                       │
+│  ┌───────────────┐  ┌──────────────────────────────┐  │
+│  │ corpora table │  │ registered_nodes +            │  │
+│  │ (cloud users) │  │ registered_corpora tables     │  │
+│  │               │  │ (remote self-hosted metadata) │  │
+│  └───────────────┘  └──────────────────────────────┘  │
+│                                                       │
+│  GET /api/v1/search                                   │
+│    → query local corpora (same DB, fast)              │
+│    → query registered_corpora (remote metadata)       │
+│    → merge results                                    │
+│                                                       │
+└───────────────────────────────────────────────────────┘
+         ↑                          ↑
+    Cloud users                Self-hosted nodes
+    (corpora in same DB)       (register metadata via POST)
 ```
 
-Self-hosted and cloud-hosted corpora are equal citizens. The registry indexes all of them. Agents query the registry to discover corpora, then connect directly to the hosting node.
+Self-hosted and cloud-hosted corpora are equal citizens in the network. Cloud corpora are discovered directly from the database. Self-hosted corpora register their metadata (name, description, tags, endpoint URL) so agents can discover and connect to them directly.
 
-### Registration in the UI
+**What the registry stores for remote nodes:**
+- corpus name, description, tags, endpoint URL, document count, access level, last health check
 
-When a user creates a public corpus, the UI asks:
+**What it does NOT store:**
+- document content, chunks, embeddings, auth tokens
 
-```
-🌐 Join the Noosphere?
+### Self-hosted node registration
 
-Register this corpus so agents worldwide can discover
-and query your knowledge.
-
-☑ Register to the Noosphere (recommended)
-
-Your content stays on your server.
-Only the name, description, and tags are shared.
-```
-
-This makes registration explicit and the user understands what's shared (metadata only).
-
-### Configuration
+Self-hosted nodes register with the cloud app on startup:
 
 ```bash
-# Default: register with the public registry on serve
+# Register with the public Noosphere (default)
 noosphere serve --port 8420
 
-# Opt out
+# Opt out — run as a standalone knowledge base
 noosphere serve --port 8420 --no-registry
 
-# Custom registry
-noosphere serve --port 8420 --registry https://internal.mycompany.com/registry
+# Private/corporate registry
+noosphere serve --port 8420 --registry https://internal.mycompany.com
 ```
+
+### Agent discovery flow
+
+```
+Agent                       app.noosphere.wiki              Self-hosted node
+  |                               |                               |
+  |-- GET /api/v1/search ------> |                               |
+  |                               |  (search local corpora        |
+  |                               |   + registered_corpora)       |
+  |<-- [{results}] --------------|                               |
+  |                                                               |
+  |  For remote results:                                          |
+  |-- POST /api/v1/corpora/{id}/search -----------------------> |
+  |<-- [{text, citation, score}] <------------------------------ |
+```
+
+Cloud corpora return full search results directly. Self-hosted corpora return metadata + endpoint URL — the agent connects directly to the self-hosted node for queries.
+
+### Health check
+
+Node health is checked via a cron-compatible endpoint (`GET /api/cron/health-check`) that pings all registered self-hosted nodes. Cloud corpora don't need health checks — they're in the same database.
 
 ---
 
@@ -553,12 +565,12 @@ See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
 Goal: the two things that make Noosphere a product, not a tool — the network and the ability for creators to get paid. Without these, Noosphere is just another local knowledge base tool.
 
-#### 2a. Registry Server — the network becomes real
+#### 2a. Registry — the network becomes real
 
-- [x] Registry server: accepts registration, stores metadata, serves discovery queries
-- [x] Registry search API: agents query the registry to find relevant corpora across all nodes
-- [x] Registry health checks: periodic ping of registered nodes, mark stale/offline
-- [x] Registry UI: browsable directory of all public knowledge bases in the Noosphere
+- [x] Built-in registry: the cloud app serves as both product and discovery registry (no separate service)
+- [x] Registry search API: agents query the registry to find corpora across all nodes (local + remote)
+- [x] Registry health checks: cron-compatible endpoint pings registered self-hosted nodes
+- [x] Registry directory: browsable view of all public knowledge bases in the Noosphere
 
 #### 2b. Stripe Integration — creators get paid
 
@@ -584,8 +596,8 @@ Goal: hosted version for creators who don't want to self-host.
 - [x] `noosphere/cloud/` — managed auth (Supabase), quota enforcement, Stripe Connect (BSL)
 - [x] Free/Pro tier billing (Pro subscription checkout + webhook handlers)
 - [x] Platform commission (10%) on paid corpus revenue via Stripe Connect
-- [ ] Cloud deployment (Vercel/Railway + PostgreSQL)
-- [ ] PostgreSQL database adapter (currently SQLite only)
+- [x] PostgreSQL database adapter (SQLite for self-hosted, PostgreSQL for cloud)
+- [ ] Cloud deployment (Vercel + Neon PostgreSQL — single service, cloud app IS the registry)
 
 ### Phase 4: Automation + Ecosystem
 

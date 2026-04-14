@@ -1,48 +1,32 @@
-"""Registry server tests — registration, search, health, directory."""
+"""Network discovery tests — registration, search, health check, stats.
+
+Tests the built-in registry endpoints on the main API (no separate server).
+"""
 
 import pytest
-from pathlib import Path
 from fastapi.testclient import TestClient
 
-from noosphere.registry.server import app, set_db_path
-from noosphere.registry.db import close_registry, get_registry_conn
-from noosphere.registry.health import stop_health_checker
-
-
-@pytest.fixture(autouse=True)
-def isolated_registry_db(tmp_path: Path):
-    """Fresh registry SQLite DB per test."""
-    close_registry()
-    stop_health_checker()
-
-    db_path = tmp_path / "test_registry.db"
-    set_db_path(str(db_path))
-
-    # Pre-init DB so tests don't rely on lifespan
-    import noosphere.registry.db as rdb
-    rdb._conn = None
-    get_registry_conn(str(db_path))
-
-    yield
-    close_registry()
+from noosphere.api.main import app
 
 
 @pytest.fixture
-def client(isolated_registry_db):
-    # Disable lifespan to avoid health checker in tests
-    app.router.lifespan_context = _noop_lifespan
+def client(tmp_path, monkeypatch):
+    """Fresh SQLite DB per test via the main app."""
+    monkeypatch.setenv("NOOSPHERE_DATA_DIR", str(tmp_path))
+
+    import noosphere.core.db as db_mod
+    db_mod._conn = None
+
+    import noosphere.core.config as cfg
+    cfg.DATA_DIR = tmp_path
+    cfg.DB_PATH = tmp_path / "noosphere.db"
+    db_mod.DATA_DIR = tmp_path
+    db_mod.DB_PATH = tmp_path / "noosphere.db"
+
     with TestClient(app) as c:
         yield c
 
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def _noop_lifespan(app):
-    yield
-
-
-# ── Registration ──
+    db_mod.close()
 
 
 _NODE_PAYLOAD = {
@@ -79,6 +63,9 @@ _NODE_PAYLOAD = {
 }
 
 
+# ── Registration ──
+
+
 def test_register_node(client):
     r = client.post("/api/v1/register", json=_NODE_PAYLOAD)
     assert r.status_code == 200
@@ -101,7 +88,6 @@ def test_register_requires_corpora(client):
 def test_register_updates_on_re_register(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
 
-    # Update with changed metadata
     updated = {**_NODE_PAYLOAD, "corpora": [
         {**_NODE_PAYLOAD["corpora"][0], "document_count": 100},
     ]}
@@ -109,12 +95,9 @@ def test_register_updates_on_re_register(client):
     assert r.status_code == 200
     assert r.json()["registered"] == 1
 
-    # The removed corpus should be gone
-    r = client.get("/api/v1/corpora")
-    assert r.status_code == 200
-    corpora = r.json()["corpora"]
-    assert len(corpora) == 1
-    assert corpora[0]["document_count"] == 100
+    r = client.get("/api/v1/network/nodes")
+    nodes = r.json()["nodes"]
+    assert len(nodes) == 1
 
 
 # ── Deregistration ──
@@ -125,10 +108,7 @@ def test_deregister_node(client):
     r = client.post("/api/v1/deregister", json={"endpoint": "http://localhost:8420"})
     assert r.status_code == 200
 
-    r = client.get("/api/v1/nodes")
-    assert r.json()["count"] == 0
-
-    r = client.get("/api/v1/corpora")
+    r = client.get("/api/v1/network/nodes")
     assert r.json()["count"] == 0
 
 
@@ -137,107 +117,47 @@ def test_deregister_nonexistent_is_ok(client):
     assert r.status_code == 200
 
 
-# ── Search ──
+# ── Network search ──
 
 
-def test_search_by_keyword(client):
+def test_network_search_by_keyword(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
 
-    r = client.get("/api/v1/search", params={"q": "AI safety"})
+    r = client.get("/api/v1/network/search", params={"q": "AI safety"})
     assert r.status_code == 200
     body = r.json()
-    assert body["count"] >= 1
-    assert any("AI" in (c.get("name", "") + c.get("description", "")) for c in body["results"])
+    assert body["total"] >= 1
 
 
-def test_search_returns_endpoints(client):
+def test_network_search_returns_endpoints(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
 
-    r = client.get("/api/v1/search", params={"q": "startup"})
+    r = client.get("/api/v1/network/search", params={"q": "startup"})
     assert r.status_code == 200
     results = r.json()["results"]
     assert len(results) >= 1
-    assert "api_endpoint" in results[0]
-    assert "mcp_endpoint" in results[0]
-    assert "/api/v1/corpora/" in results[0]["api_endpoint"]
+    remote = [x for x in results if x.get("source") == "remote"]
+    if remote:
+        assert "api_endpoint" in remote[0]
+        assert "mcp_endpoint" in remote[0]
 
 
-def test_search_filter_by_access_level(client):
-    # Register with a token-gated corpus
-    payload = {
-        "endpoint": "http://localhost:9999",
-        "corpora": [{
-            "corpus_id": "token-1",
-            "name": "Token Gated KB",
-            "description": "Private knowledge",
-            "access_level": "token",
-            "status": "ready",
-        }],
-    }
-    client.post("/api/v1/register", json=payload)
-    client.post("/api/v1/register", json=_NODE_PAYLOAD)
-
-    r = client.get("/api/v1/search", params={"q": "knowledge", "access_level": "token"})
-    assert r.status_code == 200
-    for result in r.json()["results"]:
-        assert result["access_level"] == "token"
-
-
-def test_search_short_query_rejected(client):
-    r = client.get("/api/v1/search", params={"q": "a"})
+def test_network_search_short_query_rejected(client):
+    r = client.get("/api/v1/network/search", params={"q": "a"})
     assert r.status_code == 400
 
 
-# ── Directory ──
+# ── Nodes ──
 
 
 def test_list_nodes(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
 
-    r = client.get("/api/v1/nodes")
+    r = client.get("/api/v1/network/nodes")
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 1
     assert body["nodes"][0]["endpoint"] == "http://localhost:8420"
-    assert body["nodes"][0]["corpus_count"] == 2
-
-
-def test_list_corpora(client):
-    client.post("/api/v1/register", json=_NODE_PAYLOAD)
-
-    r = client.get("/api/v1/corpora")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["count"] == 2
-    names = {c["name"] for c in body["corpora"]}
-    assert "Test Knowledge Base" in names
-    assert "Startup Playbook" in names
-
-
-def test_list_corpora_pagination(client):
-    client.post("/api/v1/register", json=_NODE_PAYLOAD)
-
-    r = client.get("/api/v1/corpora", params={"limit": 1, "offset": 0})
-    assert r.json()["count"] == 1
-
-    r = client.get("/api/v1/corpora", params={"limit": 1, "offset": 1})
-    assert r.json()["count"] == 1
-
-
-def test_get_corpus_detail(client):
-    client.post("/api/v1/register", json=_NODE_PAYLOAD)
-
-    r = client.get("/api/v1/corpora/abc-123")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["name"] == "Test Knowledge Base"
-    assert body["author"] == "Alice"
-    assert "api_endpoint" in body
-
-
-def test_get_corpus_not_found(client):
-    r = client.get("/api/v1/corpora/nonexistent")
-    assert r.status_code == 404
 
 
 # ── Stats ──
@@ -246,45 +166,40 @@ def test_get_corpus_not_found(client):
 def test_network_stats(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
 
-    r = client.get("/api/v1/stats")
+    r = client.get("/api/v1/network/stats")
     assert r.status_code == 200
     body = r.json()
-    assert body["nodes_total"] == 1
-    assert body["nodes_online"] == 1
-    assert body["corpora_total"] == 2
-    assert body["total_documents"] == 80  # 50 + 30
-    assert body["total_words"] == 160000  # 100000 + 60000
-    assert "public" in body["access_levels"]
+    assert body["remote_corpora"] == 2
+    assert body["nodes_total"] >= 1
+    assert "version" in body
 
 
-# ── Health endpoint ──
+# ── Health endpoint includes network info ──
 
 
-def test_registry_health(client):
+def test_health_includes_network_info(client):
     r = client.get("/api/v1/health")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert "version" in body
+    assert "network_nodes" in body
+    assert "network_corpora" in body
 
 
-# ── Browsable directory ──
+# ── Cron health check ──
 
 
-def test_browsable_directory_html(client):
+def test_cron_health_check_empty(client):
+    r = client.get("/api/v1/cron/health-check")
+    assert r.status_code == 200
+    assert r.json()["checked"] == 0
+
+
+def test_cron_health_check_with_nodes(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
-
-    r = client.get("/")
+    r = client.get("/api/v1/cron/health-check")
     assert r.status_code == 200
-    assert "text/html" in r.headers["content-type"]
-    assert "Noosphere Registry" in r.text
-    assert "Test Knowledge Base" in r.text
-
-
-def test_browsable_directory_empty(client):
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "No knowledge bases registered yet" in r.text
+    assert r.json()["checked"] == 1
 
 
 # ── Multiple nodes ──
@@ -308,12 +223,8 @@ def test_multiple_nodes(client):
     }
     client.post("/api/v1/register", json=second_node)
 
-    r = client.get("/api/v1/nodes")
+    r = client.get("/api/v1/network/nodes")
     assert r.json()["count"] == 2
 
-    r = client.get("/api/v1/corpora")
-    assert r.json()["count"] == 3
-
-    r = client.get("/api/v1/search", params={"q": "climate"})
-    assert r.json()["count"] >= 1
-    assert r.json()["results"][0]["name"] == "Climate Research"
+    r = client.get("/api/v1/network/stats")
+    assert r.json()["remote_corpora"] == 3

@@ -1,12 +1,13 @@
-"""REST API routes for corpus operations."""
+"""REST API routes for corpus operations and network discovery."""
 
 import json as _json
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel
 
 from noosphere import __version__
@@ -14,16 +15,9 @@ from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug, 
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.access import check_access, AccessDenied
-from noosphere.core.db import get_conn
+from noosphere.core.db import get_conn, is_pg
 
 router = APIRouter()
-
-_registry_connected: bool = False
-
-
-def set_registry_connected(value: bool):
-    global _registry_connected
-    _registry_connected = value
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -187,11 +181,18 @@ def _resolve_corpus(corpus_id: str) -> dict:
 @router.get("/health")
 async def api_health():
     corpora = list_corpora(include_private=True)
+    conn = get_conn()
+    try:
+        remote_nodes = conn.execute("SELECT COUNT(*) as n FROM registered_nodes").fetchone()["n"]
+        remote_corpora = conn.execute("SELECT COUNT(*) as n FROM registered_corpora").fetchone()["n"]
+    except Exception:
+        remote_nodes, remote_corpora = 0, 0
     return {
         "status": "ok",
         "version": __version__,
         "corpus_count": len(corpora),
-        "registry_connected": _registry_connected,
+        "network_nodes": remote_nodes,
+        "network_corpora": remote_corpora,
     }
 
 
@@ -669,11 +670,9 @@ async def api_revoke_token(corpus_id: str, token_id: str, request: Request):
 
 @router.post("/search")
 async def api_global_search(req: SearchRequest):
-    """Search across ALL public corpora."""
+    """Search across ALL public corpora (local + registered remote nodes)."""
     corpora = list_corpora()
     ready = [c for c in corpora if c.get("status") == "ready" and c.get("access_level") == "public"]
-    if not ready:
-        return {"results": [], "corpora_searched": 0}
 
     all_results = []
     for c in ready:
@@ -682,16 +681,87 @@ async def api_global_search(req: SearchRequest):
             for r in result.get("results", []):
                 r["corpus_id"] = c["id"]
                 r["corpus_name"] = c["name"]
+                r["source"] = "local"
                 all_results.append(r)
         except Exception:
             logger.warning("Global search failed for corpus %s", c["id"], exc_info=True)
             continue
 
+    remote_results = _search_registered_corpora(req.query, limit=req.top_k)
+    all_results.extend(remote_results)
+
     all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
     return {
         "results": all_results[: req.top_k],
-        "corpora_searched": len(ready),
+        "corpora_searched": len(ready) + len(remote_results),
     }
+
+
+def _search_registered_corpora(query: str, limit: int = 20) -> list[dict]:
+    """Search registered remote corpora by metadata (FTS or LIKE fallback)."""
+    conn = get_conn()
+    try:
+        if is_pg():
+            rows = conn.execute(
+                """SELECT rc.*, rn.health_status
+                   FROM registered_corpora rc
+                   JOIN registered_nodes rn ON rn.endpoint = rc.node_endpoint
+                   WHERE rn.health_status != 'offline'
+                     AND rc.tsv @@ plainto_tsquery('english', ?)
+                   ORDER BY ts_rank(rc.tsv, plainto_tsquery('english', ?)) DESC
+                   LIMIT ?""",
+                (query, query, limit),
+            ).fetchall()
+        else:
+            fts_query = " OR ".join(f'"{w}"' for w in query.strip().split() if w)
+            try:
+                rows = conn.execute(
+                    """SELECT rc.*, rn.health_status
+                       FROM registered_corpora_fts fts
+                       JOIN registered_corpora rc ON rc.id = fts.registry_id
+                       JOIN registered_nodes rn ON rn.endpoint = rc.node_endpoint
+                       WHERE registered_corpora_fts MATCH ?
+                         AND rn.health_status != 'offline'
+                       ORDER BY fts.rank LIMIT ?""",
+                    (fts_query, limit),
+                ).fetchall()
+            except Exception:
+                pattern = f"%{query.strip()}%"
+                rows = conn.execute(
+                    """SELECT rc.*, rn.health_status
+                       FROM registered_corpora rc
+                       JOIN registered_nodes rn ON rn.endpoint = rc.node_endpoint
+                       WHERE (rc.name LIKE ? OR rc.description LIKE ? OR rc.author LIKE ?)
+                         AND rn.health_status != 'offline'
+                       ORDER BY rc.document_count DESC LIMIT ?""",
+                    (pattern, pattern, pattern, limit),
+                ).fetchall()
+    except Exception:
+        return []
+
+    results = []
+    for row in rows:
+        r = dict(row)
+        tags = r.get("tags", "[]")
+        if isinstance(tags, str):
+            try:
+                tags = _json.loads(tags)
+            except Exception:
+                tags = []
+        results.append({
+            "corpus_id": r["corpus_id"],
+            "corpus_name": r["name"],
+            "description": r.get("description", ""),
+            "author": r.get("author", ""),
+            "tags": tags,
+            "document_count": r.get("document_count", 0),
+            "access_level": r.get("access_level", "public"),
+            "api_endpoint": f"{r['node_endpoint']}/api/v1/corpora/{r['corpus_id']}",
+            "mcp_endpoint": f"{r['node_endpoint']}/mcp",
+            "source": "remote",
+            "score": 0.5,
+        })
+    return results
 
 
 # ── Chat ──
@@ -811,6 +881,288 @@ async def api_analytics(corpus_id: str, request: Request, limit: int = 50):
     return {
         "total_queries": total["cnt"],
         "recent_queries": [dict(r) for r in rows],
+    }
+
+
+# ── Network Discovery (built-in registry) ──
+
+
+class RegisterNodeRequest(BaseModel):
+    node_version: str = ""
+    endpoint: str
+    corpora: list[dict]
+
+
+class DeregisterNodeRequest(BaseModel):
+    endpoint: str
+
+
+def _rebuild_rc_fts(conn, node_endpoint: str):
+    """Rebuild FTS entries for all registered corpora belonging to a node."""
+    if is_pg():
+        conn.execute(
+            """UPDATE registered_corpora
+               SET tsv = to_tsvector('english', coalesce(name,'') || ' ' || coalesce(description,'') || ' ' || coalesce(author,''))
+               WHERE node_endpoint=?""",
+            (node_endpoint,),
+        )
+    else:
+        conn.execute(
+            "DELETE FROM registered_corpora_fts WHERE registry_id IN "
+            "(SELECT id FROM registered_corpora WHERE node_endpoint=?)",
+            (node_endpoint,),
+        )
+        rows = conn.execute(
+            "SELECT id, name, description, author, tags FROM registered_corpora WHERE node_endpoint=?",
+            (node_endpoint,),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "INSERT INTO registered_corpora_fts(name, description, author, tags, registry_id) VALUES (?, ?, ?, ?, ?)",
+                (row["name"], row["description"] or "", row["author"] or "", row["tags"] or "", row["id"]),
+            )
+
+
+@router.post("/register")
+async def api_register_node(req: RegisterNodeRequest):
+    """Register a self-hosted node and its corpora for network discovery."""
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    endpoint = req.endpoint.rstrip("/")
+
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="endpoint is required")
+    if not req.corpora:
+        raise HTTPException(status_code=400, detail="at least one corpus is required")
+
+    existing = conn.execute("SELECT endpoint FROM registered_nodes WHERE endpoint=?", (endpoint,)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE registered_nodes SET node_version=?, last_seen_at=?, health_status='online', consecutive_failures=0 WHERE endpoint=?",
+            (req.node_version, now, endpoint),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO registered_nodes (endpoint, node_version, first_seen_at, last_seen_at, health_status) VALUES (?, ?, ?, ?, 'online')",
+            (endpoint, req.node_version, now, now),
+        )
+
+    registered = 0
+    for c in req.corpora:
+        row_id = f"{endpoint}:{c.get('corpus_id', '')}"
+        tags_json = _json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else c.get("tags", "[]")
+        corpus_id = c.get("corpus_id", "")
+
+        existing_corpus = conn.execute(
+            "SELECT id FROM registered_corpora WHERE node_endpoint=? AND corpus_id=?",
+            (endpoint, corpus_id),
+        ).fetchone()
+
+        if existing_corpus:
+            conn.execute(
+                """UPDATE registered_corpora SET name=?, slug=?, description=?, author=?,
+                   tags=?, document_count=?, chunk_count=?, word_count=?,
+                   access_level=?, status=?, updated_at=?
+                   WHERE node_endpoint=? AND corpus_id=?""",
+                (c.get("name", ""), c.get("slug", ""), c.get("description", ""), c.get("author", ""),
+                 tags_json, c.get("document_count", 0), c.get("chunk_count", 0), c.get("word_count", 0),
+                 c.get("access_level", "public"), c.get("status", "draft"), now, endpoint, corpus_id),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO registered_corpora
+                   (id, node_endpoint, corpus_id, name, slug, description, author,
+                    tags, document_count, chunk_count, word_count, access_level, status,
+                    registered_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (row_id, endpoint, corpus_id, c.get("name", ""), c.get("slug", ""),
+                 c.get("description", ""), c.get("author", ""), tags_json,
+                 c.get("document_count", 0), c.get("chunk_count", 0), c.get("word_count", 0),
+                 c.get("access_level", "public"), c.get("status", "draft"), now, now),
+            )
+        registered += 1
+
+    registered_ids = {c.get("corpus_id", "") for c in req.corpora}
+    old_rows = conn.execute(
+        "SELECT corpus_id FROM registered_corpora WHERE node_endpoint=?", (endpoint,)
+    ).fetchall()
+    for row in old_rows:
+        if row["corpus_id"] not in registered_ids:
+            if not is_pg():
+                conn.execute(
+                    "DELETE FROM registered_corpora_fts WHERE registry_id IN "
+                    "(SELECT id FROM registered_corpora WHERE node_endpoint=? AND corpus_id=?)",
+                    (endpoint, row["corpus_id"]),
+                )
+            conn.execute(
+                "DELETE FROM registered_corpora WHERE node_endpoint=? AND corpus_id=?",
+                (endpoint, row["corpus_id"]),
+            )
+
+    _rebuild_rc_fts(conn, endpoint)
+    conn.commit()
+    return {"status": "ok", "registered": registered, "endpoint": endpoint}
+
+
+@router.post("/deregister")
+async def api_deregister_node(req: DeregisterNodeRequest):
+    """Remove a self-hosted node and all its corpora from the network."""
+    conn = get_conn()
+    endpoint = req.endpoint.rstrip("/")
+
+    if not is_pg():
+        conn.execute(
+            "DELETE FROM registered_corpora_fts WHERE registry_id IN "
+            "(SELECT id FROM registered_corpora WHERE node_endpoint=?)",
+            (endpoint,),
+        )
+    conn.execute("DELETE FROM registered_corpora WHERE node_endpoint=?", (endpoint,))
+    conn.execute("DELETE FROM registered_nodes WHERE endpoint=?", (endpoint,))
+    conn.commit()
+    return {"status": "ok"}
+
+
+@router.get("/network/search")
+async def api_network_search(
+    q: str = Query(..., description="Search query"),
+    access_level: str = Query("", description="Filter by access level"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Search the entire Noosphere network — local corpora + registered remote nodes."""
+    if len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
+
+    results = _search_registered_corpora(q, limit=limit)
+
+    local_corpora = list_corpora()
+    for c in local_corpora:
+        if c.get("access_level") == "private":
+            continue
+        name = c.get("name", "")
+        desc = c.get("description", "")
+        q_lower = q.lower()
+        if q_lower in name.lower() or q_lower in desc.lower() or any(q_lower in t.lower() for t in (c.get("tags") or [])):
+            tags = c.get("tags", [])
+            if isinstance(tags, str):
+                try:
+                    tags = _json.loads(tags)
+                except Exception:
+                    tags = []
+            results.append({
+                "corpus_id": c["id"],
+                "corpus_name": name,
+                "description": desc,
+                "author": c.get("author_name", ""),
+                "tags": tags,
+                "document_count": c.get("document_count", 0),
+                "access_level": c.get("access_level", "public"),
+                "source": "local",
+                "score": 1.0,
+            })
+
+    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return {
+        "query": q,
+        "results": results[offset : offset + limit],
+        "count": len(results[offset : offset + limit]),
+        "total": len(results),
+    }
+
+
+@router.get("/network/nodes")
+async def api_network_nodes():
+    """List all registered self-hosted nodes."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT rn.*, COUNT(rc.id) as corpus_count,
+                      COALESCE(SUM(rc.document_count), 0) as total_documents,
+                      COALESCE(SUM(rc.word_count), 0) as total_words
+               FROM registered_nodes rn
+               LEFT JOIN registered_corpora rc ON rc.node_endpoint = rn.endpoint
+               GROUP BY rn.endpoint
+               ORDER BY rn.last_seen_at DESC"""
+        ).fetchall()
+    except Exception:
+        rows = []
+    return {"nodes": [dict(r) for r in rows], "count": len(rows)}
+
+
+@router.get("/cron/health-check")
+async def api_cron_health_check(request: Request):
+    """Cron-compatible endpoint: ping all registered nodes and update health status.
+
+    Replaces the old daemon thread. Call via Vercel Cron, external cron,
+    or manually. Safe to call frequently — each check is a quick HTTP GET.
+    """
+    import httpx
+
+    conn = get_conn()
+    try:
+        nodes = conn.execute("SELECT endpoint FROM registered_nodes").fetchall()
+    except Exception:
+        return {"status": "ok", "checked": 0}
+
+    now = datetime.now(timezone.utc).isoformat()
+    checked = 0
+    for node in nodes:
+        endpoint = node["endpoint"]
+        try:
+            resp = httpx.get(f"{endpoint}/api/v1/health", timeout=10, follow_redirects=True)
+            if resp.status_code == 200:
+                conn.execute(
+                    "UPDATE registered_nodes SET health_status='online', last_health_at=?, consecutive_failures=0 WHERE endpoint=?",
+                    (now, endpoint),
+                )
+                conn.commit()
+                checked += 1
+                continue
+        except Exception:
+            pass
+        row = conn.execute("SELECT consecutive_failures FROM registered_nodes WHERE endpoint=?", (endpoint,)).fetchone()
+        if not row:
+            continue
+        failures = (row["consecutive_failures"] or 0) + 1
+        status = "offline" if failures >= 3 else "degraded"
+        conn.execute(
+            "UPDATE registered_nodes SET health_status=?, last_health_at=?, consecutive_failures=? WHERE endpoint=?",
+            (status, now, failures, endpoint),
+        )
+        conn.commit()
+        checked += 1
+
+    return {"status": "ok", "checked": checked}
+
+
+@router.get("/network/stats")
+async def api_network_stats():
+    """Network-wide statistics (local + remote)."""
+    conn = get_conn()
+    local_corpora = list_corpora()
+    local_public = [c for c in local_corpora if c.get("access_level") != "private"]
+
+    try:
+        nodes_total = conn.execute("SELECT COUNT(*) as n FROM registered_nodes").fetchone()["n"]
+        nodes_online = conn.execute("SELECT COUNT(*) as n FROM registered_nodes WHERE health_status='online'").fetchone()["n"]
+        remote_corpora = conn.execute("SELECT COUNT(*) as n FROM registered_corpora").fetchone()["n"]
+        remote_docs = conn.execute("SELECT COALESCE(SUM(document_count), 0) as n FROM registered_corpora").fetchone()["n"]
+        remote_words = conn.execute("SELECT COALESCE(SUM(word_count), 0) as n FROM registered_corpora").fetchone()["n"]
+    except Exception:
+        nodes_total = nodes_online = remote_corpora = remote_docs = remote_words = 0
+
+    local_docs = sum(c.get("document_count", 0) for c in local_public)
+    local_words = sum(c.get("word_count", 0) for c in local_public)
+
+    return {
+        "nodes_total": nodes_total + 1,
+        "nodes_online": nodes_online + 1,
+        "corpora_total": len(local_public) + remote_corpora,
+        "total_documents": local_docs + remote_docs,
+        "total_words": local_words + remote_words,
+        "local_corpora": len(local_public),
+        "remote_corpora": remote_corpora,
+        "version": __version__,
     }
 
 

@@ -46,22 +46,24 @@ Then:
 
 ## How the network works
 
-Noosphere is a decentralized knowledge network. Every self-hosted node is an equal participant — content stays on your server, only metadata is shared for discovery.
+Noosphere is a decentralized knowledge network with a built-in registry. The cloud app (`app.noosphere.wiki`) is both the hosted product and the discovery registry. Self-hosted nodes register metadata with the registry so agents can find them — content stays on your server.
 
 ```
-                    Noosphere Registry
-                 (registry.noosphere.ai)
-                  stores ONLY metadata:
-              name, description, tags, endpoint
-                   /        |        \
-                  /         |         \
-   Self-hosted       Self-hosted       Cloud-hosted
-   Node A            Node B            Node C
-   (your laptop)     (company server)  (platform)
-        ↑                 ↑                ↑
-        └─────────────────┴────────────────┘
-          Agents connect DIRECTLY to each node
-          Content never leaves your infrastructure
+               app.noosphere.wiki
+        (cloud app + built-in registry)
+        ┌─────────────────────────────┐
+        │  Local corpora (cloud users)│
+        │  +                          │
+        │  Registered metadata        │
+        │  (self-hosted nodes)        │
+        └─────────────────────────────┘
+           ↑          ↑           ↑
+      Cloud user   Self-hosted   Self-hosted
+                   Node A        Node B
+                   ↑              ↑
+                   └──────────────┘
+              Agents connect DIRECTLY to each node
+              Content never leaves your infrastructure
 ```
 
 ### 1. Create a knowledge base
@@ -76,35 +78,38 @@ noosphere init ./my-docs --name "My Knowledge" --author "Jane Doe"
 noosphere serve --port 8420
 ```
 
-On startup, your node registers with the Noosphere Registry. It sends only metadata (name, description, tags, endpoint URL). Your documents, chunks, and embeddings stay local.
+On startup, your node registers with the Noosphere registry. It sends only metadata (name, description, tags, endpoint URL). Your documents, chunks, and embeddings stay local.
 
 ### 3. Agents discover your knowledge
 
-Any AI agent can search the registry to find relevant knowledge bases across the entire network:
+Any AI agent can search the registry to find relevant knowledge bases — both cloud-hosted and self-hosted:
 
 ```
-Agent                          Registry                        Your Node
-  |                               |                               |
-  |-- GET /search?q=AI+safety --> |                               |
-  |                               |                               |
-  |<-- [{name, endpoint, ...}] ---|                               |
-  |                                                               |
-  |-- POST /api/v1/corpora/{id}/search  -----------------------> |
-  |<-- [{text, citation, score}]  <------------------------------ |
+Agent                    app.noosphere.wiki              Your Node
+  |                            |                             |
+  |-- GET /api/v1/search ----> |                             |
+  |                            | (search local + registered) |
+  |<-- [{results}] -----------|                             |
+  |                                                          |
+  |  For self-hosted results:                                |
+  |-- POST /api/v1/corpora/{id}/search ------------------>  |
+  |<-- [{text, citation, score}] <-------------------------  |
 ```
 
-The registry is a directory, not a proxy — agents connect directly to your server for queries.
+The registry is a directory, not a proxy. Cloud corpora return full results directly. Self-hosted corpora return metadata + endpoint — agents connect directly to your server.
 
 ### 4. Control access and get paid
 
 Each knowledge base has an access level:
 
-| Level | Who can query | Setup |
-|-------|---------------|-------|
-| `public` | Anyone | Default |
-| `private` | Only you | `--no-registry` or set in UI |
-| `token` | People with your access key | Generate keys in UI |
-| `paid` | People who pay | Set pricing + your own Stripe key |
+
+| Level     | Who can query               | Setup                             |
+| --------- | --------------------------- | --------------------------------- |
+| `public`  | Anyone                      | Default                           |
+| `private` | Only you                    | `--no-registry` or set in UI      |
+| `token`   | People with your access key | Generate keys in UI               |
+| `paid`    | People who pay              | Set pricing + your own Stripe key |
+
 
 For paid access, self-hosted creators use their own Stripe account and keep 100% of revenue.
 
@@ -162,7 +167,7 @@ You can also configure pricing from the web UI under corpus settings.
 
 > **Self-hosted = 100% yours.** You use your own Stripe account. Noosphere never touches the money. No platform commission.
 
-### Network configuration
+### Registry configuration
 
 ```bash
 # Default: register with the public Noosphere registry
@@ -172,10 +177,7 @@ noosphere serve --port 8420
 noosphere serve --port 8420 --no-registry
 
 # Private registry (e.g. within a company)
-noosphere serve --port 8420 --registry https://internal.mycompany.com/registry
-
-# Run your own registry server
-noosphere registry-serve --port 8421
+noosphere serve --port 8420 --registry https://internal.mycompany.com
 ```
 
 ## CLI commands

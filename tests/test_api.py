@@ -29,7 +29,7 @@ def test_get_health(client):
     assert body["status"] == "ok"
     assert "version" in body
     assert body["corpus_count"] == 0
-    assert "registry_connected" in body
+    assert "network_nodes" in body
 
 
 def test_post_corpora_create(client):

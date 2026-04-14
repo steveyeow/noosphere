@@ -43,8 +43,7 @@ if os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
 
 @app.get("/.well-known/noosphere.json")
 async def well_known_manifest():
-    """Federated discovery manifest — allows other nodes and agents
-    to discover this node's corpora without a central registry."""
+    """Discovery manifest — allows agents to discover this node's corpora."""
     from noosphere.core.corpus import list_corpora
 
     corpora = list_corpora()
