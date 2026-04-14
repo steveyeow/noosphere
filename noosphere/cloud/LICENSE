@@ -1,0 +1,44 @@
+Business Source License 1.1
+
+Licensor: Steve Yao
+Licensed Work: Noosphere Cloud (the contents of the noosphere/cloud/ directory)
+Change Date: Four years from the date of each release
+Change License: MIT License
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, below.
+
+Additional Use Grant: You may use the Licensed Work for any purpose other
+than providing a commercial hosted service that competes with the Licensor's
+paid hosting of Noosphere.
+
+A "commercial hosted service" means offering the Licensed Work to third
+parties as a managed service where the service provides the functionality
+of the Licensed Work (i.e., hosting Noosphere corpora on behalf of users
+for a fee).
+
+You may self-host the open-source portions of Noosphere (everything outside
+this directory) for any purpose, including commercial use, without
+restriction.
+
+For the avoidance of doubt, the following uses are always permitted:
+  - Self-hosting Noosphere for personal or organizational use
+  - Using the open-source portions (noosphere/core, api, cli, mcp, registry)
+    for any purpose, including commercial
+  - Studying, modifying, and sharing this code for non-production purposes
+  - Internal testing and development
+
+Limitation of Liability
+
+THE LICENSED WORK IS PROVIDED "AS IS". THE LICENSOR HEREBY DISCLAIMS ALL
+WARRANTIES, EXPRESS OR IMPLIED, INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+On the Change Date, or the fourth anniversary of the first publicly available
+distribution of a specific version of the Licensed Work under this License,
+whichever comes first, the Licensor hereby grants you rights under the terms
+of the Change License, and the rights granted in the paragraph above
+terminate.

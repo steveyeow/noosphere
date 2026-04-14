@@ -581,10 +581,11 @@ Goal: the two things that make Noosphere a product, not a tool — the network a
 
 Goal: hosted version for creators who don't want to self-host.
 
-- [ ] `noosphere/cloud/` — managed auth (Supabase), quota enforcement, Stripe Connect (BSL)
+- [x] `noosphere/cloud/` — managed auth (Supabase), quota enforcement, Stripe Connect (BSL)
+- [x] Free/Pro tier billing (Pro subscription checkout + webhook handlers)
+- [x] Platform commission (10%) on paid corpus revenue via Stripe Connect
 - [ ] Cloud deployment (Vercel/Railway + PostgreSQL)
-- [ ] Free/Pro tier billing
-- [ ] Platform commission (10%) on paid corpus revenue via Stripe Connect
+- [ ] PostgreSQL database adapter (currently SQLite only)
 
 ### Phase 4: Automation + Ecosystem
 

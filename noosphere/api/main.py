@@ -32,9 +32,11 @@ if os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
     try:
         from noosphere.cloud.auth import auth_middleware
         from noosphere.cloud.quota import quota_middleware
+        from noosphere.cloud.stripe_connect import router as cloud_router
 
         app.middleware("http")(auth_middleware)
         app.middleware("http")(quota_middleware)
+        app.include_router(cloud_router)
     except ImportError:
         pass
 

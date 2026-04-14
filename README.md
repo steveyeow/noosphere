@@ -227,4 +227,4 @@ See [SPEC.md](SPEC.md) for the full product specification, corpus format, API de
 
 ## License
 
-MIT (open core). The `noosphere/cloud/` directory is licensed separately under BSL 1.1.
+MIT (open core). `noosphere/cloud/` is BSL 1.1 — it adds multi-tenant hosting, not features. Self-hosted users get the full product.
