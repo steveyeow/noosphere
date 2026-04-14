@@ -111,6 +111,40 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    stripe_session_id TEXT UNIQUE,
+    stripe_payment_intent TEXT,
+    stripe_customer_id TEXT,
+    payment_type TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    currency TEXT DEFAULT 'usd',
+    status TEXT DEFAULT 'pending',
+    payer_email TEXT,
+    payer_agent_id TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    expires_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_payments_corpus ON payments(corpus_id, status);
+CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(stripe_session_id);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    stripe_subscription_id TEXT UNIQUE,
+    stripe_customer_id TEXT NOT NULL,
+    payer_email TEXT,
+    status TEXT DEFAULT 'active',
+    current_period_end TEXT,
+    created_at TEXT NOT NULL,
+    cancelled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_subs_corpus ON subscriptions(corpus_id, status);
+CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(stripe_customer_id);
 """
 
 FTS_SCHEMA_SQL = """

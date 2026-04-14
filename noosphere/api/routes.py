@@ -812,3 +812,101 @@ async def api_analytics(corpus_id: str, request: Request, limit: int = 50):
         "total_queries": total["cnt"],
         "recent_queries": [dict(r) for r in rows],
     }
+
+
+# ── Payments (Stripe) ──
+
+
+class CheckoutRequest(BaseModel):
+    success_url: str = ""
+    cancel_url: str = ""
+    payer_email: str = ""
+    agent_id: str = ""
+
+
+class PricingRequest(BaseModel):
+    """Set pricing for a paid corpus."""
+    type: str = "per_query"  # "per_query" or "subscription"
+    amount_cents: int = 500
+    currency: str = "usd"
+    queries_per_payment: int = 100  # per_query only
+    stripe_price_id: str = ""       # subscription only
+
+
+@router.post("/corpora/{corpus_id}/checkout")
+async def api_checkout(corpus_id: str, req: CheckoutRequest, request: Request):
+    """Create a Stripe Checkout session for a paid corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    if corpus.get("access_level") != "paid":
+        raise HTTPException(status_code=400, detail="This corpus is not set to paid access")
+
+    from noosphere.core.payments import create_checkout_session, PaymentError
+    try:
+        return create_checkout_session(
+            corpus,
+            success_url=req.success_url,
+            cancel_url=req.cancel_url,
+            payer_email=req.payer_email,
+            agent_id=req.agent_id,
+        )
+    except PaymentError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+@router.post("/corpora/{corpus_id}/pricing")
+async def api_set_pricing(corpus_id: str, req: PricingRequest, request: Request):
+    """Set pricing config for a corpus. Also sets access_level to 'paid'."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request)
+
+    import json as _j
+    pricing = {
+        "type": req.type,
+        "amount_cents": req.amount_cents,
+        "currency": req.currency,
+    }
+    if req.type == "per_query":
+        pricing["queries_per_payment"] = req.queries_per_payment
+    elif req.type == "subscription":
+        if not req.stripe_price_id:
+            raise HTTPException(status_code=400, detail="subscription type requires stripe_price_id")
+        pricing["stripe_price_id"] = req.stripe_price_id
+
+    from noosphere.core.corpus import update_corpus
+    result = update_corpus(corpus["id"], pricing_json=_j.dumps(pricing), access_level="paid")
+    return {"pricing": pricing, "corpus": result}
+
+
+@router.get("/corpora/{corpus_id}/pricing")
+async def api_get_pricing(corpus_id: str, request: Request):
+    """Get pricing config for a corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    from noosphere.core.payments import get_pricing
+    pricing = get_pricing(corpus)
+    return {"pricing": pricing, "access_level": corpus.get("access_level", "public")}
+
+
+@router.get("/corpora/{corpus_id}/revenue")
+async def api_revenue(corpus_id: str, request: Request):
+    """Revenue dashboard for a paid corpus (owner only)."""
+    _resolve_corpus(corpus_id)
+    _require_owner(request)
+    from noosphere.core.payments import get_revenue_stats
+    return get_revenue_stats(corpus_id)
+
+
+@router.post("/stripe/webhook")
+async def api_stripe_webhook(request: Request):
+    """Handle Stripe webhook events (payment completion, refunds, subscription cancellation)."""
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    from noosphere.core.payments import handle_webhook_event, PaymentError
+    try:
+        result = handle_webhook_event(payload, sig)
+        return result
+    except PaymentError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))

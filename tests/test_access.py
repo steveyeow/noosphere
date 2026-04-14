@@ -56,7 +56,8 @@ def test_check_access_paid_denies(isolated_db):
     full = get_corpus(c["id"])
     with pytest.raises(AccessDenied) as exc:
         check_access(full, None)
-    assert "stripe" in exc.value.message.lower() or "paid" in exc.value.message.lower()
+    assert "payment" in exc.value.message.lower() or "checkout" in exc.value.message.lower()
+    assert exc.value.status_code == 402
 
 
 def test_access_denied_attributes():

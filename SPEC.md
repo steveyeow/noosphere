@@ -2,7 +2,7 @@
 
 > The knowledge network for the agent era.
 
-Noosphere is an open knowledge network. Build a living knowledge base that AI agents can discover, search, and cite. Connect it to a global network. Keep it open for everyone, or set it to paid — you control access, you keep the revenue.
+Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Share it free, keep it private, or charge for access.
 
 ---
 
@@ -204,7 +204,7 @@ The web UI serves **creators** — people who add knowledge to the Noosphere and
 
 ```
 New user arrives
-  → Landing page: "Build your AI knowledge base. Connect it to the world."
+  → Landing page: "Publish your knowledge to a network any AI agent can query."
   → Click "Get Started"
   → Main view: the Noosphere (network graph + global search + your corpora)
   → Click "+ Add Knowledge"
@@ -524,11 +524,11 @@ Deliverables:
 - [x] PDF / DOCX / CSV / JSON ingestion
 - [x] Export (SPEC-compliant ZIP format)
 - [x] RAG chat with corpus and cross-corpus chat
-- [x] Access control (public / private / token / paid placeholder)
+- [x] Access control (public / private / token / paid)
 - [x] Query logging with agent_id tracking
-- [x] Test suite (115+ tests, CI for Python 3.11–3.13)
+- [x] Test suite (214 tests, CI for Python 3.11–3.13)
 
-### Phase 1.5: Retrieval & knowledge quality (current)
+### Phase 1.5: Retrieval & knowledge quality (complete)
 
 Goal: production-grade retrieval that works at scale — hybrid search, smart chunking, incremental sync — plus **knowledge lifecycle** primitives that align with LLM-wiki / agent-brain patterns (without changing the mission).
 
@@ -546,27 +546,53 @@ Deliverables:
 - [x] RSS/Atom feed ingest + batch URL ingest
 - [x] LLM **compile** (concept note from retrieval + chat LLM)
 - [x] Knowledge health report + **maintain** (re-index / optional force)
-- [ ] Semantic chunking quality benchmarks
-- [ ] Scheduled / background “enrichment” job (dream-cycle style)
-- [ ] Web UI actions for feed URL, batch URLs, compile (API/CLI today)
 
 See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
-### Phase 2: Payments + cloud
+### Phase 2: Network + Payments (complete)
 
-- [ ] Stripe integration for paid corpora (self-hosted: own keys)
-- [ ] `noosphere/cloud/` — managed auth, quota, Stripe Connect (BSL)
+Goal: the two things that make Noosphere a product, not a tool — the network and the ability for creators to get paid. Without these, Noosphere is just another local knowledge base tool.
 
-### Phase 3: Registry + hosted platform
+#### 2a. Registry Server — the network becomes real
 
-- [ ] Registry server
+- [x] Registry server: accepts registration, stores metadata, serves discovery queries
+- [x] Registry search API: agents query the registry to find relevant corpora across all nodes
+- [x] Registry health checks: periodic ping of registered nodes, mark stale/offline
+- [x] Registry UI: browsable directory of all public knowledge bases in the Noosphere
+
+#### 2b. Stripe Integration — creators get paid
+
+- [x] Stripe checkout flow: `POST /corpora/{id}/checkout` creates a Stripe session
+- [x] Payment verification middleware: validate payment before serving paid corpus queries (402 status)
+- [x] Pricing config: creator sets price (per-query or subscription) in corpus settings
+- [x] Webhook handlers: handle payment success, refund, subscription cancellation
+- [x] Self-hosted: creator uses their own Stripe keys, keeps 100%
+- [x] Revenue dashboard: creator sees earnings per corpus
+
+#### 2c. Web UI completeness
+
+- [x] Chat “Save insight” button on each assistant response
+- [x] Feed management UI: add RSS feeds from web UI
+- [x] Batch URL ingestion UI: paste multiple URLs at once
+- [x] Compile UI: trigger concept note compilation from the web
+- [x] Paid access settings UI: set pricing type, amount, and Stripe config
+
+### Phase 3: Cloud + Scale
+
+Goal: hosted version for creators who don't want to self-host.
+
+- [ ] `noosphere/cloud/` — managed auth (Supabase), quota enforcement, Stripe Connect (BSL)
 - [ ] Cloud deployment (Vercel/Railway + PostgreSQL)
-- [ ] User registration + Stripe billing
+- [ ] Free/Pro tier billing
+- [ ] Platform commission (10%) on paid corpus revenue via Stripe Connect
 
-### Phase 4: Ecosystem
+### Phase 4: Automation + Ecosystem
 
-- [ ] Feynman integration
-- [ ] RSS/feed auto-sync
+Goal: convenience features that make knowledge bases feel alive. These are valuable but not core — they improve the experience without changing the product's fundamental value.
+
+- [ ] Background feed scheduler: auto-poll RSS sources on interval (today: manual `ingest-feed` or cron)
+- [ ] Scheduled enrichment: periodic compile + maintain runs (dream-cycle style)
+- [ ] Feynman integration: Noosphere corpora as source-grounded minds
 - [ ] Audio transcription (Whisper, cloud paid feature)
 - [ ] Agent-to-Agent payment support
 
@@ -574,7 +600,7 @@ See [RETRIEVAL_UPGRADE.md](RETRIEVAL_UPGRADE.md) for the full design document.
 
 ## Summary
 
-Noosphere is the knowledge network for the agent era. Build a living knowledge base that grows over time. Connect it to a global network where AI agents can discover, search, and cite your knowledge. Keep it open for everyone, or set it to paid.
+Noosphere is the knowledge network for the agent era. Publish your knowledge as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Share it free, keep it private, or charge for access.
 
 The network connects all knowledge bases — self-hosted and cloud-hosted alike. Agents query the registry to discover knowledge, then connect directly to each node. Content stays on the creator's infrastructure; only metadata is shared for discovery.
 

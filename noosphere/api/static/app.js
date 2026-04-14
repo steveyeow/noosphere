@@ -609,7 +609,7 @@ function showCorpusAddDoc(corpusId){
   const container=document.getElementById('cv-docs');if(!container)return;
   if(document.getElementById('cv-add-panel'))return;
   const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
+  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
   container.parentNode.insertBefore(panel,container);
 
   const body=panel.querySelector('#cv-add-body');
@@ -662,6 +662,45 @@ function showCorpusAddDoc(corpusId){
         try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});if(!r.ok)throw new Error((await r.json()).detail||'Failed')}catch(e){toast('Fetch failed: '+e.message);btn.disabled=false;btn.textContent='Fetch & Index';return}
         btn.textContent='Indexing...';
         try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='urls'){
+      body.innerHTML=`<textarea class="term-write-body" id="cv-add-urls" placeholder="Paste URLs, one per line (max 40)" rows="6" style="min-height:80px;font-size:12px;font-family:monospace"></textarea><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch All & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.querySelector('#cv-add-urls').focus();
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      body.querySelector('#cv-add-go').onclick=async()=>{
+        const raw=body.querySelector('#cv-add-urls').value.trim();
+        const urls=raw.split('\n').map(u=>u.trim()).filter(u=>u&&u.startsWith('http'));
+        if(!urls.length){toast('Enter at least one URL');return}
+        if(urls.length>40){toast('Maximum 40 URLs per batch');return}
+        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent=`Fetching ${urls.length} URLs...`;
+        try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-urls`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Ingested ${d.ingested||0} pages${d.failed?' ('+d.failed+' failed)':''}`,'success')}catch(e){toast('Batch ingest failed: '+e.message);btn.disabled=false;btn.textContent='Fetch All & Index';return}
+        btn.textContent='Indexing...';
+        try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='feed'){
+      body.innerHTML=`<input type="text" class="fi" id="cv-add-feed" placeholder="https://example.com/feed.xml" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Max items:</label><input type="number" class="fi" id="cv-add-feed-max" value="25" min="1" max="100" style="width:60px;font-size:12px" /></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch Feed & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.querySelector('#cv-add-feed').focus();
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      body.querySelector('#cv-add-go').onclick=async()=>{
+        const feedUrl=body.querySelector('#cv-add-feed').value.trim();
+        const maxItems=parseInt(body.querySelector('#cv-add-feed-max').value)||25;
+        if(!feedUrl){toast('Enter a feed URL');return}
+        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Fetching feed...';
+        try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-feed`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feed_url:feedUrl,max_items:maxItems})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Fetched ${d.fetched||0} entries, ingested ${d.ingested||0}`,'success')}catch(e){toast('Feed ingest failed: '+e.message);btn.disabled=false;btn.textContent='Fetch Feed & Index';return}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='compile'){
+      body.innerHTML=`<input type="text" class="fi" id="cv-add-topic" placeholder="Topic to compile, e.g. &quot;pricing strategy&quot;" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cv-add-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px">Retrieves top passages and uses an LLM to compile a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Compile</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.querySelector('#cv-add-topic').focus();
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      body.querySelector('#cv-add-go').onclick=async()=>{
+        const topic=body.querySelector('#cv-add-topic').value.trim();
+        const topK=parseInt(body.querySelector('#cv-add-topk').value)||10;
+        if(!topic){toast('Enter a topic');return}
+        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Compiling...';
+        try{const r=await fetch(`${API}/corpora/${corpusId}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,top_k:topK})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Compiled: ${d.title||topic}`,'success')}catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='Compile';return}
         panel.remove();renderCorpus(corpusId);
       };
     }
@@ -834,21 +873,26 @@ async function setupCorpusInteract(id,sessionId){
   send.onclick=chat;ci.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}};
 }
 
-const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query. (Requires Stripe — Phase 2)'};
+const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query or subscribe. Set pricing below.'};
 async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const al=c.access_level||'public';
   let regStatus='';
   try{const hr=await fetch(`${API}/health`);const h=await hr.json();regStatus=al!=='private'&&h.registry_connected?'<div class="rp-reg ok">Registered in the Noosphere</div>':'<div class="rp-reg local">Local only</div>'}catch(e){regStatus='<div class="rp-reg local">Local only</div>'}
 
   rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl">Connect Agents</div><div class="rp-ep"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">API</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></div>
     <div class="rp-sec"><div class="rp-lbl">Stats</div><div class="rp-stats"><div><div class="rp-sv">${fmtN(c.document_count||0)}</div><div class="rp-sl">documents</div></div><div><div class="rp-sv">${fmtN(c.chunk_count||0)}</div><div class="rp-sl">chunks</div></div><div><div class="rp-sv">${fmtN(c.word_count||0)}</div><div class="rp-sl">words</div></div><div><div class="rp-sv">${fmtN(an.total_queries||0)}</div><div class="rp-sl">queries</div></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}disabled title="Coming in Phase 2 — Stripe integration">Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div>${regStatus}</div>
+    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div>${regStatus}</div>
     <div id="rp-tokens" class="rp-sec" style="display:${al==='token'?'block':'none'}"><div class="rp-lbl">Access Tokens</div><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate Token</button><div id="rp-tk-list"></div></div>
+    <div id="rp-pricing" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Pricing</div><div id="rp-pricing-body"></div></div>
+    <div id="rp-revenue" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Revenue</div><div id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading...</div></div>
     <div class="rp-sec"><div class="rp-lbl">Details</div>${c.author_name?`<div class="rp-detail-row"><span class="rp-detail-label">Author</span><span>${esc(c.author_name)}</span></div>`:''}${c.embedding_model?`<div class="rp-detail-row"><span class="rp-detail-label">Model</span><span>${esc(c.embedding_model)}</span></div>`:''}<div class="rp-detail-row"><span class="rp-detail-label">Status</span><span>${esc(c.status)}</span></div></div>`;
 
   document.getElementById('rp-acc').onchange=()=>{
     const v=document.getElementById('rp-acc').value;
     document.getElementById('rp-msg').textContent=ACC_MSG[v]||'';
     document.getElementById('rp-tokens').style.display=v==='token'?'block':'none';
+    document.getElementById('rp-pricing').style.display=v==='paid'?'block':'none';
+    document.getElementById('rp-revenue').style.display=v==='paid'?'block':'none';
+    if(v==='paid')loadPricingUI(c);
   };
   document.getElementById('rp-sv').onclick=async()=>{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:document.getElementById('rp-acc').value})});await loadC();renderCorpus(c.id)};
 
@@ -877,6 +921,80 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   };
 
   if(al==='token')loadTokens();
+  if(al==='paid'){loadPricingUI(c);loadRevenueUI(c.id)}
+}
+
+async function loadPricingUI(corpus){
+  const body=document.getElementById('rp-pricing-body');if(!body)return;
+  let pricing=null;
+  try{const r=await fetch(`${API}/corpora/${corpus.id}/pricing`);const d=await r.json();pricing=d.pricing}catch(e){}
+  const type=pricing?.type||'per_query';
+  const amount=(pricing?.amount_cents||500)/100;
+  const queries=pricing?.queries_per_payment||100;
+  const priceId=pricing?.stripe_price_id||'';
+
+  body.innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--tx3);width:50px">Type</label>
+        <select id="rp-pr-type" class="fi" style="font-size:12px;flex:1">
+          <option value="per_query" ${type==='per_query'?'selected':''}>Per-query</option>
+          <option value="subscription" ${type==='subscription'?'selected':''}>Subscription</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--tx3);width:50px">Price $</label>
+        <input type="number" class="fi" id="rp-pr-amount" value="${amount}" min="0.5" step="0.5" style="font-size:12px;flex:1" />
+      </div>
+      <div id="rp-pr-pq" style="display:${type==='per_query'?'flex':'none'};gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--tx3);width:50px">Queries</label>
+        <input type="number" class="fi" id="rp-pr-queries" value="${queries}" min="1" style="font-size:12px;flex:1" />
+      </div>
+      <div id="rp-pr-sub" style="display:${type==='subscription'?'flex':'none'};gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--tx3);width:50px">Price ID</label>
+        <input type="text" class="fi" id="rp-pr-priceid" value="${esc(priceId)}" placeholder="price_..." style="font-size:12px;flex:1" />
+      </div>
+      <div style="font-size:10px;color:var(--tx3)">Self-hosted: your Stripe keys, you keep 100%</div>
+      <button class="btn-sm" id="rp-pr-save">Save Pricing</button>
+    </div>`;
+
+  document.getElementById('rp-pr-type').onchange=()=>{
+    const t=document.getElementById('rp-pr-type').value;
+    document.getElementById('rp-pr-pq').style.display=t==='per_query'?'flex':'none';
+    document.getElementById('rp-pr-sub').style.display=t==='subscription'?'flex':'none';
+  };
+
+  document.getElementById('rp-pr-save').onclick=async()=>{
+    const btn=document.getElementById('rp-pr-save');
+    const pType=document.getElementById('rp-pr-type').value;
+    const amountCents=Math.round(parseFloat(document.getElementById('rp-pr-amount').value)*100);
+    if(amountCents<50){toast('Minimum price is $0.50');return}
+    const payload={type:pType,amount_cents:amountCents,currency:'usd'};
+    if(pType==='per_query'){
+      payload.queries_per_payment=parseInt(document.getElementById('rp-pr-queries').value)||100;
+    } else {
+      const pid=document.getElementById('rp-pr-priceid').value.trim();
+      if(!pid){toast('Stripe Price ID is required for subscriptions');return}
+      payload.stripe_price_id=pid;
+    }
+    btn.disabled=true;btn.textContent='Saving...';
+    try{
+      const r=await fetch(`${API}/corpora/${corpus.id}/pricing`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(!r.ok)throw new Error((await r.json()).detail||'Failed');
+      toast('Pricing saved','success');btn.textContent='Save Pricing';btn.disabled=false;
+    }catch(e){toast('Failed: '+e.message);btn.textContent='Save Pricing';btn.disabled=false}
+  };
+}
+
+async function loadRevenueUI(corpusId){
+  const body=document.getElementById('rp-revenue-body');if(!body)return;
+  try{
+    const r=await fetch(`${API}/corpora/${corpusId}/revenue`);
+    if(!r.ok){body.textContent='—';return}
+    const d=await r.json();
+    const dollars=(d.total_revenue_cents||0)/100;
+    body.innerHTML=`<div style="display:flex;gap:16px;margin-bottom:6px"><div><div style="font-size:16px;font-weight:600;color:var(--acc)">$${dollars.toFixed(2)}</div><div style="font-size:10px;color:var(--tx3)">total revenue</div></div><div><div style="font-size:16px;font-weight:600">${d.total_payments||0}</div><div style="font-size:10px;color:var(--tx3)">payments</div></div><div><div style="font-size:16px;font-weight:600">${d.active_subscriptions||0}</div><div style="font-size:10px;color:var(--tx3)">active subs</div></div></div>${d.recent_payments?.length?'<div style="font-size:10px;color:var(--tx3);margin-top:4px">Recent: '+d.recent_payments.slice(0,3).map(p=>'$'+(p.amount_cents/100).toFixed(2)+' ('+p.status+')').join(', ')+'</div>':''}`;
+  }catch(e){body.textContent='Failed to load revenue'}
 }
 
 function toggleTheme(){if(isDark()){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');localStorage.setItem('noosphere-theme','light')}else{document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');localStorage.setItem('noosphere-theme','dark')}}

@@ -334,6 +334,30 @@ def export(corpus, output):
     click.echo(f"Exported to {out_path} (SPEC-compliant format)")
 
 
+@cli.command("registry-serve")
+@click.option("--port", default=8421, help="Registry server port")
+@click.option("--host", default="0.0.0.0", help="Registry server host")
+@click.option("--db", "db_path", default="registry.db", help="Path to registry SQLite database")
+def registry_serve(port, host, db_path):
+    """Run the Noosphere Registry server (centralized discovery network)."""
+    import uvicorn
+    from noosphere.registry.server import set_db_path
+
+    set_db_path(db_path)
+
+    click.echo(f"Starting Noosphere Registry on {host}:{port}")
+    click.echo(f"  Directory:  http://{host}:{port}/")
+    click.echo(f"  Search API: http://{host}:{port}/api/v1/search?q=...")
+    click.echo(f"  Nodes:      http://{host}:{port}/api/v1/nodes")
+    click.echo(f"  Stats:      http://{host}:{port}/api/v1/stats")
+    click.echo(f"  Database:   {db_path}")
+    click.echo()
+    click.echo("Nodes will register via POST /api/v1/register")
+    click.echo("Agents discover knowledge via GET /api/v1/search?q=...")
+
+    uvicorn.run("noosphere.registry.server:app", host=host, port=port, reload=False)
+
+
 def main():
     cli()
 

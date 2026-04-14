@@ -41,7 +41,17 @@ def check_access(corpus: dict, bearer_token: str | None = None) -> str | None:
         return token_id
 
     if level == "paid":
-        raise AccessDenied("Paid access requires Stripe integration (coming in Phase 2)")
+        if not bearer_token:
+            raise AccessDenied(
+                "This corpus requires payment. Use POST /api/v1/corpora/{id}/checkout to purchase access.",
+                status_code=402,
+            )
+        from noosphere.core.payments import verify_paid_access
+        if not verify_paid_access(corpus["id"], bearer_token):
+            raise AccessDenied(
+                "Payment not found or expired. Use POST /api/v1/corpora/{id}/checkout to purchase access.",
+                status_code=402,
+            )
 
     return None
 

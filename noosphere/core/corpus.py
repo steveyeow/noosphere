@@ -96,7 +96,7 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
         "language", "license", "tags", "access_level", "status",
         "document_count", "chunk_count", "word_count",
         "embedding_model", "embedding_dim",
-        "chunk_strategy", "stale_threshold_days",
+        "chunk_strategy", "stale_threshold_days", "pricing_json",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:

@@ -33,6 +33,12 @@ OWNER_NAME = _raw.strip().title() if _raw.strip() else _getpass.getuser().title(
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 
+# Stripe — self-hosted creators use their own keys, keep 100%
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "")  # e.g. http://localhost:8420/payment/success
+STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "")    # e.g. http://localhost:8420/payment/cancel
+
 DEFAULT_REGISTRY = "https://registry.noosphere.ai"
 NOOSPHERE_REGISTRY = os.getenv("NOOSPHERE_REGISTRY", DEFAULT_REGISTRY)
 if NOOSPHERE_REGISTRY.lower() == "none":

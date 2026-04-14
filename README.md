@@ -44,6 +44,140 @@ Then:
 - Connect your MCP client (Claude, Cursor, etc.) to `http://localhost:8420/mcp`
 - Use the REST API at `http://localhost:8420/api/v1/corpora`
 
+## How the network works
+
+Noosphere is a decentralized knowledge network. Every self-hosted node is an equal participant — content stays on your server, only metadata is shared for discovery.
+
+```
+                    Noosphere Registry
+                 (registry.noosphere.ai)
+                  stores ONLY metadata:
+              name, description, tags, endpoint
+                   /        |        \
+                  /         |         \
+   Self-hosted       Self-hosted       Cloud-hosted
+   Node A            Node B            Node C
+   (your laptop)     (company server)  (platform)
+        ↑                 ↑                ↑
+        └─────────────────┴────────────────┘
+          Agents connect DIRECTLY to each node
+          Content never leaves your infrastructure
+```
+
+### 1. Create a knowledge base
+
+```bash
+noosphere init ./my-docs --name "My Knowledge" --author "Jane Doe"
+```
+
+### 2. Serve it — auto-joins the network
+
+```bash
+noosphere serve --port 8420
+```
+
+On startup, your node registers with the Noosphere Registry. It sends only metadata (name, description, tags, endpoint URL). Your documents, chunks, and embeddings stay local.
+
+### 3. Agents discover your knowledge
+
+Any AI agent can search the registry to find relevant knowledge bases across the entire network:
+
+```
+Agent                          Registry                        Your Node
+  |                               |                               |
+  |-- GET /search?q=AI+safety --> |                               |
+  |                               |                               |
+  |<-- [{name, endpoint, ...}] ---|                               |
+  |                                                               |
+  |-- POST /api/v1/corpora/{id}/search  -----------------------> |
+  |<-- [{text, citation, score}]  <------------------------------ |
+```
+
+The registry is a directory, not a proxy — agents connect directly to your server for queries.
+
+### 4. Control access and get paid
+
+Each knowledge base has an access level:
+
+| Level | Who can query | Setup |
+|-------|---------------|-------|
+| `public` | Anyone | Default |
+| `private` | Only you | `--no-registry` or set in UI |
+| `token` | People with your access key | Generate keys in UI |
+| `paid` | People who pay | Set pricing + your own Stripe key |
+
+For paid access, self-hosted creators use their own Stripe account and keep 100% of revenue.
+
+### Setting up paid access (Stripe)
+
+To charge for access to your knowledge base:
+
+**1. Add your Stripe keys to `.env`:**
+
+```bash
+STRIPE_SECRET_KEY=sk_live_...        # from https://dashboard.stripe.com/apikeys
+STRIPE_WEBHOOK_SECRET=whsec_...      # from Stripe webhook settings (optional but recommended)
+STRIPE_SUCCESS_URL=http://yoursite.com/payment/success
+STRIPE_CANCEL_URL=http://yoursite.com/payment/cancel
+```
+
+**2. Set pricing on your corpus (two models):**
+
+```bash
+# Per-query: charge $5 for 100 queries
+curl -X POST http://localhost:8420/api/v1/corpora/{id}/pricing \
+  -H "Content-Type: application/json" \
+  -d '{"type": "per_query", "amount_cents": 500, "queries_per_payment": 100}'
+
+# Subscription: $9/month recurring (requires a Stripe Price ID from your dashboard)
+curl -X POST http://localhost:8420/api/v1/corpora/{id}/pricing \
+  -H "Content-Type: application/json" \
+  -d '{"type": "subscription", "amount_cents": 900, "stripe_price_id": "price_..."}'
+```
+
+This automatically sets the corpus access level to `paid`.
+
+**3. Agents/users purchase access:**
+
+```bash
+# Get a Stripe Checkout URL
+curl -X POST http://localhost:8420/api/v1/corpora/{id}/checkout \
+  -d '{"payer_email": "buyer@example.com"}'
+# → {"checkout_url": "https://checkout.stripe.com/...", "payment_id": "..."}
+
+# After payment, use payment_id as bearer token to query
+curl -X POST http://localhost:8420/api/v1/corpora/{id}/search \
+  -H "Authorization: Bearer {payment_id}" \
+  -d '{"query": "pricing strategy"}'
+```
+
+**4. Track revenue:**
+
+```bash
+curl http://localhost:8420/api/v1/corpora/{id}/revenue
+# → {"total_payments": 12, "total_revenue_cents": 6000, "active_subscriptions": 3, ...}
+```
+
+You can also configure pricing from the web UI under corpus settings.
+
+> **Self-hosted = 100% yours.** You use your own Stripe account. Noosphere never touches the money. No platform commission.
+
+### Network configuration
+
+```bash
+# Default: register with the public Noosphere registry
+noosphere serve --port 8420
+
+# Opt out — run as a standalone knowledge base
+noosphere serve --port 8420 --no-registry
+
+# Private registry (e.g. within a company)
+noosphere serve --port 8420 --registry https://internal.mycompany.com/registry
+
+# Run your own registry server
+noosphere registry-serve --port 8421
+```
+
 ## CLI commands
 
 ```bash
