@@ -209,10 +209,13 @@ def _handle_checkout_completed(session) -> dict:
     if subscription_id and corpus_id:
         sub_id = str(uuid.uuid4())
         conn.execute(
-            """INSERT OR REPLACE INTO subscriptions
+            """INSERT INTO subscriptions
                (id, corpus_id, stripe_subscription_id, stripe_customer_id,
                 payer_email, status, created_at)
-               VALUES (?, ?, ?, ?, ?, 'active', ?)""",
+               VALUES (?, ?, ?, ?, ?, 'active', ?)
+               ON CONFLICT (stripe_subscription_id) DO UPDATE SET
+                 status='active', payer_email=EXCLUDED.payer_email,
+                 stripe_customer_id=EXCLUDED.stripe_customer_id""",
             (sub_id, corpus_id, subscription_id, customer_id, customer_email, now),
         )
 

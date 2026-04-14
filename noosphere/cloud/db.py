@@ -7,11 +7,11 @@ noosphere.db schema with multi-tenant user management.
 import logging
 from datetime import datetime, timezone
 
-from noosphere.core.db import get_conn
+from noosphere.core.db import get_conn, is_pg
 
 log = logging.getLogger(__name__)
 
-CLOUD_SCHEMA = """
+CLOUD_SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE,
@@ -36,11 +36,37 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 CREATE INDEX IF NOT EXISTS idx_usage_user_action ON usage_logs(user_id, action, created_at);
 """
 
+CLOUD_SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE,
+    tier TEXT DEFAULT 'free',
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    subscription_status TEXT,
+    subscription_ended_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_stripe ON users(stripe_customer_id);
+
+CREATE TABLE IF NOT EXISTS usage_logs (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    action TEXT NOT NULL,
+    tokens_used INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_user_action ON usage_logs(user_id, action, created_at);
+"""
+
 
 def init_cloud_tables():
     """Create cloud-specific tables. Called during lifespan when ENABLE_CLOUD=true."""
     conn = get_conn()
-    conn.executescript(CLOUD_SCHEMA)
+    schema = CLOUD_SCHEMA_PG if is_pg() else CLOUD_SCHEMA_SQLITE
+    conn.executescript(schema)
     log.info("Cloud tables initialized")
 
 

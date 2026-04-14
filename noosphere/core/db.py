@@ -1,11 +1,122 @@
-"""SQLite database initialisation and access."""
+"""Database initialisation and access — SQLite (default) or PostgreSQL.
 
-import sqlite3
+PostgreSQL is used when DATABASE_URL or POSTGRES_URL is set (e.g. on Vercel).
+Otherwise falls back to local SQLite with FTS5 for full-text search.
+"""
+
+import logging
+import os
 import threading
+
 from noosphere.core.config import DATA_DIR, DB_PATH
 
-_conn: sqlite3.Connection | None = None
-_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+
+# ── Database mode detection ────────────────────────────────────────
+
+_RAW_DATABASE_URL = os.getenv("DATABASE_URL", "") or os.getenv("POSTGRES_URL", "")
+_USE_PG = bool(_RAW_DATABASE_URL)
+
+
+def is_pg() -> bool:
+    """Check if we're using PostgreSQL."""
+    return _USE_PG
+
+
+def _clean_dsn(url: str) -> str:
+    """Strip query params psycopg2 doesn't understand (e.g. pgbouncer=true)."""
+    if "?" in url:
+        base, qs = url.split("?", 1)
+        from urllib.parse import parse_qs, urlencode
+        params = parse_qs(qs)
+        params.pop("pgbouncer", None)
+        clean_qs = urlencode(params, doseq=True)
+        return f"{base}?{clean_qs}" if clean_qs else base
+    return url
+
+
+def _pg():
+    """Lazy-import psycopg2."""
+    import psycopg2
+    import psycopg2.extras
+    return psycopg2
+
+
+DATABASE_URL = _clean_dsn(_RAW_DATABASE_URL) if _USE_PG else ""
+
+
+# ── PostgreSQL connection wrapper ──────────────────────────────────
+# Makes psycopg2 behave like sqlite3 — same API for consumer code.
+
+class _PgCursorResult:
+    """Wraps a psycopg2 cursor to match sqlite3 cursor interface."""
+
+    def __init__(self, cursor):
+        self._cur = cursor
+
+    def fetchone(self):
+        try:
+            return self._cur.fetchone()
+        except Exception:
+            return None
+
+    def fetchall(self):
+        try:
+            return list(self._cur.fetchall())
+        except Exception:
+            return []
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cur, "lastrowid", None)
+
+
+class _PgConnWrapper:
+    """Wraps psycopg2 connection to accept SQLite-style ? placeholders."""
+
+    def __init__(self, dsn: str):
+        pg = _pg()
+        self._conn = pg.connect(dsn)
+        self._conn.autocommit = False
+
+    def execute(self, sql: str, params=()) -> _PgCursorResult:
+        pg = _pg()
+        sql = sql.replace("?", "%s")
+        cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return _PgCursorResult(cur)
+
+    def executemany(self, sql: str, params_list) -> _PgCursorResult:
+        pg = _pg()
+        sql = sql.replace("?", "%s")
+        cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+        cur.executemany(sql, params_list)
+        return _PgCursorResult(cur)
+
+    def executescript(self, sql: str):
+        """Execute multiple statements separated by semicolons."""
+        cur = self._conn.cursor()
+        for stmt in sql.split(";"):
+            stmt = stmt.strip()
+            if stmt and not stmt.startswith("--"):
+                cur.execute(stmt)
+        self._conn.commit()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
+# ── Schema ─────────────────────────────────────────────────────────
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS corpora (
@@ -59,7 +170,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     text TEXT NOT NULL,
     char_start INTEGER,
     char_end INTEGER,
-    vector BLOB NOT NULL,
+    vector {BLOB_TYPE} NOT NULL,
     dim INTEGER NOT NULL,
     norm REAL NOT NULL,
     metadata_json TEXT DEFAULT '{}',
@@ -145,13 +256,72 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_subs_corpus ON subscriptions(corpus_id, status);
 CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(stripe_customer_id);
+
+CREATE TABLE IF NOT EXISTS registered_nodes (
+    endpoint TEXT PRIMARY KEY,
+    node_version TEXT,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    last_health_at TEXT,
+    health_status TEXT DEFAULT 'unknown',
+    consecutive_failures INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS registered_corpora (
+    id TEXT PRIMARY KEY,
+    node_endpoint TEXT NOT NULL REFERENCES registered_nodes(endpoint) ON DELETE CASCADE,
+    corpus_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    slug TEXT,
+    description TEXT,
+    author TEXT,
+    tags TEXT DEFAULT '[]',
+    document_count INTEGER DEFAULT 0,
+    chunk_count INTEGER DEFAULT 0,
+    word_count INTEGER DEFAULT 0,
+    access_level TEXT DEFAULT 'public',
+    status TEXT DEFAULT 'draft',
+    registered_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(node_endpoint, corpus_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rc_node ON registered_corpora(node_endpoint);
+CREATE INDEX IF NOT EXISTS idx_rc_access ON registered_corpora(access_level);
 """
 
+# SQLite: FTS5 virtual table for full-text search
 FTS_SCHEMA_SQL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text,
     content=chunks, content_rowid=rowid
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS registered_corpora_fts USING fts5(
+    name, description, author, tags, registry_id
+);
+"""
+
+# PostgreSQL: tsvector column + GIN index for full-text search
+PG_FTS_SQL = """
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='chunks' AND column_name='tsv'
+    ) THEN
+        ALTER TABLE chunks ADD COLUMN tsv TSVECTOR;
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_chunks_tsv ON chunks USING GIN(tsv);
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='registered_corpora' AND column_name='tsv'
+    ) THEN
+        ALTER TABLE registered_corpora ADD COLUMN tsv TSVECTOR;
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_rc_tsv ON registered_corpora USING GIN(tsv);
 """
 
 MIGRATION_SQL = [
@@ -162,8 +332,11 @@ MIGRATION_SQL = [
 ]
 
 
-def _run_migrations(conn: sqlite3.Connection):
+# ── Init helpers ───────────────────────────────────────────────────
+
+def _run_migrations_sqlite(conn):
     """Apply additive migrations, silently skipping already-applied ones."""
+    import sqlite3
     for stmt in MIGRATION_SQL:
         try:
             conn.execute(stmt)
@@ -172,13 +345,24 @@ def _run_migrations(conn: sqlite3.Connection):
     conn.commit()
 
 
-def _init_fts(conn: sqlite3.Connection):
+def _run_migrations_pg(conn):
+    """Apply additive migrations for PostgreSQL using SAVEPOINT."""
+    for stmt in MIGRATION_SQL:
+        col_name = stmt.split("ADD COLUMN")[1].strip().split()[0] if "ADD COLUMN" in stmt else ""
+        sp = f"sp_mig_{col_name}" if col_name else "sp_mig"
+        try:
+            conn.execute(f"SAVEPOINT {sp}")
+            conn.execute(stmt)
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+    conn.commit()
+
+
+def _init_fts_sqlite(conn):
     """Create FTS5 virtual tables and populate from existing data."""
     conn.executescript(FTS_SCHEMA_SQL)
-
-    count = conn.execute(
-        "SELECT COUNT(*) as n FROM chunks_fts"
-    ).fetchone()["n"]
+    count = conn.execute("SELECT COUNT(*) as n FROM chunks_fts").fetchone()["n"]
     if count == 0:
         existing = conn.execute("SELECT rowid, text FROM chunks").fetchall()
         if existing:
@@ -187,27 +371,116 @@ def _init_fts(conn: sqlite3.Connection):
                 [(r["rowid"], r["text"]) for r in existing],
             )
             conn.commit()
+    rc_count = conn.execute("SELECT COUNT(*) as n FROM registered_corpora_fts").fetchone()["n"]
+    if rc_count == 0:
+        existing = conn.execute(
+            "SELECT id, name, description, author, tags FROM registered_corpora"
+        ).fetchall()
+        if existing:
+            conn.executemany(
+                "INSERT INTO registered_corpora_fts(name, description, author, tags, registry_id) VALUES (?, ?, ?, ?, ?)",
+                [(r["name"], r["description"] or "", r["author"] or "", r["tags"] or "", r["id"]) for r in existing],
+            )
+            conn.commit()
 
 
-def get_conn() -> sqlite3.Connection:
+def _init_fts_pg(conn):
+    """Create tsvector column + GIN index; backfill from existing data."""
+    pg = _pg()
+    raw_conn = conn._conn if isinstance(conn, _PgConnWrapper) else conn
+    cur = raw_conn.cursor()
+    # Add tsv column if not exists + create GIN index for chunks
+    cur.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='chunks' AND column_name='tsv'
+            ) THEN
+                ALTER TABLE chunks ADD COLUMN tsv TSVECTOR;
+            END IF;
+        END $$
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_tsv ON chunks USING GIN(tsv)")
+    raw_conn.commit()
+    cur.execute("UPDATE chunks SET tsv = to_tsvector('english', text) WHERE tsv IS NULL")
+    raw_conn.commit()
+    # Add tsv column for registered_corpora (network discovery)
+    cur.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='registered_corpora' AND column_name='tsv'
+            ) THEN
+                ALTER TABLE registered_corpora ADD COLUMN tsv TSVECTOR;
+            END IF;
+        END $$
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_rc_tsv ON registered_corpora USING GIN(tsv)")
+    raw_conn.commit()
+    cur.execute("""
+        UPDATE registered_corpora
+        SET tsv = to_tsvector('english', coalesce(name,'') || ' ' || coalesce(description,'') || ' ' || coalesce(author,''))
+        WHERE tsv IS NULL
+    """)
+    raw_conn.commit()
+
+
+# ── Connection management ──────────────────────────────────────────
+
+_conn = None
+_lock = threading.Lock()
+
+
+def get_conn():
+    """Get a database connection (singleton, thread-safe).
+
+    Returns a sqlite3.Connection or _PgConnWrapper — both support
+    the same interface: .execute(), .executemany(), .executescript(),
+    .commit(), .close().
+    """
     global _conn
     with _lock:
-        if _conn is None:
+        if _conn is not None:
+            return _conn
+
+        if _USE_PG:
+            logger.info("Connecting to PostgreSQL")
+            _conn = _PgConnWrapper(DATABASE_URL)
+            schema = SCHEMA_SQL.replace("{BLOB_TYPE}", "BYTEA")
+            _conn.executescript(schema)
+            _run_migrations_pg(_conn)
+            _init_fts_pg(_conn)
+        else:
+            import sqlite3
+            logger.info("Using SQLite at %s", DB_PATH)
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-            _conn.row_factory = sqlite3.Row
-            _conn.execute("PRAGMA journal_mode=WAL")
-            _conn.execute("PRAGMA foreign_keys=ON")
-            _conn.execute("PRAGMA busy_timeout=5000")
-            _conn.executescript(SCHEMA_SQL)
-            _run_migrations(_conn)
-            _init_fts(_conn)
+            conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=5000")
+            schema = SCHEMA_SQL.replace("{BLOB_TYPE}", "BLOB")
+            conn.executescript(schema)
+            _run_migrations_sqlite(conn)
+            _init_fts_sqlite(conn)
+            _conn = conn
+
         return _conn
 
 
 def close():
+    """Close the database connection."""
     global _conn
     with _lock:
         if _conn:
             _conn.close()
             _conn = None
+
+
+# ── Helpers for PG binary data ─────────────────────────────────────
+
+def pg_binary(data: bytes) -> bytes:
+    """Wrap bytes for PostgreSQL BYTEA column. No-op for SQLite."""
+    if _USE_PG:
+        return _pg().Binary(data)
+    return data

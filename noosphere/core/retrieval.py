@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 
-from noosphere.core.db import get_conn
+from noosphere.core.db import get_conn, is_pg
 from noosphere.core.embeddings import get_embedder, blob_to_vector
 
 
@@ -127,36 +127,61 @@ def get_retrieval_engine(remote_url: str = "", api_key: str = "", provider: str 
     return LocalRetrieval(provider)
 
 
-# ── Keyword search (FTS5) ───────────────────────────────────────────
+# ── Keyword search (FTS5 / tsvector) ───────────────────────────────
 
-def _fts5_available(conn) -> bool:
-    """Check if the chunks_fts table exists."""
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
-    ).fetchone()
-    return row is not None
+def _fts_available(conn) -> bool:
+    """Check if full-text search is available."""
+    if is_pg():
+        # PG: check if tsv column exists on chunks
+        try:
+            row = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='chunks' AND column_name='tsv'",
+                (),
+            ).fetchone()
+            return row is not None
+        except Exception:
+            return False
+    else:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+        ).fetchone()
+        return row is not None
 
 
 def _keyword_search(corpus_id: str, query: str, *, limit: int = 30) -> list[dict]:
-    """FTS5 keyword search over chunks. Returns ranked chunk dicts."""
+    """Full-text keyword search over chunks. Returns ranked chunk dicts."""
     conn = get_conn()
-    if not _fts5_available(conn):
+    if not _fts_available(conn):
         return []
 
     try:
-        fts_query = _build_fts_query(query)
-        rows = conn.execute(
-            """
-            SELECT c.*, chunks_fts.rank AS fts_rank
-            FROM chunks_fts
-            JOIN chunks c ON c.rowid = chunks_fts.rowid
-            WHERE chunks_fts MATCH ?
-              AND c.corpus_id = ?
-            ORDER BY chunks_fts.rank
-            LIMIT ?
-            """,
-            (fts_query, corpus_id, limit),
-        ).fetchall()
+        if is_pg():
+            rows = conn.execute(
+                """
+                SELECT c.*, ts_rank(c.tsv, plainto_tsquery('english', ?)) AS fts_rank
+                FROM chunks c
+                WHERE c.corpus_id = ?
+                  AND c.tsv @@ plainto_tsquery('english', ?)
+                ORDER BY fts_rank DESC
+                LIMIT ?
+                """,
+                (query, corpus_id, query, limit),
+            ).fetchall()
+        else:
+            fts_query = _build_fts_query(query)
+            rows = conn.execute(
+                """
+                SELECT c.*, chunks_fts.rank AS fts_rank
+                FROM chunks_fts
+                JOIN chunks c ON c.rowid = chunks_fts.rowid
+                WHERE chunks_fts MATCH ?
+                  AND c.corpus_id = ?
+                ORDER BY chunks_fts.rank
+                LIMIT ?
+                """,
+                (fts_query, corpus_id, limit),
+            ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []

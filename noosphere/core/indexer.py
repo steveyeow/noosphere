@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 
-from noosphere.core.db import get_conn
+from noosphere.core.db import get_conn, is_pg, pg_binary
 from noosphere.core.corpus import update_corpus, get_corpus
 from noosphere.core.chunker import chunk_document
 from noosphere.core.embeddings import get_embedder, vector_to_blob
@@ -143,7 +143,7 @@ def index_corpus(
             (
                 chunk_id, corpus_id, ch["document_id"], ch["chunk_index"],
                 ch["text"], ch["char_start"], ch["char_end"],
-                vector_to_blob(vectors[idx]), dim, float(norms[idx]),
+                pg_binary(vector_to_blob(vectors[idx])), dim, float(norms[idx]),
                 json.dumps(meta), now,
             ),
         )
@@ -183,19 +183,29 @@ def index_corpus(
 
 
 # ── FTS sync helpers ────────────────────────────────────────────────
+# SQLite: maintain FTS5 virtual table (chunks_fts)
+# PostgreSQL: maintain tsvector column (chunks.tsv)
 
 def _sync_fts_insert(conn, chunk_id: str, text: str):
-    """Insert into chunks_fts after inserting into chunks."""
+    """Update full-text index after inserting a chunk."""
     try:
-        row = conn.execute("SELECT rowid FROM chunks WHERE id=?", (chunk_id,)).fetchone()
-        if row:
-            conn.execute("INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)", (row["rowid"], text))
+        if is_pg():
+            conn.execute(
+                "UPDATE chunks SET tsv = to_tsvector('english', ?) WHERE id=?",
+                (text, chunk_id),
+            )
+        else:
+            row = conn.execute("SELECT rowid FROM chunks WHERE id=?", (chunk_id,)).fetchone()
+            if row:
+                conn.execute("INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)", (row["rowid"], text))
     except Exception:
         logger.warning("FTS insert failed for chunk %s", chunk_id, exc_info=True)
 
 
 def _sync_fts_delete_doc(conn, doc_id: str):
     """Remove FTS entries for all chunks of a document."""
+    if is_pg():
+        return  # PG: chunks are deleted directly, tsv goes with them
     try:
         rows = conn.execute("SELECT rowid, text FROM chunks WHERE document_id=?", (doc_id,)).fetchall()
         for r in rows:
@@ -209,6 +219,8 @@ def _sync_fts_delete_doc(conn, doc_id: str):
 
 def _sync_fts_delete_corpus(conn, corpus_id: str):
     """Remove FTS entries for all chunks of a corpus."""
+    if is_pg():
+        return  # PG: chunks are deleted directly, tsv goes with them
     try:
         rows = conn.execute("SELECT rowid, text FROM chunks WHERE corpus_id=?", (corpus_id,)).fetchall()
         for r in rows:
