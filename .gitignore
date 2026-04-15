@@ -16,4 +16,5 @@ data/
 uploads/
 .DS_Store
 .cursor/
+.claude/
 node_modules/

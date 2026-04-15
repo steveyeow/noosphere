@@ -26,6 +26,7 @@ SIMILARITY_DEDUP_THRESHOLD = 0.90
 TYPE_DIVERSITY_CAP = 0.60
 FRESHNESS_BOOST_PER_YEAR = 0.02
 FRESHNESS_BOOST_MAX = 0.10
+COMPILED_TRUTH_BOOST = 0.08  # Score boost for compiled concept notes (distilled knowledge)
 
 
 # ── Abstract interface ──────────────────────────────────────────────
@@ -421,10 +422,31 @@ def search_corpus(
     agent_id: str = "",
     token_id: str | None = None,
     expand: bool = True,
+    detail: str = "medium",
 ) -> dict:
-    """Hybrid search over a corpus: keyword + vector + RRF fusion + dedup + freshness."""
+    """Hybrid search over a corpus: keyword + vector + RRF fusion + dedup + freshness.
+
+    detail levels:
+      low    — keyword-only, no expansion, fast
+      medium — hybrid keyword+vector, expansion if corpus is large (default)
+      high   — hybrid + forced expansion + more results + full context
+    """
     start = time.time()
     conn = get_conn()
+
+    # Normalize detail level
+    detail = detail.lower() if detail else "medium"
+    if detail not in ("low", "medium", "high"):
+        detail = "medium"
+
+    # Detail-level overrides
+    if detail == "low":
+        expand = False
+        include_context = False
+    elif detail == "high":
+        expand = True
+        include_context = True
+        top_k = max(top_k, 10)
 
     corpus_row = conn.execute(
         "SELECT embedding_model, updated_at, stale_threshold_days FROM corpora WHERE id=?",
@@ -446,10 +468,15 @@ def search_corpus(
     ).fetchone()["n"]
 
     if chunk_count == 0:
-        return {"results": [], "usage": {"latency_ms": 0, "chunks_searched": 0}}
+        return {"results": [], "usage": {"latency_ms": 0, "chunks_searched": 0, "detail": detail}}
 
     queries = [query]
-    if expand and top_k >= 3 and chunk_count > 50:
+    if detail == "low":
+        pass  # no expansion
+    elif detail == "high" and chunk_count > 10:
+        expansions = _expand_query(query)
+        queries.extend(expansions)
+    elif expand and top_k >= 3 and chunk_count > 50:
         expansions = _expand_query(query)
         queries.extend(expansions)
 
@@ -458,11 +485,14 @@ def search_corpus(
     all_keyword = []
     all_vector = []
 
-    has_embedder = True
-    try:
-        embedder = get_embedder(provider)
-    except ValueError:
-        has_embedder = False
+    use_vectors = detail != "low"
+    has_embedder = False
+    if use_vectors:
+        try:
+            embedder = get_embedder(provider)
+            has_embedder = True
+        except ValueError:
+            pass
 
     for q in queries:
         kw = _keyword_search(corpus_id, q, limit=fetch_limit)
@@ -504,6 +534,12 @@ def search_corpus(
         r["_doc_title"] = info.get("title", "")
 
     fused = _apply_freshness(fused, corpus_updated_at, stale_threshold)
+
+    # Compiled truth boost: concept notes (distilled knowledge) rank higher
+    for r in fused:
+        if r.get("_doc_type") == "concept":
+            r["_rrf_score"] = r.get("_rrf_score", 0) + COMPILED_TRUTH_BOOST
+
     fused.sort(key=lambda x: x.get("_rrf_score", 0), reverse=True)
     final = _deduplicate(fused, top_k)
 
@@ -548,6 +584,7 @@ def search_corpus(
             "latency_ms": latency,
             "chunks_searched": chunk_count,
             "queries_executed": len(queries),
+            "detail": detail,
         },
     }
 

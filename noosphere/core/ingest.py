@@ -76,12 +76,61 @@ def _html_to_markdown(html: str) -> str:
     return text.strip()
 
 
+SUPPORTED_FILE_EXTENSIONS = (".md", ".txt", ".text", ".pdf", ".docx", ".csv", ".json", ".jsonl", ".html", ".htm")
+
+
+def _extract_pdf_text(raw: bytes) -> str:
+    import fitz
+    doc = fitz.open(stream=raw, filetype="pdf")
+    pages = [page.get_text() for page in doc]
+    doc.close()
+    return "\n\n".join(pages)
+
+
+def _extract_docx_text(raw: bytes) -> str:
+    import io as _io
+    from docx import Document
+    doc = Document(_io.BytesIO(raw))
+    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def _extract_csv_text(content: str) -> str:
+    import csv
+    import io as _io
+    reader = csv.reader(_io.StringIO(content))
+    rows = list(reader)
+    if not rows:
+        return ""
+    header = rows[0]
+    lines = []
+    for row in rows[1:]:
+        entry = "; ".join(f"{header[i]}: {row[i]}" for i in range(min(len(header), len(row))) if row[i].strip())
+        if entry:
+            lines.append(entry)
+    return "\n".join(lines)
+
+
+def _extract_json_text(content: str) -> str:
+    data = json.loads(content)
+    if isinstance(data, list):
+        parts = []
+        for item in data:
+            if isinstance(item, dict):
+                parts.append("\n".join(f"{k}: {v}" for k, v in item.items() if isinstance(v, (str, int, float))))
+            else:
+                parts.append(str(item))
+        return "\n\n".join(parts)
+    elif isinstance(data, dict):
+        return "\n".join(f"{k}: {v}" for k, v in data.items() if isinstance(v, (str, int, float)))
+    return str(data)
+
+
 def ingest_directory(
     corpus_id: str,
     directory: str | Path,
     *,
     doc_type: str = "doc",
-    file_extensions: tuple[str, ...] = (".md", ".txt", ".text"),
+    file_extensions: tuple[str, ...] = SUPPORTED_FILE_EXTENSIONS,
 ) -> list[dict]:
     directory = Path(directory)
     if not directory.is_dir():
@@ -92,7 +141,7 @@ def ingest_directory(
         if f.is_file() and f.suffix.lower() in file_extensions
     )
     if not files:
-        raise ValueError(f"No files with extensions {file_extensions} found in {directory}")
+        raise ValueError(f"No supported files found in {directory}")
 
     docs = []
     for filepath in files:
@@ -115,12 +164,42 @@ def ingest_file(
     if not filepath.is_file():
         return None
 
-    content = filepath.read_text(encoding="utf-8", errors="replace")
-    if not content.strip():
+    ext = filepath.suffix.lower()
+    title = filepath.stem
+    metadata: dict = {}
+    body = ""
+
+    # Binary formats
+    if ext == ".pdf":
+        raw = filepath.read_bytes()
+        body = _extract_pdf_text(raw)
+        doc_type = doc_type if doc_type != "doc" else "paper"
+    elif ext == ".docx":
+        raw = filepath.read_bytes()
+        body = _extract_docx_text(raw)
+    elif ext == ".csv":
+        content = filepath.read_text(encoding="utf-8", errors="replace")
+        body = _extract_csv_text(content)
+        doc_type = doc_type if doc_type != "doc" else "data"
+    elif ext in (".json", ".jsonl"):
+        content = filepath.read_text(encoding="utf-8", errors="replace")
+        if ext == ".jsonl":
+            lines = [json.loads(line) for line in content.strip().splitlines() if line.strip()]
+            body = _extract_json_text(json.dumps(lines))
+        else:
+            body = _extract_json_text(content)
+        doc_type = doc_type if doc_type != "doc" else "data"
+    else:
+        # Text formats (md, txt, html, etc.)
+        content = filepath.read_text(encoding="utf-8", errors="replace")
+        if not content.strip():
+            return None
+        metadata, body = _extract_markdown_metadata(content)
+        title = metadata.get("title") or _extract_markdown_title(body) or filepath.stem
+
+    if not body or not body.strip():
         return None
 
-    metadata, body = _extract_markdown_metadata(content)
-    title = metadata.get("title") or _extract_markdown_title(body) or filepath.stem
     date = metadata.get("date", "")
     tags = metadata.get("tags", "")
     if isinstance(tags, str) and tags:
@@ -279,7 +358,7 @@ def sync_directory(
     *,
     doc_type: str = "doc",
     prune: bool = False,
-    file_extensions: tuple[str, ...] = (".md", ".txt", ".text"),
+    file_extensions: tuple[str, ...] = SUPPORTED_FILE_EXTENSIONS,
 ) -> dict:
     """Sync a directory to a corpus: add new files, update changed, optionally prune deleted.
 

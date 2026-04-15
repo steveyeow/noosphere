@@ -21,6 +21,7 @@ TOOLS = [
                 "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
                 "query": {"type": "string", "description": "Search query"},
                 "top_k": {"type": "integer", "description": "Number of results (default 5)", "default": 5},
+                "detail": {"type": "string", "description": "Search depth: low (keyword-only, fast), medium (hybrid, default), high (expanded + more results)", "enum": ["low", "medium", "high"], "default": "medium"},
             },
             "required": ["corpus_id", "query"],
         },
@@ -86,6 +87,17 @@ TOOLS = [
             "required": ["corpus_id"],
         },
     },
+    {
+        "name": "preview",
+        "description": "Preview a knowledge base before querying — returns sample content, quality signals, and content types. Works on any corpus including paid ones, no authentication needed. Use this to evaluate relevance before committing to a full search.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
+            },
+            "required": ["corpus_id"],
+        },
+    },
 ]
 
 
@@ -117,6 +129,7 @@ def handle_tool_call(
         result = search_corpus(
             c["id"], arguments["query"],
             top_k=arguments.get("top_k", 5),
+            detail=arguments.get("detail", "medium"),
             agent_id=agent_id,
             token_id=token_id,
         )
@@ -194,6 +207,58 @@ def handle_tool_call(
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
         _check_mcp_access(c, bearer_token)
         return c
+
+    elif name == "preview":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        # Preview is always available — no access check
+        from noosphere.core.db import get_conn
+        conn = get_conn()
+        sample_chunks = conn.execute(
+            """SELECT c.text, c.document_id, d.title as document_title, d.doc_type
+               FROM chunks c JOIN documents d ON d.id = c.document_id
+               WHERE c.corpus_id=? ORDER BY c.created_at DESC LIMIT 20""",
+            (c["id"],),
+        ).fetchall()
+        seen_docs = set()
+        samples = []
+        for row in sample_chunks:
+            did = row["document_id"]
+            if did in seen_docs:
+                continue
+            seen_docs.add(did)
+            text = row["text"]
+            if len(text) > 250:
+                text = text[:247] + "..."
+            samples.append({"text": text, "document_title": row["document_title"],
+                            "document_type": row["doc_type"] or ""})
+            if len(samples) >= 5:
+                break
+        query_count = conn.execute(
+            "SELECT COUNT(*) as n FROM query_logs WHERE corpus_id=?", (c["id"],)
+        ).fetchone()["n"]
+        tags = c.get("tags", [])
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except Exception:
+                tags = []
+        return {
+            "corpus_id": c["id"], "name": c["name"],
+            "description": c.get("description", ""),
+            "author": c.get("author_name", ""),
+            "tags": tags,
+            "access_level": c.get("access_level", "public"),
+            "quality": {
+                "document_count": c.get("document_count", 0),
+                "word_count": c.get("word_count", 0),
+                "query_count": query_count,
+                "last_updated": c.get("updated_at", ""),
+                "status": c.get("status", "draft"),
+            },
+            "samples": samples,
+        }
 
     return {"error": f"Unknown tool: {name}"}
 

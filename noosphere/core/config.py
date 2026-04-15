@@ -45,7 +45,13 @@ STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", f"{APP_URL}/?payment=cancel")
 # Registry — set NOOSPHERE_REGISTRY to the registry URL to join the Noosphere.
 # Self-hosted nodes register metadata with the registry for discovery.
 # Leave empty or "none" to run as a standalone node.
-DEFAULT_REGISTRY = ""
+DEFAULT_REGISTRY = "https://noosphere-production.up.railway.app"
 NOOSPHERE_REGISTRY = os.getenv("NOOSPHERE_REGISTRY", DEFAULT_REGISTRY)
 if NOOSPHERE_REGISTRY.lower() == "none":
     NOOSPHERE_REGISTRY = ""
+
+# Enrichment scheduler — interval in minutes (0 = disabled)
+ENRICHMENT_INTERVAL_MINUTES = int(os.getenv("ENRICHMENT_INTERVAL_MINUTES", "60"))
+
+# Database URL for PostgreSQL (empty = SQLite)
+DATABASE_URL = os.getenv("DATABASE_URL", "")

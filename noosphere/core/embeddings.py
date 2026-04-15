@@ -1,11 +1,37 @@
 """Pluggable embedding providers — OpenAI and Gemini."""
 
+import logging
+import time
 from abc import ABC, abstractmethod
 
 import httpx
 import numpy as np
 
 from noosphere.core.config import OPENAI_API_KEY, GEMINI_API_KEY
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF = (1, 3, 10)  # seconds
+
+
+def _request_with_retry(method, url, **kwargs):
+    """HTTP request with exponential backoff retry on transient failures."""
+    last_err = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = method(url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
+            last_err = e
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:
+                raise  # don't retry 4xx
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF[attempt]
+                logger.warning("Embedding API attempt %d failed (%s), retrying in %ds", attempt + 1, e, wait)
+                time.sleep(wait)
+    raise last_err
 
 
 class EmbeddingProvider(ABC):
@@ -36,13 +62,13 @@ class OpenAIEmbedder(EmbeddingProvider):
 
         for i in range(0, len(texts), 100):
             batch = texts[i : i + 100]
-            resp = httpx.post(
+            resp = _request_with_retry(
+                httpx.post,
                 "https://api.openai.com/v1/embeddings",
                 headers=headers,
                 json={"model": self._model, "input": batch},
                 timeout=60,
             )
-            resp.raise_for_status()
             data = resp.json()["data"]
             data.sort(key=lambda x: x["index"])
             all_embeddings.extend([d["embedding"] for d in data])
@@ -72,8 +98,7 @@ class GeminiEmbedder(EmbeddingProvider):
         for i in range(0, len(texts), 100):
             batch = texts[i : i + 100]
             requests_body = [{"model": f"models/{self._model}", "content": {"parts": [{"text": t}]}} for t in batch]
-            resp = httpx.post(url, json={"requests": requests_body}, timeout=60)
-            resp.raise_for_status()
+            resp = _request_with_retry(httpx.post, url, json={"requests": requests_body}, timeout=60)
             embeddings = resp.json()["embeddings"]
             all_embeddings.extend([e["values"] for e in embeddings])
 

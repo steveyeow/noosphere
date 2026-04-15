@@ -1,6 +1,6 @@
 # Noosphere
 
-> The knowledge network for the agent era.
+> Expand the scope and scale of collective enlightenment.
 
 Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Share it free, keep it private, or charge for access.
 
@@ -65,9 +65,9 @@ Integration is optional. Feynman can import `noosphere` as a Python library (sam
 
 ---
 
-## Mission
+## Core value
 
-**The knowledge network for the agent era.**
+**Expand the scope and scale of collective enlightenment.**
 
 Personal AI knowledge bases are the future — but isolated knowledge bases are a transitional state. The real value comes when they're connected into a network, and when creators can control and monetize access.
 
@@ -112,10 +112,52 @@ Personal LLM wikis and agent brains emphasize **continuous compilation**: raw in
 | Feeds / recurring inflow | **RSS/Atom:** `POST /corpora/{id}/ingest-feed` — fetches feed, dedupes by `rss_guid` / link metadata, ingests new entries (fetch URL when possible; else summary body). CLI: `noosphere ingest-feed`. |
 | Batch URLs | **`POST /corpora/{id}/ingest-urls`** — up to 40 URLs per request. CLI: `noosphere ingest-urls`. |
 | Lint / health / repair | **`GET /corpora/{id}/knowledge-health`** — documents with no chunks, suspected empty `]()` links, counts of capture/concept docs, documents older than `stale_threshold_days`. **`POST /corpora/{id}/maintain`** — re-runs `index_corpus` (optional `force` for full rebuild). |
-| Nightly “dream” enrichment | **Not implemented** — possible future job using the same LLM stack; today, run `maintain` + `compile` on a schedule (e.g. cron) if desired. |
+| Nightly “dream” enrichment | **Enrichment cycle:** `POST /corpora/{id}/enrich` — discovers all RSS feeds from document metadata, polls for new entries, re-indexes, and returns a health summary. Call on a schedule (cron, agent, or scheduler) for automatic knowledge growth. |
 | Automatic meeting/email/calendar ingest | **Out of scope for open core** — requires deep integrations; cloud roadmap may add connectors. |
 
-**Honest boundary:** Noosphere still does not auto-ingest your private digital life the way a personal OpenClaw + brain stack can. It **does** support **networked publishing**, **lower-friction inflow** (feeds, batch URLs, captures, compile), and **observable corpus health**.
+**Honest boundary:** Noosphere still does not auto-ingest your private digital life the way a personal OpenClaw + brain stack can. It **does** support **networked publishing**, **lower-friction inflow** (feeds, batch URLs, captures, compile), **enrichment cycles**, and **observable corpus health**.
+
+### Knowledge enrichment
+
+Knowledge bases are living systems, not static file dumps. The enrichment cycle is how they grow:
+
+```
+                    ┌─────────────────────────────────┐
+                    │        Enrichment Cycle          │
+                    │   POST /corpora/{id}/enrich      │
+                    └──────────┬──────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                 ▼
+        Poll RSS feeds   Re-index new      Health check
+        (discover +      content            (stale docs,
+         ingest new      (chunks +          missing chunks,
+         entries)         embeddings)        broken links)
+              │                │                 │
+              └────────────────┼────────────────┘
+                               ▼
+                    Updated corpus with
+                    fresh content + signals
+```
+
+**How it works:**
+
+1. **Feed discovery.** The enrichment endpoint scans document metadata for `source_feed` URLs — every RSS/Atom feed that has ever been ingested is automatically tracked.
+2. **Incremental polling.** Each feed is fetched and deduped against existing documents (by `rss_guid` or link). Only new entries are ingested.
+3. **Re-indexing.** If new content was ingested, the corpus is re-indexed to update chunks and embeddings.
+4. **Health check.** Returns the same signals as `GET /knowledge-health`: documents without chunks, stale content, empty links, capture/concept counts.
+
+**Compiled truth.** Concept notes created via `POST /compile` represent distilled knowledge — synthesized from multiple sources by the LLM. The search engine gives these a score boost (`+0.08`) because they represent higher-signal, cross-referenced content. Over time, as more concept notes are compiled, the knowledge base develops a layer of “compiled truth” that improves search quality.
+
+**Search detail levels.** Agents can choose how deep to search:
+
+| Level | Behavior | Latency |
+|-------|----------|---------|
+| `low` | Keyword-only, no query expansion | Fastest |
+| `medium` | Hybrid keyword+vector, expansion for large corpora | Default |
+| `high` | Forced expansion, more results, full context | Thorough |
+
+This lets agents trade off speed vs. thoroughness depending on their task.
 
 ---
 
@@ -396,6 +438,12 @@ Input sources → Ingest → Clean → Chunk → Embed → Index → Publish
 
 ## Discovery and registry
 
+Discovery is the core value proposition of Noosphere: experts publish knowledge on their own terms, and agents/companies find what they need through the network. Without effective discovery, every knowledge base is an island — with it, the network becomes more valuable than the sum of its parts.
+
+### The demand-side problem
+
+Today, companies like Mercor hire domain experts one by one to train AI models. The process is manual, slow, and expensive. Noosphere flips this: experts publish their knowledge as living knowledge bases, and agents discover what they need through the network. A crypto trading agent can draw on multiple trading strategy knowledge bases. A startup agent can pull from product, growth, and pricing experts simultaneously. The supply side publishes once; the demand side discovers dynamically.
+
 ### Design: the cloud app IS the registry
 
 The cloud deployment (`app.noosphere.wiki`) serves as both the hosted product for cloud users **and** the discovery registry for the entire network. There is no separate registry service — this keeps deployment simple (single service, single database) while still enabling a federated network.
@@ -411,10 +459,10 @@ The cloud deployment (`app.noosphere.wiki`) serves as both the hosted product fo
 │  │               │  │ (remote self-hosted metadata) │  │
 │  └───────────────┘  └──────────────────────────────┘  │
 │                                                       │
-│  GET /api/v1/search                                   │
+│  GET /api/v1/network/search                           │
 │    → query local corpora (same DB, fast)              │
 │    → query registered_corpora (remote metadata)       │
-│    → merge results                                    │
+│    → merge results, ranked by quality signals         │
 │                                                       │
 └───────────────────────────────────────────────────────┘
          ↑                          ↑
@@ -425,7 +473,7 @@ The cloud deployment (`app.noosphere.wiki`) serves as both the hosted product fo
 Self-hosted and cloud-hosted corpora are equal citizens in the network. Cloud corpora are discovered directly from the database. Self-hosted corpora register their metadata (name, description, tags, endpoint URL) so agents can discover and connect to them directly.
 
 **What the registry stores for remote nodes:**
-- corpus name, description, tags, endpoint URL, document count, access level, last health check
+- corpus name, description, tags, endpoint URL, document count, word count, access level, status, last health check
 
 **What it does NOT store:**
 - document content, chunks, embeddings, auth tokens
@@ -445,26 +493,202 @@ noosphere serve --port 8420 --no-registry
 noosphere serve --port 8420 --registry https://internal.mycompany.com
 ```
 
-### Agent discovery flow
+Registration payload:
+
+```json
+{
+  "endpoint": "https://mynode.example.com:8420",
+  "node_version": "0.1.0",
+  "corpora": [
+    {
+      "corpus_id": "abc-123",
+      "name": "Crypto Trading Strategies",
+      "slug": "crypto-trading",
+      "description": "Quantitative trading strategies for crypto derivatives",
+      "author": "Alice",
+      "tags": ["crypto", "trading", "derivatives", "quant"],
+      "document_count": 50,
+      "chunk_count": 200,
+      "word_count": 100000,
+      "access_level": "paid",
+      "status": "ready"
+    }
+  ]
+}
+```
+
+Nodes re-register periodically (heartbeat). The registry updates metadata and records `last_seen`. Stale nodes (no heartbeat for >24 hours) are flagged but not removed — agents see reduced quality signals.
+
+### Agent discovery protocol
+
+Discovery is a 4-step funnel. Each step narrows the set of knowledge bases and increases confidence before committing to a query (especially a paid one).
+
+```
+Agent: "I need crypto derivatives pricing expertise"
+                    ↓
+         Step 1. Network search (metadata match)
+            GET /api/v1/network/search?q=crypto+derivatives
+            → Match on name, description, tags, author
+            → Returns ranked list with quality signals
+                    ↓
+         Step 2. Evaluate quality signals (automatic)
+            Each result carries objective metrics:
+            document_count, word_count, freshness,
+            query_count (popularity), uptime, status
+            → Agent filters/ranks by these signals
+                    ↓
+         Step 3. Preview (sample content, no auth)
+            GET /api/v1/corpora/{id}/preview
+            → 3-5 representative chunks (truncated)
+            → No authentication needed, even for paid corpora
+            → Agent assesses topical relevance
+                    ↓
+         Step 4. Query or purchase
+            POST /api/v1/corpora/{id}/search
+            → Full ranked results with citations
+            → For paid: checkout → bearer token → search
+```
+
+#### Step 1: Network search
+
+**Endpoint:** `GET /api/v1/network/search?q={query}`
+
+Searches across both local corpora and registered remote corpora using full-text search on name, description, tags, and author. Results are merged and ranked.
+
+Response includes for each result:
+- `corpus_id`, `name`, `slug`, `description`, `author`, `tags`
+- `source`: `"local"` or `"remote"`
+- `api_endpoint` and `mcp_endpoint` (for remote corpora)
+- `quality`: objective quality signals (see below)
+- `preview_url`: direct link to the preview endpoint
+
+#### Step 2: Quality signals
+
+Quality signals are **objective, automatic metrics** — no user ratings or manual curation required. This is critical for a network that needs to work at launch with zero social proof.
+
+| Signal | What it tells agents | Source |
+|--------|---------------------|--------|
+| `document_count` | Knowledge base size / breadth | Registration metadata |
+| `word_count` | Content depth | Registration metadata |
+| `last_updated` | Active maintenance, freshness | Last registration heartbeat |
+| `query_count` | Popularity / proven usefulness | Query log (opt-in, local corpora only) |
+| `uptime` | Reliability for production use | Health check history |
+| `status` | Indexing state (`draft`, `indexing`, `ready`) | Registration metadata |
+| `access_level` | Free vs. paid | Corpus config |
+
+**Design rationale:** User ratings don't work at network launch (chicken-and-egg). Objective signals are available from day one — a knowledge base with 500 documents, 200K words, and a "ready" status is clearly more substantial than one with 3 documents. As the network grows, `query_count` becomes a powerful popularity signal, similar to download counts on package registries.
+
+Agents can implement their own ranking on top of these signals. A simple heuristic:
+
+```
+relevance_score = text_match_score
+quality_score = log(document_count + 1) * 0.3
+              + log(word_count + 1) * 0.2
+              + log(query_count + 1) * 0.3
+              + freshness_decay(last_updated) * 0.2
+final_score = relevance_score * 0.6 + quality_score * 0.4
+```
+
+#### Step 3: Preview
+
+**Endpoint:** `GET /api/v1/corpora/{id}/preview`
+
+Preview is the "try before you buy" mechanism. It returns enough content for an agent to assess whether a knowledge base is topically relevant, without giving away the full content.
+
+**No authentication required** — even for paid and token-gated corpora. This is by design: agents need to evaluate relevance before committing to payment or token exchange.
+
+Response schema:
+
+```json
+{
+  "corpus_id": "abc-123",
+  "name": "Crypto Trading Strategies",
+  "description": "Quantitative trading strategies for crypto derivatives",
+  "author": "Alice",
+  "tags": ["crypto", "trading", "derivatives"],
+  "access_level": "paid",
+  "quality": {
+    "document_count": 50,
+    "word_count": 100000,
+    "query_count": 342,
+    "last_updated": "2026-04-10T14:30:00Z",
+    "status": "ready"
+  },
+  "samples": [
+    {
+      "text": "Delta-neutral strategies in crypto involve balancing long and short positions across correlated assets to minimize directional exposure while capturing...",
+      "document_title": "Delta-Neutral Crypto Strategies",
+      "document_type": "markdown"
+    }
+  ],
+  "content_types": [
+    {"type": "markdown", "count": 35},
+    {"type": "pdf", "count": 15}
+  ]
+}
+```
+
+**Sample selection rules:**
+- Maximum 5 samples, one per document (deduplicated by document_id)
+- Text truncated to 250 characters
+- Ordered by most recent chunks first
+- Enough to assess topic coverage, not enough to replace a full query
+
+#### Step 4: Query or purchase
+
+Once an agent has confirmed relevance through preview, it queries the knowledge base directly:
+
+- **Public corpora:** `POST /api/v1/corpora/{id}/search` — no auth needed
+- **Token-gated corpora:** Same endpoint with `Authorization: Bearer {token}` header
+- **Paid corpora:** `POST /api/v1/corpora/{id}/checkout` → Stripe Checkout → receive `payment_id` → use as bearer token for queries
+
+For remote (self-hosted) corpora, the agent connects directly to the node's endpoint. Content never passes through the registry.
 
 ```
 Agent                       app.noosphere.wiki              Self-hosted node
   |                               |                               |
-  |-- GET /api/v1/search ------> |                               |
-  |                               |  (search local corpora        |
-  |                               |   + registered_corpora)       |
-  |<-- [{results}] --------------|                               |
+  |-- network/search ----------> |                               |
+  |<-- [{results + endpoints}] --|                               |
   |                                                               |
-  |  For remote results:                                          |
-  |-- POST /api/v1/corpora/{id}/search -----------------------> |
+  |-- preview (remote) ----------------------------------------> |
+  |<-- {samples, quality} <------------------------------------- |
+  |                                                               |
+  |-- search (remote, with auth) -----------------------------> |
   |<-- [{text, citation, score}] <------------------------------ |
 ```
 
-Cloud corpora return full search results directly. Self-hosted corpora return metadata + endpoint URL — the agent connects directly to the self-hosted node for queries.
+### MCP discovery
+
+The same discovery flow is available through MCP tools, enabling agents that connect via MCP (Claude, Cursor, Codex, etc.) to discover and evaluate knowledge bases programmatically:
+
+| MCP Tool | Equivalent REST Endpoint | Purpose |
+|----------|--------------------------|---------|
+| `list_corpora` | `GET /api/v1/corpora` | Browse available knowledge bases |
+| `preview` | `GET /api/v1/corpora/{id}/preview` | Evaluate relevance before querying |
+| `get_stats` | `GET /api/v1/corpora/{id}` | Check quality signals |
+| `get_topics` | — | Understand knowledge base coverage |
+| `search` | `POST /api/v1/corpora/{id}/search` | Full semantic search with citations |
+| `get_manifest` | `GET /api/v1/corpora/{id}` | Full corpus metadata |
+
+The `preview` tool is particularly important: it lets an MCP-connected agent assess a knowledge base (including paid ones) before committing to a search query.
 
 ### Health check
 
-Node health is checked via a cron-compatible endpoint (`GET /api/cron/health-check`) that pings all registered self-hosted nodes. Cloud corpora don't need health checks — they're in the same database.
+Node health is checked via a cron-compatible endpoint (`GET /api/v1/cron/health-check`) that pings all registered self-hosted nodes. Cloud corpora don't need health checks — they're in the same database.
+
+Health check results feed into quality signals:
+- Nodes that respond get `uptime` incremented
+- Nodes that fail are flagged with `last_health_status: "down"`
+- After 24h of failures, the node's corpora are deprioritized in search results (but not removed)
+
+### Future: network effects
+
+As the network grows, stronger discovery signals emerge naturally:
+
+1. **Query count as reputation.** The most-queried knowledge bases rise to the top — no manual curation needed.
+2. **Cross-corpus citation.** When a compiled note in corpus A cites content from corpus B, that's a signal of quality (analogous to academic citation graphs).
+3. **Agent feedback loops.** Agents that repeatedly query the same corpus signal sustained usefulness — a stronger signal than one-time popularity.
+4. **Category emergence.** As more knowledge bases register, natural clusters form (crypto, ML, legal, etc.) enabling category-based browsing alongside search.
 
 ---
 

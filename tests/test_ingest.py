@@ -123,7 +123,7 @@ def test_ingest_directory_not_found(tmp_path, isolated_db):
 def test_ingest_directory_no_matching_files(tmp_path, isolated_db):
     c = create_corpus("Noext")
     (tmp_path / "x.py").write_text("print(1)", encoding="utf-8")
-    with pytest.raises(ValueError, match="No files"):
+    with pytest.raises(ValueError, match="No supported files"):
         ingest_directory(c["id"], tmp_path)
 
 
