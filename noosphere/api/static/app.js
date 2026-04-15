@@ -1,6 +1,7 @@
-/* Noosphere v8 — Terminal + Corpora + Network + Chat */
+/* Noosphere v9 — Terminal + Corpora + Network + Chat + Cloud Auth */
 const API='/api/v1';
 let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[],_ownerName='',_firstName='';
+let _cloudMode=false,_supabase=null,_authUser=null,_authSession=null;
 const isDark=()=>document.documentElement.classList.contains('dark')||(!document.documentElement.classList.contains('light')&&window.matchMedia('(prefers-color-scheme: dark)').matches);
 const PAL=['#e76f51','#2a9d8f','#264653','#e9c46a','#f4a261','#588157','#457b9d','#9b2226','#6d6875','#b56576','#355070','#6c757d','#e07a5f','#3d405b','#81b29a'];
 const cC=n=>{let h=0;for(let i=0;i<n.length;i++)h=((h<<5)-h+n.charCodeAt(i))|0;return PAL[Math.abs(h)%PAL.length]};
@@ -9,6 +10,107 @@ const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.inn
 const fmtN=n=>{if(n>=1e6)return(n/1e6).toFixed(1).replace(/\.0$/,'')+'M';if(n>=1e4)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';return n.toLocaleString()};
 const cp=(t,b)=>{navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=o,1200)}})};
 function toast(msg,type='error'){const t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},4000)}
+
+/* ── Cloud Auth (Supabase) ── */
+async function initAuth(){
+  try{
+    const r=await fetch(`${API}/health`);const d=await r.json();
+    // Check if server is in cloud mode by trying the cloud/me endpoint
+    const mr=await fetch(`${API}/me`);const md=await mr.json();
+    _cloudMode=!!md.cloud;
+    if(!_cloudMode)return;
+    // Load Supabase config from meta tag or well-known
+    const cfg=document.querySelector('meta[name="supabase-url"]');
+    const supaUrl=cfg?.content||window.__SUPABASE_URL||'';
+    const anonKey=document.querySelector('meta[name="supabase-anon-key"]')?.content||window.__SUPABASE_ANON_KEY||'';
+    if(!supaUrl||!anonKey){
+      // Try fetching config from server
+      try{
+        const cr=await fetch('/static/supabase-config.json');
+        if(cr.ok){const cc=await cr.json();if(cc.url&&cc.anonKey){window.__SUPABASE_URL=cc.url;window.__SUPABASE_ANON_KEY=cc.anonKey;return initAuth()}}
+      }catch(e){}
+      _cloudMode=false;return;
+    }
+    if(typeof supabase!=='undefined'&&supabase.createClient){
+      _supabase=supabase.createClient(supaUrl,anonKey);
+      // Check if URL has OAuth callback tokens (access_token in hash)
+      const fullHash=window.location.hash;
+      if(fullHash.includes('access_token=')){
+        // Let Supabase parse the tokens from the URL
+        const{data,error}=await _supabase.auth.getSession();
+        if(data.session){_authSession=data.session;_authUser=data.session.user}
+        // Clean up the URL — remove token params, go to main
+        history.replaceState(null,'',window.location.pathname+'#/main');
+      }else{
+        const{data}=await _supabase.auth.getSession();
+        if(data.session){_authSession=data.session;_authUser=data.session.user}
+      }
+      _supabase.auth.onAuthStateChange((event,session)=>{
+        _authSession=session;_authUser=session?.user||null;
+        renderAuthUI();
+        if(event==='SIGNED_IN'){
+          // Clean URL if needed and navigate
+          if(window.location.hash.includes('access_token=')){
+            history.replaceState(null,'',window.location.pathname+'#/main');
+          }
+          route();
+        }
+      });
+    }
+  }catch(e){console.warn('Auth init:',e)}
+}
+
+function authHeaders(){
+  const h={};
+  if(_authSession?.access_token)h['Authorization']='Bearer '+_authSession.access_token;
+  return h;
+}
+
+function apiFetch(url,opts={}){
+  opts.headers={...(opts.headers||{}),...authHeaders()};
+  return window._origFetch(url,opts);
+}
+
+// Monkey-patch fetch to auto-inject auth headers for API calls
+window._origFetch=window.fetch;
+window.fetch=function(url,opts={}){
+  if(_authSession?.access_token&&typeof url==='string'&&(url.startsWith(API)||url.startsWith('/'))){
+    opts=opts||{};opts.headers={...(opts.headers||{}),...authHeaders()};
+  }
+  return window._origFetch(url,opts);
+};
+
+async function signInWithGoogle(){
+  if(!_supabase)return;
+  await _supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin}});
+}
+
+async function signOut(){
+  if(!_supabase)return;
+  await _supabase.auth.signOut();
+  _authUser=null;_authSession=null;
+  renderAuthUI();route();
+}
+
+function renderAuthUI(){
+  let el=document.getElementById('sb-auth');
+  if(!_cloudMode){if(el)el.style.display='none';return}
+  if(!el){
+    el=document.createElement('div');el.id='sb-auth';el.className='sb-auth';
+    const bot=document.querySelector('.sb-bot');
+    if(bot)bot.parentNode.insertBefore(el,bot);
+  }
+  if(_authUser){
+    const email=_authUser.email||'';
+    const name=email.split('@')[0]||'User';
+    const avatar=_authUser.user_metadata?.avatar_url;
+    el.innerHTML=`<div class="sb-auth-user">${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-auth-name sb-lb">${esc(name)}</span></div><button class="sb-btn sb-auth-out" title="Sign out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>`;
+    el.querySelector('.sb-auth-out').onclick=signOut;
+  }else{
+    el.innerHTML=`<button class="sb-btn sb-auth-login" style="width:100%;justify-content:center;gap:6px;padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="sb-lb">Sign in</span></button>`;
+    el.querySelector('.sb-auth-login').onclick=signInWithGoogle;
+  }
+}
 function pickCorpusInline(container){
   return new Promise(resolve=>{
     const wrap=document.createElement('div');wrap.className='term-pick-wrap';
@@ -38,11 +140,14 @@ function pickCorpusInline(container){
 
 async function route(){const h=location.hash||'#/';stopAll();
   if(h==='#/'||h===''||h==='#/landing'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLP();return}
+  if(h==='#/login'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
+  // Cloud mode: redirect to login if not authenticated and trying to access app
+  if(_cloudMode&&!_authUser&&h!=='#/explore'&&!h.startsWith('#/explore')){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
   await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
   if(h==='#/main')renderHome();
   else if(h==='#/corpora')renderMyCorpora();
-  else if(h==='#/network')renderNet();
+  else if(h==='#/network'||h.startsWith('#/explore'))renderNet();
   else if(h.startsWith('#/corpus/')){
     const parts=h.split('/')[2];
     const [corpusId,query]=parts.split('?');
@@ -86,13 +191,61 @@ function renderSBChats(){
   if(!chats.length){el.innerHTML='';return}
   el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a>`).join('');
 }
-function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-net').classList.toggle('active',h==='#/network')}
+function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
 const DM_FALLBACK=[{n:"Lenny's Newsletter",d:'product, growth',c:'#e76f51'},{n:'Paul Graham',d:'startups, philosophy',c:'#2a9d8f'},{n:'AI Research',d:'AI, ML',c:'#264653'},{n:'Feynman Lectures',d:'physics, science',c:'#f4a261'},{n:'Stoic Philosophy',d:'philosophy, ethics',c:'#588157'},{n:'YC Startup School',d:'startups, growth',c:'#457b9d'},{n:'Design Patterns',d:'software, design',c:'#e9c46a'},{n:'World History',d:'history, culture',c:'#b56576'}];
-function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-social-link" title="GitHub"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a><a href="https://discord.gg/8PAmqAU24R" target="_blank" rel="noopener" class="lp-social-link" title="Discord"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a></div></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge to a network any AI agent can query.</h1><p class="lp-sub">Your knowledge compounds into a growing global network — upload files, import feeds, save insights from conversations. Share it free, keep it private, or charge for access.</p><button class="lp-go" id="lp-go">Get Started →</button></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div><div class="lp-mission">Expand the scope and scale of collective enlightenment.</div></div>`;
-  document.getElementById('lp-go').onclick=()=>{location.hash='#/main'};drawLPGraph();animateLPTerm()}
+function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-social-link" title="GitHub"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a><a href="https://discord.gg/8PAmqAU24R" target="_blank" rel="noopener" class="lp-social-link" title="Discord"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a></div></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge to a network any AI agent can query.</h1><p class="lp-sub">Your knowledge compounds into a growing global network — upload files, import feeds, save insights from conversations. Share it free, keep it private, or charge for access.</p><button class="lp-go" id="lp-go">Get Started →</button><a href="#/explore" class="lp-explore" id="lp-explore" style="display:inline-block;margin-left:12px;color:var(--accent);text-decoration:none;font-size:15px;opacity:0.85">Explore Knowledge Bases →</a></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div><div class="lp-mission">Expand the scope and scale of collective enlightenment.</div></div>`;
+  document.getElementById('lp-go').onclick=()=>{
+    if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}
+  };
+  document.getElementById('lp-explore').onclick=e=>{e.preventDefault();location.hash='#/explore'};
+  drawLPGraph();animateLPTerm()}
+
+let _loginMode='signin'; // 'signin' or 'signup'
+function renderLogin(){
+  const el=document.getElementById('page-landing');
+  const isSignup=_loginMode==='signup';
+  el.innerHTML=`<div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">${NOOS_ICON_SVG}</div>
+      <h1 class="login-title">Welcome to <strong>Noosphere</strong></h1>
+      <p class="login-sub">Publish knowledge any AI agent can read. It grows, gets discovered, and earns for you.</p>
+      <button class="login-google" id="login-google-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Continue with Google
+      </button>
+      <div class="login-divider"><span>or ${isSignup?'sign up':'sign in'} with email</span></div>
+      <input class="login-input" id="login-email" type="email" placeholder="Email address" autocomplete="email"/>
+      <input class="login-input" id="login-pass" type="password" placeholder="Password" autocomplete="${isSignup?'new-password':'current-password'}"/>
+      <button class="login-submit" id="login-submit-btn">${isSignup?'Sign up':'Sign in'}</button>
+      <p class="login-toggle">${isSignup?"Already have an account? <a href='#' id='login-switch'>Sign in</a>":"Don't have an account? <a href='#' id='login-switch'>Sign up</a>"}</p>
+      <a href="#/" class="login-back">&larr; Back</a>
+    </div>
+  </div>`;
+  document.getElementById('login-google-btn').onclick=signInWithGoogle;
+  document.getElementById('login-switch').onclick=e=>{e.preventDefault();_loginMode=isSignup?'signin':'signup';renderLogin()};
+  document.getElementById('login-submit-btn').onclick=async()=>{
+    const email=document.getElementById('login-email').value.trim();
+    const pass=document.getElementById('login-pass').value;
+    if(!email||!pass){toast('Email and password required');return}
+    const btn=document.getElementById('login-submit-btn');btn.disabled=true;btn.textContent='Loading...';
+    try{
+      if(isSignup){
+        const{error}=await _supabase.auth.signUp({email,password:pass});
+        if(error)throw error;
+        toast('Check your email to confirm your account','success');
+      }else{
+        const{error}=await _supabase.auth.signInWithPassword({email,password:pass});
+        if(error)throw error;
+        location.hash='#/main';
+      }
+    }catch(e){toast(e.message||'Authentication failed')}
+    btn.disabled=false;btn.textContent=isSignup?'Sign up':'Sign in';
+  };
+  document.getElementById('login-pass').onkeydown=e=>{if(e.key==='Enter')document.getElementById('login-submit-btn').click()};
+}
 
 function animateLPTerm(){
   const body=document.getElementById('lp-term-body');if(!body)return;
@@ -562,6 +715,79 @@ function renderNet(){
   drawGraphIn(cv.parentElement,_corpora,cv);
 }
 
+/* ══════ EXPLORE (NETWORK GRAPH + DIRECTORY) ══════ */
+async function renderExplore(){
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  const params=new URLSearchParams(location.hash.split('?')[1]||'');
+  const q=params.get('q')||'';
+  ct.innerHTML=`<div class="explore-page" style="max-width:960px;margin:0 auto;padding:24px 20px">
+    <div class="nv-wrap" style="height:320px;position:relative;border-radius:12px;border:1px solid var(--brd);margin-bottom:24px;overflow:hidden;background:var(--bg2)">
+      <canvas id="nv-cv" class="nv-canvas" style="width:100%;height:100%"></canvas>
+      <div class="nv-tt hidden" id="nv-tt"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:20px">
+      <input id="explore-q" type="text" placeholder="Search by topic, author, or tag..." value="${esc(q)}" style="flex:1;padding:10px 14px;border-radius:8px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx);font-size:14px">
+      <button id="explore-go" style="padding:10px 20px;border-radius:8px;background:var(--btnBg);color:var(--btnC);border:none;cursor:pointer;font-size:14px">Search</button>
+    </div>
+    <div id="explore-results" style="display:flex;flex-direction:column;gap:12px"></div>
+  </div>`;
+  // Draw the network graph in the top section
+  const cv=document.getElementById('nv-cv');
+  if(cv&&_corpora.length){drawGraphIn(cv.parentElement,_corpora,cv)}
+  const inp=document.getElementById('explore-q');
+  const go=()=>{const v=inp.value.trim();if(v)location.hash='#/explore?q='+encodeURIComponent(v);doExploreSearch(v)};
+  document.getElementById('explore-go').onclick=go;
+  inp.onkeydown=e=>{if(e.key==='Enter')go()};
+  if(q)doExploreSearch(q);else doExploreBrowse();
+}
+async function doExploreSearch(q){
+  const el=document.getElementById('explore-results');
+  el.innerHTML='<div style="color:var(--muted)">Searching...</div>';
+  try{
+    const r=await fetch(`${API}/network/search?q=${encodeURIComponent(q)}&limit=30`);
+    const d=await r.json();
+    if(!d.results||!d.results.length){el.innerHTML='<div style="color:var(--muted)">No knowledge bases found for this query.</div>';return}
+    el.innerHTML=d.results.map(c=>_exploreCard(c)).join('');
+  }catch(e){el.innerHTML='<div style="color:var(--err)">Search failed.</div>'}
+}
+async function doExploreBrowse(){
+  const el=document.getElementById('explore-results');
+  el.innerHTML='<div style="color:var(--muted)">Loading...</div>';
+  try{
+    const r=await fetch(`${API}/corpora`);
+    const all=await r.json();
+    const pub=all.filter(c=>c.access_level!=='private');
+    if(!pub.length){el.innerHTML='<div style="color:var(--muted)">No public knowledge bases yet. Be the first — click <strong>+ New</strong>.</div>';return}
+    el.innerHTML=pub.map(c=>_exploreCard({
+      corpus_id:c.id,corpus_name:c.name,description:c.description||'',
+      author:c.author_name||'',tags:c.tags||[],document_count:c.document_count||0,
+      access_level:c.access_level||'public',source:'local',score:1
+    })).join('');
+  }catch(e){el.innerHTML='<div style="color:var(--err)">Failed to load.</div>'}
+}
+function _exploreCard(c){
+  const tags=(c.tags||[]).slice(0,5).map(t=>`<span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--bg-hover);font-size:11px;color:var(--muted)">${esc(t)}</span>`).join(' ');
+  const q=c.quality||{};
+  const docs=q.document_count||c.document_count||0;
+  const words=q.word_count||0;
+  const badge=c.access_level==='paid'?'<span style="color:var(--accent);font-size:11px;font-weight:600">PAID</span>':c.access_level==='private'?'<span style="color:var(--muted);font-size:11px">PRIVATE</span>':'';
+  const src=c.source==='remote'?`<span style="font-size:11px;color:var(--muted)">remote</span>`:'';
+  const link=c.source==='remote'&&c.preview_url?c.preview_url:`#/corpus/${c.corpus_id}`;
+  const onclick=c.source==='remote'?`onclick="window.open('${c.api_endpoint||'#'}','_blank')"`:
+    `onclick="location.hash='#/corpus/${c.corpus_id}'"`;
+  return `<div class="explore-card" ${onclick} style="padding:16px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-card);cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <strong style="font-size:15px">${esc(c.corpus_name||'')}</strong>${badge} ${src}
+    </div>
+    ${c.author?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">by ${esc(c.author)}</div>`:''}
+    ${c.description?`<div style="font-size:13px;color:var(--fg);margin-bottom:8px;opacity:0.85">${esc(c.description).slice(0,200)}</div>`:''}
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      ${tags}
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">${docs} docs${words?` · ${Math.round(words/1000)}k words`:''}</span>
+    </div>
+  </div>`;
+}
+
 /* ══════ SHARED GRAPH DRAWING ══════ */
 async function drawGraphIn(container,corpora,existingCanvas){
   if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}
@@ -999,10 +1225,11 @@ async function loadRevenueUI(corpusId){
 
 function toggleTheme(){if(isDark()){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');localStorage.setItem('noosphere-theme','light')}else{document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');localStorage.setItem('noosphere-theme','dark')}}
 
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('dark-btn')?.addEventListener('click',toggleTheme);
   const sbToggle=()=>document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
+  await initAuth();renderAuthUI();
   window.addEventListener('hashchange',route);route()});

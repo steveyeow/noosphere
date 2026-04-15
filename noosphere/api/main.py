@@ -1,10 +1,13 @@
 """FastAPI application — REST API + static frontend."""
 
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -13,17 +16,100 @@ from noosphere.api.routes import router as api_router
 from noosphere.mcp.routes import router as mcp_router
 from noosphere.core.db import get_conn, close as db_close
 
+logger = logging.getLogger(__name__)
+
 STATIC_DIR = Path(__file__).parent / "static"
+
+_scheduler_task = None
+
+
+async def _enrichment_loop():
+    """Background loop: run enrichment + health check on all corpora periodically."""
+    from noosphere.core.config import ENRICHMENT_INTERVAL_MINUTES
+    if not ENRICHMENT_INTERVAL_MINUTES:
+        return
+    interval = ENRICHMENT_INTERVAL_MINUTES * 60
+    await asyncio.sleep(30)  # wait for startup to settle
+    while True:
+        try:
+            from noosphere.core.corpus import list_corpora
+            from noosphere.core.knowledge_growth import ingest_rss_feed, run_corpus_maintain
+            import json as _json
+            conn = get_conn()
+            for c in list_corpora():
+                feed_rows = conn.execute(
+                    "SELECT DISTINCT json_extract(metadata_json, '$.source_feed') as feed "
+                    "FROM documents WHERE corpus_id=? AND json_extract(metadata_json, '$.source_feed') IS NOT NULL",
+                    (c["id"],),
+                ).fetchall()
+                feeds = [r["feed"] for r in feed_rows if r["feed"]]
+                ingested = 0
+                for url in feeds:
+                    try:
+                        result = ingest_rss_feed(c["id"], url, max_items=25)
+                        ingested += result.get("ingested", 0)
+                    except Exception:
+                        pass
+                if ingested > 0:
+                    try:
+                        run_corpus_maintain(c["id"], force_reindex=False)
+                    except Exception:
+                        pass
+            logger.info("Enrichment cycle complete")
+        except Exception:
+            logger.warning("Enrichment cycle error", exc_info=True)
+        await asyncio.sleep(interval)
+
+
+async def _health_check_loop():
+    """Background loop: ping registered nodes for health status."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            import httpx
+            conn = get_conn()
+            nodes = conn.execute("SELECT endpoint FROM registered_nodes").fetchall()
+            for node in nodes:
+                ep = node["endpoint"]
+                try:
+                    resp = httpx.get(f"{ep}/.well-known/noosphere.json", timeout=10)
+                    status = "online" if resp.status_code == 200 else "degraded"
+                except Exception:
+                    status = "offline"
+                conn.execute(
+                    "UPDATE registered_nodes SET health_status=?, last_health_check=datetime('now') WHERE endpoint=?",
+                    (status, ep),
+                )
+            conn.commit()
+        except Exception:
+            logger.warning("Health check error", exc_info=True)
+        await asyncio.sleep(300)  # every 5 minutes
 
 
 @asynccontextmanager
 async def lifespan(app):
+    global _scheduler_task
     get_conn()
+    _scheduler_task = asyncio.gather(
+        asyncio.create_task(_enrichment_loop()),
+        asyncio.create_task(_health_check_loop()),
+        return_exceptions=True,
+    )
     yield
+    _scheduler_task.cancel() if _scheduler_task else None
     db_close()
 
 
 app = FastAPI(title="Noosphere", version=__version__, lifespan=lifespan)
+
+# CORS — allow agents and external clients to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(mcp_router)
@@ -37,6 +123,13 @@ if os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
         app.middleware("http")(auth_middleware)
         app.middleware("http")(quota_middleware)
         app.include_router(cloud_router)
+
+        @app.get("/static/supabase-config.json")
+        async def supabase_config():
+            """Serve Supabase client config for the frontend auth UI."""
+            url = os.getenv("SUPABASE_URL", "").strip()
+            anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+            return JSONResponse({"url": url, "anonKey": anon_key})
     except ImportError:
         pass
 

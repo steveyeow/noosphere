@@ -184,6 +184,76 @@ def test_get_corpora_export_returns_zip(client, corpus):
         assert any(n.endswith("noosphere.json") for n in zf.namelist())
 
 
+def test_preview_empty_corpus(client, corpus):
+    """Preview returns quality signals and empty samples for an empty corpus."""
+    cid = corpus["id"]
+    r = client.get(f"/api/v1/corpora/{cid}/preview")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["corpus_id"] == cid
+    assert body["name"] == corpus["name"]
+    assert "quality" in body
+    assert body["quality"]["document_count"] == 0
+    assert body["quality"]["query_count"] == 0
+    assert body["samples"] == []
+    assert body["access_level"] == "public"
+
+
+def test_preview_with_content(client, corpus):
+    """Preview returns sample chunks after uploading documents."""
+    cid = corpus["id"]
+    # Upload two documents
+    for title in ["Alpha doc", "Beta doc"]:
+        client.post(
+            f"/api/v1/corpora/{cid}/upload",
+            files=[("files", (f"{title}.md", io.BytesIO(f"# {title}\n\nSome content about {title}.".encode()), "text/markdown"))],
+        )
+    # Index the corpus
+    client.post(f"/api/v1/corpora/{cid}/index", json={"force": False})
+
+    r = client.get(f"/api/v1/corpora/{cid}/preview")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quality"]["document_count"] == 2
+    # Samples may or may not exist depending on whether indexing succeeded
+    # (requires embedding API key), but the structure should be correct
+    assert isinstance(body["samples"], list)
+    assert isinstance(body["content_types"], list)
+
+
+def test_preview_no_auth_required_for_paid(client):
+    """Preview works without auth even on paid corpora."""
+    r = client.post("/api/v1/corpora", json={"name": "Paid KB", "access_level": "public"})
+    cid = r.json()["id"]
+    client.patch(f"/api/v1/corpora/{cid}", json={"access_level": "paid"})
+
+    # Preview should work without any auth — even with agent header
+    r = client.get(f"/api/v1/corpora/{cid}/preview", headers={"x-agent-id": "test-agent"})
+    assert r.status_code == 200
+    assert r.json()["access_level"] == "paid"
+    assert "quality" in r.json()
+
+
+def test_search_detail_levels(client, corpus):
+    """Search accepts detail parameter (low/medium/high)."""
+    cid = corpus["id"]
+    for detail in ["low", "medium", "high"]:
+        r = client.post(f"/api/v1/corpora/{cid}/search", json={"query": "test", "detail": detail})
+        assert r.status_code == 200
+        assert r.json()["usage"]["detail"] == detail
+
+
+def test_enrich_empty_corpus(client, corpus):
+    """Enrich on a corpus with no feeds returns zero results."""
+    cid = corpus["id"]
+    r = client.post(f"/api/v1/corpora/{cid}/enrich")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["feeds_polled"] == 0
+    assert body["total_new_documents"] == 0
+    assert "health" in body
+
+
 def test_access_private_blocks_get_and_list(client):
     """Non-owner (agent) requests are blocked from private corpora."""
     agent_headers = {"x-agent-id": "test-agent"}

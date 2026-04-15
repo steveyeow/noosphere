@@ -13,6 +13,23 @@ Noosphere is built on four ideas:
 3. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, and new documents. Not static file dumps, but compounding knowledge systems.
 4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 
+## Who it's for
+
+**Creators (supply side):** Build your own knowledge base — like [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [Garry Tan's GBrain](https://github.com/garrytan/gbrain), but without the engineering setup. Upload your files, paste your blog URLs, subscribe to RSS feeds. Your knowledge base grows over time. Share it free, or charge for access.
+
+**Agents and organizations (demand side):** Find expert knowledge across the entire network. Today, companies like Mercor hire domain experts one by one to train AI. Noosphere flips this — experts publish their knowledge on their own terms, and agents discover what they need through the network. A crypto trading agent can draw on trading strategy knowledge bases from multiple experts. A startup agent can pull from product, growth, and pricing experts simultaneously.
+
+```
+Supply side                              Demand side
+┌──────────────────┐                     ┌──────────────────┐
+│ Crypto trader    │──┐                  │ Trading agent    │
+│ ML researcher    │──┤  Noosphere       │ Startup founder  │
+│ Product expert   │──┼─ network ───────→│ Research team    │
+│ Legal specialist │──┤  (discovery +    │ Custom AI app    │
+│ Climate scientist│──┘   quality signals│ Any MCP client   │
+└──────────────────┘     + direct query) └──────────────────┘
+```
+
 ## What it does
 
 1. **Ingest** — Markdown directories, file upload, single URL, **multiple URLs in one request**, **RSS/Atom feeds** (recurring inflow), PDF/DOCX/CSV/JSON. Everything becomes documents in a corpus.
@@ -97,6 +114,44 @@ Agent                    app.noosphere.wiki              Your Node
 ```
 
 The registry is a directory, not a proxy. Cloud corpora return full results directly. Self-hosted corpora return metadata + endpoint — agents connect directly to your server.
+
+### How agents find the right knowledge
+
+Discovery works through layered signals — no manual ratings needed:
+
+```
+Agent: "I need crypto derivatives pricing expertise"
+                    ↓
+         1. Network search (metadata)
+            Match on name, description, tags, author
+                    ↓
+         2. Quality signals (automatic)
+            document_count, word_count, freshness,
+            query_count (popularity), uptime
+                    ↓
+         3. Preview (sample content)
+            GET /api/v1/corpora/{id}/preview
+            → 3-5 representative chunks, no auth needed
+                    ↓
+         4. Direct query or purchase
+            POST /api/v1/corpora/{id}/search
+            → full ranked results with citations
+```
+
+**Quality signals are automatic.** Every knowledge base carries objective metrics that agents can use to rank results — no user ratings required:
+
+| Signal | What it tells you | Source |
+|--------|-------------------|--------|
+| `document_count` | Knowledge base size | Registration metadata |
+| `word_count` | Content depth | Registration metadata |
+| `last_updated` | Active maintenance | Last registration heartbeat |
+| `query_count` | Popularity / usefulness | Query log (opt-in) |
+| `uptime` | Reliability | Health check history |
+| `access_level` | Free vs. paid | Corpus config |
+
+Agents sort by these signals to surface the most relevant, well-maintained knowledge bases first. As the network grows, stronger signals emerge naturally — the most-queried knowledge bases rise to the top.
+
+**Preview before commit.** Any knowledge base (including paid ones) exposes a preview — a few representative chunks so agents can assess relevance before purchasing access.
 
 ### 4. Control access and get paid
 

@@ -24,6 +24,9 @@ from noosphere.cloud.db import (
     get_user,
     find_user_by_stripe_customer,
     update_user_tier,
+    count_usage_today,
+    count_user_corpora,
+    count_queries_this_month,
 )
 
 log = logging.getLogger(__name__)
@@ -246,6 +249,71 @@ async def connect_checkout(request: Request):
     except stripe.StripeError as e:
         log.error("Connect checkout error: %s", e)
         raise HTTPException(status_code=500, detail="Payment initialization failed")
+
+
+# ── User profile & usage ──
+
+
+@router.get("/me")
+async def cloud_me(request: Request):
+    """Get authenticated user profile with tier and usage summary."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = get_user(user_id)
+    if not user:
+        return {"user_id": user_id, "tier": "free"}
+
+    corpora_count = count_user_corpora(user_id)
+    queries_month = count_queries_this_month(user_id)
+
+    return {
+        "user_id": user["id"],
+        "email": user.get("email", ""),
+        "tier": user.get("tier", "free"),
+        "created_at": user.get("created_at", ""),
+        "corpora_count": corpora_count,
+        "queries_this_month": queries_month,
+        "subscription_status": user.get("subscription_status"),
+    }
+
+
+@router.get("/usage")
+async def cloud_usage(request: Request):
+    """Get detailed usage stats for the authenticated user."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    from noosphere.cloud.quota import QUOTA_LIMITS, RESOURCE_LIMITS
+
+    user = get_user(user_id)
+    tier = user.get("tier", "free") if user else "free"
+    daily_limits = QUOTA_LIMITS.get(tier, QUOTA_LIMITS["free"])
+    resource_limits = RESOURCE_LIMITS.get(tier, RESOURCE_LIMITS["free"])
+
+    usage_today = {}
+    for action in daily_limits:
+        usage_today[action] = {
+            "used": count_usage_today(user_id, action),
+            "limit": daily_limits[action],
+        }
+
+    return {
+        "tier": tier,
+        "daily_usage": usage_today,
+        "resources": {
+            "corpora": {
+                "used": count_user_corpora(user_id),
+                "limit": resource_limits["corpora"],
+            },
+            "queries_this_month": {
+                "used": count_queries_this_month(user_id),
+                "limit": resource_limits["queries_per_month"],
+            },
+        },
+    }
 
 
 # ── Webhook ──

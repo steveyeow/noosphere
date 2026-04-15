@@ -2,6 +2,7 @@
 
 import json as _json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -11,13 +12,61 @@ from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel
 
 from noosphere import __version__
-from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus
+from noosphere.core.corpus import list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.access import check_access, AccessDenied
 from noosphere.core.db import get_conn, is_pg
 
+# Cloud quota helpers — no-ops when ENABLE_CLOUD is off or user is not authenticated
+def _check_quota(request: Request, action: str):
+    if not _is_cloud():
+        return
+    try:
+        from noosphere.cloud.quota import check_quota
+        check_quota(request, action)
+    except ImportError:
+        pass
+
+def _check_corpus_limit(request: Request):
+    if not _is_cloud():
+        return
+    try:
+        from noosphere.cloud.quota import check_corpus_limit
+        check_corpus_limit(request)
+    except ImportError:
+        pass
+
+def _check_document_limit(request: Request, corpus_id: str):
+    if not _is_cloud():
+        return
+    try:
+        from noosphere.cloud.quota import check_document_limit
+        check_document_limit(request, corpus_id)
+    except ImportError:
+        pass
+
+def _track_usage(request: Request, action: str, tokens_used: int = 0):
+    if not _is_cloud():
+        return
+    try:
+        from noosphere.cloud.quota import track_usage
+        track_usage(request, action, tokens_used)
+    except ImportError:
+        pass
+
 router = APIRouter()
+
+_CLOUD_MODE = os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes") if "os" in dir() else False
+
+def _is_cloud() -> bool:
+    from noosphere.core.config import ENABLE_CLOUD
+    return ENABLE_CLOUD
+
+
+def _get_user_id(request: Request) -> str | None:
+    """Get the authenticated user_id from request state (cloud mode)."""
+    return getattr(request.state, "user_id", None)
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -74,8 +123,19 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-def _require_owner(request: Request):
-    """Require the request to come from the owner. Used for write/mutation endpoints."""
+def _require_owner(request: Request, corpus: dict | None = None):
+    """Require the request to come from the owner. Used for write/mutation endpoints.
+
+    In cloud mode: checks that the authenticated user owns the corpus.
+    In self-hosted mode: checks localhost/same-origin (original behavior).
+    """
+    if _is_cloud():
+        user_id = _get_user_id(request)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if corpus and corpus.get("owner_id") and corpus["owner_id"] != user_id:
+            raise HTTPException(status_code=403, detail="You do not own this corpus")
+        return
     if not _is_owner_request(request):
         raise HTTPException(status_code=403, detail="Write access restricted to corpus owner")
 
@@ -84,6 +144,7 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     include_context: bool = True
+    detail: str = "medium"  # low | medium | high
 
 
 class ChatRequest(BaseModel):
@@ -199,7 +260,13 @@ async def api_health():
 # ── Profile ──
 
 @router.get("/me")
-async def api_me():
+async def api_me(request: Request):
+    if _is_cloud():
+        user_id = _get_user_id(request)
+        email = getattr(request.state, "email", "")
+        tier = getattr(request.state, "tier", "free")
+        name = email.split("@")[0].replace(".", " ").title() if email else "User"
+        return {"name": name, "user_id": user_id, "email": email, "tier": tier, "cloud": True}
     from noosphere.core.config import OWNER_NAME
     return {"name": OWNER_NAME}
 
@@ -208,15 +275,27 @@ async def api_me():
 
 @router.get("/corpora")
 async def api_list_corpora(request: Request):
+    if _is_cloud():
+        user_id = _get_user_id(request)
+        if user_id:
+            # Return user's own corpora + public corpora from others
+            own = list_user_corpora(user_id)
+            own_ids = {c["id"] for c in own}
+            public = [c for c in list_corpora() if c["id"] not in own_ids]
+            return own + public
+        return list_corpora()
     return list_corpora(include_private=_is_owner_request(request))
 
 
 @router.post("/corpora")
 async def api_create_corpus(req: CreateCorpusRequest, request: Request):
     _require_owner(request)
+    _check_corpus_limit(request)
+    owner_id = _get_user_id(request) if _is_cloud() else ""
     corpus = create_corpus(
         req.name, description=req.description, author_name=req.author_name,
         tags=req.tags, access_level=req.access_level, language=req.language,
+        owner_id=owner_id,
     )
     return corpus
 
@@ -269,8 +348,8 @@ async def api_get_corpus(corpus_id: str, request: Request):
 
 @router.patch("/corpora/{corpus_id}")
 async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: Request):
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -280,8 +359,8 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
 
 @router.delete("/corpora/{corpus_id}")
 async def api_delete_corpus(corpus_id: str, request: Request):
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     delete_corpus(corpus_id)
     return {"status": "deleted"}
 
@@ -307,8 +386,8 @@ async def api_get_document(corpus_id: str, doc_id: str, request: Request):
 
 @router.patch("/corpora/{corpus_id}/documents/{doc_id}")
 async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest, request: Request):
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -320,8 +399,8 @@ async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRe
 
 @router.delete("/corpora/{corpus_id}/documents/{doc_id}")
 async def api_delete_document(corpus_id: str, doc_id: str, request: Request):
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     if not delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted"}
@@ -329,54 +408,9 @@ async def api_delete_document(corpus_id: str, doc_id: str, request: Request):
 
 # ── File upload ──
 
-def _extract_pdf_text(raw: bytes) -> str:
-    import fitz
-    doc = fitz.open(stream=raw, filetype="pdf")
-    pages = [page.get_text() for page in doc]
-    doc.close()
-    return "\n\n".join(pages)
-
-
-def _extract_docx_text(raw: bytes) -> str:
-    import io
-    from docx import Document
-    doc = Document(io.BytesIO(raw))
-    return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
-
-def _extract_csv_text(content: str) -> str:
-    import csv
-    import io
-    reader = csv.reader(io.StringIO(content))
-    rows = list(reader)
-    if not rows:
-        return ""
-    header = rows[0]
-    lines = []
-    for row in rows[1:]:
-        entry = "; ".join(f"{header[i]}: {row[i]}" for i in range(min(len(header), len(row))) if row[i].strip())
-        if entry:
-            lines.append(entry)
-    return "\n".join(lines)
-
-
-def _extract_json_text(content: str) -> str:
-    import json
-    data = json.loads(content)
-    if isinstance(data, list):
-        parts = []
-        for item in data:
-            if isinstance(item, dict):
-                parts.append("\n".join(f"{k}: {v}" for k, v in item.items() if isinstance(v, (str, int, float))))
-            else:
-                parts.append(str(item))
-        return "\n\n".join(parts)
-    elif isinstance(data, dict):
-        return "\n".join(f"{k}: {v}" for k, v in data.items() if isinstance(v, (str, int, float)))
-    return str(data)
-
-
-SUPPORTED_EXTENSIONS = {"md", "markdown", "txt", "text", "html", "htm", "pdf", "docx", "csv", "json", "jsonl"}
+from noosphere.core.ingest import (
+    _extract_pdf_text, _extract_docx_text, _extract_csv_text, _extract_json_text,
+)
 
 
 @router.post("/corpora/{corpus_id}/upload")
@@ -386,7 +420,8 @@ async def api_upload_files(
     files: list[UploadFile] = File(...),
 ):
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
     results = []
     for f in files:
         ext = (f.filename or "").rsplit(".", 1)[-1].lower()
@@ -445,7 +480,9 @@ async def api_upload_files(
 @router.post("/corpora/{corpus_id}/ingest-url")
 async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
+    _check_quota(request, "ingest_url")
+    _check_document_limit(request, corpus["id"])
     try:
         doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type)
         return doc
@@ -457,7 +494,7 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request
 async def api_ingest_urls_bulk(corpus_id: str, req: IngestUrlsRequest, request: Request):
     """Batch URL ingestion (lower friction than one request per page)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     if len(req.urls) > 40:
         raise HTTPException(status_code=400, detail="Maximum 40 URLs per request")
     from noosphere.core.knowledge_growth import ingest_urls_bulk
@@ -472,7 +509,8 @@ async def api_ingest_urls_bulk(corpus_id: str, req: IngestUrlsRequest, request: 
 async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Request):
     """Ingest new entries from an RSS or Atom feed."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
+    _check_quota(request, "ingest_feed")
     from noosphere.core.knowledge_growth import ingest_rss_feed
 
     try:
@@ -487,7 +525,7 @@ async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Reque
 async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
     """Persist text into the corpus (e.g. assistant reply from chat)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.knowledge_growth import save_capture
 
     try:
@@ -506,11 +544,14 @@ async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
 async def api_compile_concept(corpus_id: str, req: CompileRequest, request: Request):
     """LLM-compile a concept note from retrieved passages (knowledge fusion)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
     from noosphere.core.knowledge_growth import compile_concept_note
 
     try:
-        return compile_concept_note(corpus["id"], req.topic.strip(), top_k=req.top_k)
+        result = compile_concept_note(corpus["id"], req.topic.strip(), top_k=req.top_k)
+        _track_usage(request, "compile")
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -532,7 +573,7 @@ async def api_knowledge_health(corpus_id: str, request: Request):
 async def api_maintain_corpus(corpus_id: str, req: MaintainRequest, request: Request):
     """Re-index corpus to repair search index drift (lightweight maintain pass)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.knowledge_growth import run_corpus_maintain
 
     try:
@@ -541,12 +582,70 @@ async def api_maintain_corpus(corpus_id: str, req: MaintainRequest, request: Req
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/corpora/{corpus_id}/enrich")
+async def api_enrich_corpus(corpus_id: str, request: Request):
+    """Enrichment cycle: poll RSS feeds, re-index, and health check.
+
+    Designed to be called periodically (cron, agent, or scheduler).
+    Polls all known RSS feeds for new entries, re-indexes to pick up
+    new content, and returns a health summary.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.knowledge_growth import (
+        ingest_rss_feed, run_corpus_maintain, corpus_knowledge_health,
+    )
+
+    # 1. Discover feeds: find unique source_feed URLs from document metadata
+    conn = get_conn()
+    feed_rows = conn.execute(
+        "SELECT DISTINCT json_extract(metadata_json, '$.source_feed') as feed "
+        "FROM documents WHERE corpus_id=? AND json_extract(metadata_json, '$.source_feed') IS NOT NULL",
+        (corpus["id"],),
+    ).fetchall()
+    feed_urls = [r["feed"] for r in feed_rows if r["feed"]]
+
+    # 2. Poll each feed for new entries
+    feed_results = []
+    total_ingested = 0
+    for url in feed_urls:
+        try:
+            result = ingest_rss_feed(corpus["id"], url, max_items=25)
+            feed_results.append(result)
+            total_ingested += result.get("ingested", 0)
+        except Exception as e:
+            feed_results.append({"feed_url": url, "error": str(e)})
+
+    # 3. Re-index if new content was ingested
+    index_result = {}
+    if total_ingested > 0:
+        try:
+            index_result = run_corpus_maintain(corpus["id"], force_reindex=False)
+        except Exception as e:
+            index_result = {"error": str(e)}
+
+    # 4. Health check
+    try:
+        health = corpus_knowledge_health(corpus["id"])
+    except Exception as e:
+        health = {"error": str(e)}
+
+    return {
+        "corpus_id": corpus["id"],
+        "feeds_polled": len(feed_urls),
+        "total_new_documents": total_ingested,
+        "feed_results": feed_results,
+        "index": index_result,
+        "health": health,
+    }
+
+
 # ── Indexing ──
 
 @router.post("/corpora/{corpus_id}/index")
 async def api_index_corpus(corpus_id: str, request: Request, req: IndexRequest = None):
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.indexer import index_corpus
     kwargs = {}
     if req:
@@ -569,12 +668,101 @@ async def api_index_corpus(corpus_id: str, request: Request, req: IndexRequest =
 async def api_search(corpus_id: str, req: SearchRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
     token_id = _check_corpus_access(corpus, request)
+    _check_quota(request, "search")
     agent_id = request.headers.get("x-agent-id", "")
-    return search_corpus(
+    result = search_corpus(
         corpus["id"], req.query, top_k=req.top_k,
         include_context=req.include_context,
+        detail=req.detail,
         agent_id=agent_id, token_id=token_id,
     )
+    _track_usage(request, "search")
+    return result
+
+
+# ── Preview (discovery) ──
+
+@router.get("/corpora/{corpus_id}/preview")
+async def api_preview(corpus_id: str):
+    """Preview a knowledge base — returns sample chunks and quality signals.
+
+    Available without authentication, even for paid corpora. Designed for
+    agents evaluating whether a knowledge base is relevant before committing
+    to a full query or purchase.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    conn = get_conn()
+
+    # Sample chunks: pick a few representative ones (newest, spread across documents)
+    sample_chunks = conn.execute(
+        """SELECT c.text, c.document_id, c.created_at,
+                  d.title as document_title, d.doc_type
+           FROM chunks c
+           JOIN documents d ON d.id = c.document_id
+           WHERE c.corpus_id=?
+           ORDER BY c.created_at DESC
+           LIMIT 20""",
+        (corpus["id"],),
+    ).fetchall()
+
+    # Deduplicate by document — one chunk per document, max 5
+    seen_docs = set()
+    samples = []
+    for row in sample_chunks:
+        did = row["document_id"]
+        if did in seen_docs:
+            continue
+        seen_docs.add(did)
+        text = row["text"]
+        # Truncate to ~200 chars for preview
+        if len(text) > 250:
+            text = text[:247] + "..."
+        samples.append({
+            "text": text,
+            "document_title": row["document_title"],
+            "document_type": row["doc_type"] or "",
+        })
+        if len(samples) >= 5:
+            break
+
+    # Quality signals
+    query_count = conn.execute(
+        "SELECT COUNT(*) as n FROM query_logs WHERE corpus_id=?",
+        (corpus["id"],),
+    ).fetchone()["n"]
+
+    # Topic summary from tags + document types
+    doc_types = conn.execute(
+        "SELECT doc_type, COUNT(*) as cnt FROM documents WHERE corpus_id=? GROUP BY doc_type ORDER BY cnt DESC",
+        (corpus["id"],),
+    ).fetchall()
+
+    tags = corpus.get("tags", [])
+    if isinstance(tags, str):
+        try:
+            tags = _json.loads(tags)
+        except Exception:
+            tags = []
+
+    return {
+        "corpus_id": corpus["id"],
+        "name": corpus["name"],
+        "description": corpus.get("description", ""),
+        "author": corpus.get("author_name", ""),
+        "tags": tags,
+        "access_level": corpus.get("access_level", "public"),
+        "quality": {
+            "document_count": corpus.get("document_count", 0),
+            "chunk_count": corpus.get("chunk_count", 0),
+            "word_count": corpus.get("word_count", 0),
+            "query_count": query_count,
+            "last_updated": corpus.get("updated_at", ""),
+            "status": corpus.get("status", "draft"),
+            "embedding_model": corpus.get("embedding_model", ""),
+        },
+        "content_types": [{"type": r["doc_type"] or "doc", "count": r["cnt"]} for r in doc_types],
+        "samples": samples,
+    }
 
 
 # ── Stats & Topics ──
@@ -623,7 +811,7 @@ async def api_topics(corpus_id: str, request: Request):
 async def api_export_corpus(corpus_id: str, request: Request):
     """Export a corpus as a ZIP file."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.export import export_corpus
     from fastapi.responses import StreamingResponse
     buf = export_corpus(corpus["id"])
@@ -641,7 +829,7 @@ async def api_export_corpus(corpus_id: str, request: Request):
 async def api_create_token(corpus_id: str, req: CreateTokenRequest, request: Request):
     """Create an access token for a corpus. Returns plaintext token (one-time)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.tokens import create_token
     return create_token(corpus["id"], label=req.label, permissions=req.permissions, expires_at=req.expires_at)
 
@@ -650,7 +838,7 @@ async def api_create_token(corpus_id: str, req: CreateTokenRequest, request: Req
 async def api_list_tokens(corpus_id: str, request: Request):
     """List all access tokens for a corpus (without hashes)."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
     from noosphere.core.tokens import list_tokens
     return list_tokens(corpus["id"])
 
@@ -658,8 +846,8 @@ async def api_list_tokens(corpus_id: str, request: Request):
 @router.delete("/corpora/{corpus_id}/tokens/{token_id}")
 async def api_revoke_token(corpus_id: str, token_id: str, request: Request):
     """Revoke an access token."""
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     from noosphere.core.tokens import revoke_token
     if not revoke_token(token_id):
         raise HTTPException(status_code=404, detail="Token not found")
@@ -695,6 +883,37 @@ async def api_global_search(req: SearchRequest):
         "results": all_results[: req.top_k],
         "corpora_searched": len(ready) + len(remote_results),
     }
+
+
+def _compute_quality_score(corpus: dict) -> float:
+    """Compute a quality ranking score from objective signals (0.0–1.0)."""
+    import math
+    score = 0.0
+    # Document count: log scale, max ~0.3 at 500+ docs
+    doc_count = corpus.get("document_count", 0)
+    if isinstance(doc_count, dict):
+        doc_count = doc_count.get("document_count", 0)
+    q = corpus.get("quality", {})
+    if isinstance(q, dict):
+        doc_count = doc_count or q.get("document_count", 0)
+    score += min(0.3, math.log1p(doc_count) / 20)
+    # Word count: log scale, max ~0.2 at 100k+ words
+    word_count = q.get("word_count", 0) if isinstance(q, dict) else corpus.get("word_count", 0)
+    score += min(0.2, math.log1p(word_count) / 60)
+    # Health: online nodes get a bonus
+    health = q.get("health_status", "") if isinstance(q, dict) else corpus.get("health_status", "")
+    if health == "online":
+        score += 0.15
+    elif health == "degraded":
+        score += 0.05
+    # Access level: public gets slight preference (more useful for discovery)
+    if corpus.get("access_level") == "public":
+        score += 0.1
+    elif corpus.get("access_level") == "paid":
+        score += 0.05
+    # Base score so nothing is zero
+    score += 0.1
+    return round(min(1.0, score), 4)
 
 
 def _search_registered_corpora(query: str, limit: int = 20) -> list[dict]:
@@ -754,12 +973,19 @@ def _search_registered_corpora(query: str, limit: int = 20) -> list[dict]:
             "description": r.get("description", ""),
             "author": r.get("author", ""),
             "tags": tags,
-            "document_count": r.get("document_count", 0),
+            "quality": {
+                "document_count": r.get("document_count", 0),
+                "chunk_count": r.get("chunk_count", 0),
+                "word_count": r.get("word_count", 0),
+                "last_updated": r.get("updated_at", ""),
+                "health_status": r.get("health_status", "unknown"),
+            },
             "access_level": r.get("access_level", "public"),
             "api_endpoint": f"{r['node_endpoint']}/api/v1/corpora/{r['corpus_id']}",
             "mcp_endpoint": f"{r['node_endpoint']}/mcp",
+            "preview_url": f"{r['node_endpoint']}/api/v1/corpora/{r['corpus_id']}/preview",
             "source": "remote",
-            "score": 0.5,
+            "score": _compute_quality_score(r),
         })
     return results
 
@@ -781,6 +1007,7 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
 
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
+    _check_quota(request, "chat")
     from noosphere.core.chat import chat_with_corpus
     result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
 
@@ -812,6 +1039,7 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     )
     conn.commit()
 
+    _track_usage(request, "chat")
     result["session_id"] = session_id
     return result
 
@@ -1061,6 +1289,11 @@ async def api_network_search(
                 "score": 1.0,
             })
 
+    # Compute quality scores for local results too
+    for r in results:
+        if r.get("source") == "local":
+            r["score"] = _compute_quality_score(r)
+
     results.sort(key=lambda x: x.get("score", 0), reverse=True)
     return {
         "query": q,
@@ -1209,7 +1442,7 @@ async def api_checkout(corpus_id: str, req: CheckoutRequest, request: Request):
 async def api_set_pricing(corpus_id: str, req: PricingRequest, request: Request):
     """Set pricing config for a corpus. Also sets access_level to 'paid'."""
     corpus = _resolve_corpus(corpus_id)
-    _require_owner(request)
+    _require_owner(request, corpus)
 
     import json as _j
     pricing = {
@@ -1241,8 +1474,8 @@ async def api_get_pricing(corpus_id: str, request: Request):
 @router.get("/corpora/{corpus_id}/revenue")
 async def api_revenue(corpus_id: str, request: Request):
     """Revenue dashboard for a paid corpus (owner only)."""
-    _resolve_corpus(corpus_id)
-    _require_owner(request)
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
     from noosphere.core.payments import get_revenue_stats
     return get_revenue_stats(corpus_id)
 

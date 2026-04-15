@@ -376,4 +376,39 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .gs-item-corpus{font-size:10px;color:var(--tx3);font-style:italic;margin-left:auto}
 .gs-item-text{font-size:12px;line-height:1.5;color:var(--tx2)}
 
+/* ── Login page ── */
+.login-page{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-card{background:var(--bg2);border:1px solid var(--brd);border-radius:16px;padding:48px 40px;max-width:400px;width:100%;text-align:center;box-shadow:var(--shL)}
+.login-logo{width:48px;height:48px;margin:0 auto 20px;color:var(--tx)}
+.login-logo svg{width:100%;height:100%}
+.login-title{font-family:'Libre Baskerville',Georgia,serif;font-size:22px;font-weight:400;margin-bottom:8px;color:var(--tx)}
+.login-title strong{font-weight:700}
+.login-sub{font-size:14px;color:var(--tx2);margin-bottom:28px;line-height:1.5}
+.login-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px 20px;border:1px solid var(--brd);border-radius:8px;background:var(--bg2);color:var(--tx);font-size:14px;font-weight:500;cursor:pointer;transition:background .15s,box-shadow .15s}
+.login-google:hover{background:var(--bgH);box-shadow:var(--sh)}
+.login-divider{display:flex;align-items:center;gap:12px;margin:24px 0 16px;color:var(--tx3);font-size:12px}
+.login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--brd)}
+.login-input{width:100%;padding:10px 14px;border:1px solid var(--brd);border-radius:8px;background:var(--bg);color:var(--tx);font-size:14px;margin-bottom:10px;outline:none;transition:border-color .15s}
+.login-input:focus{border-color:var(--tx3)}
+.login-submit{width:100%;padding:12px 20px;border:none;border-radius:8px;background:var(--btnBg);color:var(--btnC);font-size:14px;font-weight:500;cursor:pointer;transition:opacity .15s;margin-top:4px}
+.login-submit:hover{opacity:.85}
+.login-submit:disabled{opacity:.5;cursor:not-allowed}
+.login-toggle{margin-top:16px;font-size:13px;color:var(--tx3)}
+.login-toggle a{color:var(--tx);font-weight:500;text-decoration:none}
+.login-toggle a:hover{text-decoration:underline}
+.login-back{display:inline-block;margin-top:16px;font-size:13px;color:var(--tx3);text-decoration:none}
+.login-back:hover{color:var(--tx)}
+
+/* ── Auth UI ── */
+.sb-auth{padding:6px 10px;border-top:1px solid var(--brd);margin-top:auto}
+.sb-auth-user{display:flex;align-items:center;gap:8px;min-width:0}
+.sb-auth-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.sb-auth-initial{width:24px;height:24px;border-radius:50%;background:var(--accBg);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--tx);flex-shrink:0}
+.sb-auth-name{font-size:12px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-auth-out{flex-shrink:0;margin-left:auto}
+.sb-auth-login{font-size:12px;color:var(--tx2)}
+.sb-auth .sb-auth-user{display:flex;align-items:center;gap:6px}
+.sidebar .sb-auth{display:flex;align-items:center;gap:6px}
+.sidebar.collapsed .sb-auth-name{display:none}
+
 @media(max-width:768px){.lp-ct{flex-direction:column;gap:24px;padding:70px 20px 20px}.lp-h{flex:none;min-width:0}.lp-h1{font-size:28px}.lp-term{flex:none;min-width:0;width:100%}.lp-term-body{height:260px}.sidebar{width:52px}.sb-lt,.sb-lb{display:none}.sb-new span{display:none}.rpanel{width:240px}.term-actions{flex-direction:column;align-items:center}}

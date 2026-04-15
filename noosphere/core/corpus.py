@@ -33,6 +33,7 @@ def create_corpus(
     source_url: str = "",
     embedding_model: str = "",
     embedding_dim: int = 0,
+    owner_id: str = "",
 ) -> dict:
     conn = get_conn()
     corpus_id = uuid.uuid4().hex[:12]
@@ -49,14 +50,14 @@ def create_corpus(
             language, license, tags, access_level,
             source_type, source_url,
             embedding_model, embedding_dim,
-            status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            owner_id, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             corpus_id, name, slug, description, author_name, author_url,
             language, license_, json.dumps(tags or []), access_level,
             source_type, source_url,
             embedding_model, embedding_dim,
-            "draft", now, now,
+            owner_id or None, "draft", now, now,
         ),
     )
     conn.commit()
@@ -89,6 +90,15 @@ def list_corpora(*, include_private: bool = False) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
+def list_user_corpora(owner_id: str) -> list[dict]:
+    """List corpora owned by a specific user (cloud multi-tenant)."""
+    rows = get_conn().execute(
+        "SELECT * FROM corpora WHERE owner_id=? ORDER BY updated_at DESC",
+        (owner_id,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def update_corpus(corpus_id: str, **fields) -> dict | None:
     conn = get_conn()
     allowed = {
@@ -97,6 +107,7 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
         "document_count", "chunk_count", "word_count",
         "embedding_model", "embedding_dim",
         "chunk_strategy", "stale_threshold_days", "pricing_json",
+        "owner_id",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
