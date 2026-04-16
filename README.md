@@ -4,14 +4,15 @@ Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes 
 
 ## Why
 
-Personal AI knowledge bases are clearly the future. But today they are all isolated, and there's no way to connect them or monetize the knowledge inside.
+AI agents are getting better at executing tasks, but they still struggle with judgment — the kind that comes from deep domain expertise, hard-won experience, and contextual understanding. Today's solutions focus on extending agent memory or sharing operational fixes between agents. What's missing is the knowledge itself.
 
-Noosphere is built on four ideas:
+Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publish what they know; agents query, learn, and cite it — with attribution and quality signals built in.
 
-1. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts — not just whatever one person uploaded.
-2. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution.
-3. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, and new documents. Not static file dumps, but compounding knowledge systems.
-4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
+1. **A knowledge layer for all agents.** Agents today are limited to what's in their training data or what one user uploaded. Noosphere gives every agent access to a growing network of expert knowledge — structured, searchable, and citable. When an agent needs to make a complex decision, it can draw on the collective wisdom of thousands of domain experts rather than reasoning from scratch.
+2. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts — not just whatever one person uploaded.
+3. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution.
+4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem.
+5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 
 ## Who it's for
 
