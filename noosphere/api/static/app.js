@@ -147,6 +147,8 @@ async function route(){const h=location.hash||'#/';stopAll();
   await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
   if(h==='#/main')renderHome();
   else if(h==='#/corpora')renderMyCorpora();
+  else if(h==='#/pricing')renderPricing();
+  else if(h==='#/account')renderAccount();
   else if(h==='#/network'||h.startsWith('#/explore'))renderNet();
   else if(h.startsWith('#/corpus/')){
     const parts=h.split('/')[2];
@@ -191,7 +193,7 @@ function renderSBChats(){
   if(!chats.length){el.innerHTML='';return}
   el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a>`).join('');
 }
-function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network')}
+function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network');const np=document.getElementById('nav-pricing');if(np)np.classList.toggle('active',h==='#/pricing');const na=document.getElementById('nav-account');if(na)na.classList.toggle('active',h==='#/account')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
@@ -1224,6 +1226,131 @@ async function loadRevenueUI(corpusId){
   }catch(e){body.textContent='Failed to load revenue'}
 }
 
+/* ── Pricing Page ── */
+function renderPricing(){
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  const isAuth=!!_authUser;
+  const currentTier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
+  ct.innerHTML=`<div class="pg-page">
+    <div class="pg-hd"><h1 class="pg-title">Plans</h1><p class="pg-sub">Start free. Upgrade when you need more.</p></div>
+    <div class="pg-cards">
+      <div class="pg-card${currentTier==='free'?' pg-current':''}">
+        <div class="pg-tier">Free</div>
+        <div class="pg-price"><span class="pg-amt">$0</span></div>
+        <ul class="pg-features">
+          <li>1 corpus</li>
+          <li>100 documents per corpus</li>
+          <li>50 searches / day</li>
+          <li>20 chats / day</li>
+          <li>1,000 queries / month</li>
+          <li>5 URL imports / day</li>
+          <li>2 compiles / day</li>
+        </ul>
+        ${currentTier==='free'?'<div class="pg-badge">Current plan</div>':''}
+      </div>
+      <div class="pg-card pg-card-pro${currentTier==='pro'?' pg-current':''}">
+        <div class="pg-tier">Pro</div>
+        <div class="pg-price"><span class="pg-amt">$9</span><span class="pg-period">/month</span></div>
+        <ul class="pg-features">
+          <li>Unlimited corpora</li>
+          <li>Unlimited documents</li>
+          <li>10,000 searches / day</li>
+          <li>500 chats / day</li>
+          <li>100,000 queries / month</li>
+          <li>100 URL imports / day</li>
+          <li>50 compiles / day</li>
+          <li>Stripe Connect — earn from paid corpora</li>
+        </ul>
+        ${currentTier==='pro'?'<div class="pg-badge">Current plan</div>':
+          isAuth?'<button class="pg-upgrade" id="pg-upgrade-btn">Upgrade to Pro</button>':
+          '<a href="#/login" class="pg-upgrade">Sign in to upgrade</a>'}
+      </div>
+    </div>
+    <div class="pg-self-host">
+      <strong>Self-hosted?</strong> All features are free and unlimited. No cloud account needed. <code>pip install noosphere && noosphere serve</code>
+    </div>
+  </div>`;
+  const btn=document.getElementById('pg-upgrade-btn');
+  if(btn)btn.onclick=async()=>{
+    btn.disabled=true;btn.textContent='Loading...';
+    try{
+      const r=await fetch(`${API}/cloud/create-checkout-session`,{method:'POST'});
+      const d=await r.json();
+      if(d.url)window.location.href=d.url;
+      else{toast(d.detail||'Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}
+    }catch(e){toast('Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}
+  };
+}
+
+/* ── Account Settings ── */
+async function renderAccount(){
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  ct.innerHTML=`<div class="pg-page"><div class="pg-hd"><h1 class="pg-title">Account</h1></div><div class="acct-loading">Loading...</div></div>`;
+  let user={},usage={};
+  try{
+    const[mr,ur]=await Promise.all([fetch(`${API}/cloud/me`),fetch(`${API}/cloud/usage`)]);
+    user=await mr.json();usage=await ur.json();
+  }catch(e){}
+  const tier=user.tier||'free';
+  const email=user.email||_authUser?.email||'';
+  const daily=usage.daily_usage||{};
+  const res=usage.resources||{};
+  const usageRows=Object.entries(daily).map(([action,v])=>{
+    const pct=v.limit?Math.min(100,Math.round(v.used/v.limit*100)):0;
+    return`<div class="acct-usage-row">
+      <span class="acct-usage-label">${action}</span>
+      <div class="acct-usage-bar"><div class="acct-usage-fill${pct>=90?' acct-usage-warn':''}" style="width:${pct}%"></div></div>
+      <span class="acct-usage-num">${v.used} / ${v.limit}</span>
+    </div>`;
+  }).join('');
+  const corporaRes=res.corpora||{};
+  const queriesRes=res.queries_this_month||{};
+
+  ct.innerHTML=`<div class="pg-page">
+    <div class="pg-hd"><h1 class="pg-title">Account</h1></div>
+    <div class="acct-section">
+      <div class="acct-row"><span class="acct-label">Email</span><span class="acct-val">${esc(email)}</span></div>
+      <div class="acct-row"><span class="acct-label">Plan</span><span class="acct-val acct-tier-${tier}">${tier==='pro'?'Pro':'Free'}</span></div>
+      ${user.subscription_status?`<div class="acct-row"><span class="acct-label">Subscription</span><span class="acct-val">${user.subscription_status}</span></div>`:''}
+      ${tier==='free'?`<div class="acct-row"><a href="#/pricing" class="acct-upgrade">Upgrade to Pro →</a></div>`:''}
+      ${tier==='pro'?`<div class="acct-row"><button class="acct-manage" id="acct-portal-btn">Manage subscription</button></div>`:''}
+    </div>
+    <div class="acct-section">
+      <h2 class="acct-section-title">Today's usage</h2>
+      ${usageRows||'<div class="acct-empty">No usage data</div>'}
+    </div>
+    <div class="acct-section">
+      <h2 class="acct-section-title">Resources</h2>
+      <div class="acct-usage-row"><span class="acct-usage-label">Corpora</span><span class="acct-usage-num">${corporaRes.used||0} / ${corporaRes.limit==='unlimited'||corporaRes.limit>=999999?'∞':corporaRes.limit||'—'}</span></div>
+      <div class="acct-usage-row"><span class="acct-usage-label">Queries this month</span><span class="acct-usage-num">${queriesRes.used||0} / ${queriesRes.limit>=999999?'∞':queriesRes.limit||'—'}</span></div>
+    </div>
+    ${tier==='pro'?`<div class="acct-section"><h2 class="acct-section-title">Stripe Connect</h2><p class="acct-sub">Earn from paid corpora. Consumers pay, you get 90%.</p><button class="acct-connect" id="acct-connect-btn">Set up payouts</button></div>`:''}
+    <div class="acct-section acct-danger">
+      <button class="acct-signout" id="acct-signout-btn">Sign out</button>
+    </div>
+  </div>`;
+
+  document.getElementById('acct-portal-btn')?.addEventListener('click',async function(){
+    this.disabled=true;this.textContent='Loading...';
+    try{
+      const r=await fetch(`${API}/cloud/create-portal-session`,{method:'POST'});
+      const d=await r.json();
+      if(d.url)window.location.href=d.url;
+      else{toast(d.detail||'Failed');this.disabled=false;this.textContent='Manage subscription'}
+    }catch(e){toast('Failed');this.disabled=false;this.textContent='Manage subscription'}
+  });
+  document.getElementById('acct-connect-btn')?.addEventListener('click',async function(){
+    this.disabled=true;this.textContent='Loading...';
+    try{
+      const r=await fetch(`${API}/cloud/connect/onboard`,{method:'POST'});
+      const d=await r.json();
+      if(d.url)window.location.href=d.url;
+      else{toast(d.detail||'Failed');this.disabled=false;this.textContent='Set up payouts'}
+    }catch(e){toast('Failed');this.disabled=false;this.textContent='Set up payouts'}
+  });
+  document.getElementById('acct-signout-btn')?.addEventListener('click',signOut);
+}
+
 function toggleTheme(){if(isDark()){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');localStorage.setItem('noosphere-theme','light')}else{document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');localStorage.setItem('noosphere-theme','dark')}}
 
 document.addEventListener('DOMContentLoaded',async()=>{
@@ -1233,4 +1360,5 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
   await initAuth();renderAuthUI();
+  document.querySelectorAll('.sb-cloud-only').forEach(el=>{el.style.display=_cloudMode?'':'none'});
   window.addEventListener('hashchange',route);route()});
