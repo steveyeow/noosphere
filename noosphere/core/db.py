@@ -103,7 +103,12 @@ class _PgConnWrapper:
         for stmt in sql.split(";"):
             stmt = stmt.strip()
             if stmt and not stmt.startswith("--"):
-                cur.execute(stmt)
+                try:
+                    cur.execute(stmt)
+                except Exception:
+                    self._conn.rollback()
+                    cur = self._conn.cursor()
+                    continue
         self._conn.commit()
 
     def commit(self):

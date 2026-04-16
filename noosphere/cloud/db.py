@@ -66,8 +66,15 @@ def init_cloud_tables():
     """Create cloud-specific tables. Called during lifespan when ENABLE_CLOUD=true."""
     conn = get_conn()
     schema = CLOUD_SCHEMA_PG if is_pg() else CLOUD_SCHEMA_SQLITE
-    conn.executescript(schema)
-    log.info("Cloud tables initialized")
+    try:
+        conn.executescript(schema)
+        log.info("Cloud tables initialized")
+    except Exception as e:
+        log.warning("Cloud tables init error (tables may already exist): %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
 
 def get_or_create_user(user_id: str, email: str = "") -> dict:
