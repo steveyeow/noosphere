@@ -180,12 +180,12 @@ async function loadChatSessions(){
 }
 /* ── Noos icon (landing page logo SVG) ── */
 const NOOS_ICON_SVG=`<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/><circle cx="18" cy="42" r="3" fill="currentColor" opacity="0.5"/><line x1="20" y1="24" x2="44" y2="20" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="20" y1="24" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="44" y1="20" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="18" y1="42" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>`;
-const NOOS_DOT=`<span class="noos-avatar">${NOOS_ICON_SVG}</span>`;
+const NOOS_DOT=`<span class="term-noos-dot">●</span>`;
 const PROMPT_CHEVRON=`<span class="term-user-chevron">❯</span>`;
 function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">Noos</span></div>`}
 
 /* ── Command picker ── */
-const TERM_CMDS=[{cmd:'/upload',desc:'Add a file to a corpus'},{cmd:'/write',desc:'Write a note'},{cmd:'/history',desc:'View recent conversations'},{cmd:'/new',desc:'Create a new corpus'},{cmd:'/help',desc:'Show all commands'}];
+const TERM_CMDS=[{cmd:'/upload',desc:'Add a file to a corpus'},{cmd:'/history',desc:'View recent conversations'},{cmd:'/new',desc:'Create a new corpus'},{cmd:'/help',desc:'Show all commands'}];
 function showCmdPicker(input,matches){
   let p=document.getElementById('term-cmd-picker');
   if(!p){p=document.createElement('div');p.id='term-cmd-picker';p.className='term-cmd-picker';document.getElementById('term-input-area')?.appendChild(p)}
@@ -350,18 +350,14 @@ function renderHome(){
         <div class="term-input-wrap">
           <span class="term-user-chevron">❯</span>
           <span class="term-cursor">\u2588</span>
-          <input type="text" class="term-input" id="term-input" placeholder="Paste a URL, upload a file, or write something" autofocus />
+          <input type="text" class="term-input" id="term-input" placeholder="Paste a URL, upload a file, or ask a question" autofocus />
         </div>
       </div>
       <div class="term-hints" id="term-hints">
-        <div class="term-hints-label">Quick actions</div>
-        <div class="term-hints-row">
-          <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link</div>
-          <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload</div>
-          <div class="term-sg" data-cmd="/write"><span class="term-caret">/</span> write</div>
-          <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history</div>
-          <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new corpus</div>
-        </div>
+        <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link to import</div>
+        <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload — add a file</div>
+        <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history — recent chats</div>
+        <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new — create corpus</div>
       </div>
     </div>
   </div>`;
@@ -437,7 +433,6 @@ function renderHome(){
   document.querySelectorAll('.term-sg').forEach(s=>{s.onclick=()=>{
     const cmd=s.dataset.cmd;
     if(cmd==='/upload'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermUpload(output,input,hints);return}
-    if(cmd==='/write'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints);return}
     if(cmd==='url'){input.value='';input.placeholder='Paste a URL and press Enter...';input.focus();return}
     input.value=cmd;input.focus();
   }});
@@ -447,7 +442,6 @@ function renderHome(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
     if(val.toLowerCase()==='/upload'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermUpload(output,input,hints);return}
-    if(val.toLowerCase()==='/write'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermWrite(output,input,hints);return}
     if(val.toLowerCase()==='/history'){
       input.value='';hints.style.display='none';
       await loadChatSessions();
@@ -457,7 +451,7 @@ function renderHome(){
     }
     if(val.toLowerCase()==='/help'){
       input.value='';hints.style.display='none';
-      [['URL','Paste any URL to import a page'],['  /upload','Add a file to a corpus'],['  /write','Write a note directly'],['  /history','View recent conversations'],['  /new','Create a new corpus']].forEach(([cmd,desc])=>addLine(output,'hint',cmd.padEnd(12)+desc));
+      [['URL','Paste any URL to import a page'],['  /upload','Add a file to a corpus'],['  /history','View recent conversations'],['  /new','Create a new corpus']].forEach(([cmd,desc])=>addLine(output,'hint',cmd.padEnd(12)+desc));
       input.focus();return;
     }
     if(val.toLowerCase()==='/new'){
