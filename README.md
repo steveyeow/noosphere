@@ -1,6 +1,6 @@
 # Noosphere
 
-Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Keep it open, or charge for access.
+Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and learn from. It grows over time as you add content. Keep it open, or charge for access.
 
 ## Why
 
