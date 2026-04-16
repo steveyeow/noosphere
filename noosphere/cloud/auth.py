@@ -73,32 +73,58 @@ def _get_jwks_keys() -> list:
     return _JWKS_CACHE or []
 
 
+def _verify_token_via_supabase(token: str) -> dict:
+    """Fallback: verify token by calling Supabase's /auth/v1/user endpoint."""
+    if not SUPABASE_URL:
+        raise jwt.InvalidTokenError("SUPABASE_URL not configured for fallback")
+    url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/user"
+    anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+    headers = {"Authorization": f"Bearer {token}", "apikey": anon_key}
+    try:
+        resp = httpx.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                "sub": data.get("id", ""),
+                "email": data.get("email", ""),
+                "aud": "authenticated",
+            }
+        raise jwt.InvalidTokenError(f"Supabase returned {resp.status_code}")
+    except httpx.HTTPError as e:
+        raise jwt.InvalidTokenError(f"Supabase verification failed: {e}")
+
+
 def _decode_token(token: str) -> dict:
-    """Decode a Supabase JWT. Supports HS256 (legacy) and ES256 (JWKS)."""
+    """Decode a Supabase JWT. Supports HS256 (legacy) and ES256 (JWKS).
+
+    Falls back to Supabase /auth/v1/user API when local validation fails.
+    """
     header = jwt.get_unverified_header(token)
     alg = header.get("alg", "")
 
-    if alg == "HS256":
-        if not SUPABASE_JWT_SECRET:
-            raise jwt.InvalidTokenError("SUPABASE_JWT_SECRET not configured")
-        return jwt.decode(
-            token, SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+    # Try local validation first
+    try:
+        if alg == "HS256" and SUPABASE_JWT_SECRET:
+            return jwt.decode(
+                token, SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
 
-    if alg == "ES256":
-        kid = header.get("kid", "")
-        for jwk in _get_jwks_keys():
-            if jwk.key_id == kid:
-                return jwt.decode(
-                    token, jwk.key,
-                    algorithms=["ES256"],
-                    audience="authenticated",
-                )
-        raise jwt.InvalidTokenError(f"No JWKS key found for kid={kid}")
+        if alg == "ES256":
+            kid = header.get("kid", "")
+            for jwk in _get_jwks_keys():
+                if jwk.key_id == kid:
+                    return jwt.decode(
+                        token, jwk.key,
+                        algorithms=["ES256"],
+                        audience="authenticated",
+                    )
+    except Exception as e:
+        log.warning("Local JWT validation failed (%s), trying Supabase API: %s", alg, e)
 
-    raise jwt.InvalidTokenError(f"Unsupported algorithm: {alg}")
+    # Fallback: verify via Supabase API directly
+    return _verify_token_via_supabase(token)
 
 
 async def auth_middleware(request: Request, call_next):
