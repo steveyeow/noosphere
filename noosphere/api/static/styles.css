@@ -97,17 +97,19 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-cursor{color:var(--tx);font-weight:700;font-family:var(--mono);font-size:13px;user-select:none;opacity:.6}
 .term-caret{color:var(--tx);font-weight:700;flex-shrink:0;user-select:none;font-family:var(--mono);font-size:14px}
 .term-hints{padding:8px 32px 24px}
+.term-hints-label{font-size:11px;font-weight:500;color:var(--tx3);margin-bottom:8px;letter-spacing:.02em}
+.term-hints-row{display:flex;flex-wrap:wrap;gap:8px}
 .term-shortcut-hint{font-size:12px;color:var(--tx3);padding:4px 10px 10px;font-family:var(--mono)}
-.term-sg{font-family:var(--mono);font-size:12px;color:var(--tx3);padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .12s;display:flex;align-items:center;gap:8px}
-.term-sg:hover{background:var(--bgH);color:var(--tx2)}
-.term-sg .term-caret{font-size:12px;font-weight:400;color:var(--tx3)}
+.term-sg{font-family:var(--mono);font-size:12px;color:var(--tx3);padding:5px 12px;border-radius:20px;border:1px solid var(--brd);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;background:var(--bg2)}
+.term-sg:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.term-sg .term-caret{font-size:12px;font-weight:500;color:var(--tx3)}
 .term-output{padding:0 32px;display:flex;flex-direction:column;gap:10px}
 .term-line{display:flex;align-items:flex-start;gap:10px;animation:termFadeIn .3s ease-out}
 .term-prompt{font-family:var(--mono);font-size:13px;color:var(--tx);line-height:1.5;display:flex;align-items:center;gap:10px}
 .term-prompt .term-user-chevron{color:var(--tx3)}
 .term-prompt-text{background:var(--bgH);padding:3px 10px;border-radius:6px}
 .term-resp{font-family:var(--mono);font-size:13px;color:var(--tx2);line-height:1.6;display:flex;align-items:flex-start;gap:10px}
-.term-resp .term-noos-dot{height:calc(13px * 1.6);padding-top:0;display:inline-flex;align-items:center}
+.term-resp .noos-avatar{height:calc(13px * 1.6);display:inline-flex;align-items:center}
 .term-card{margin-left:24px;padding:12px 16px;border-radius:10px;border:1px solid var(--brd);background:var(--bg2);animation:termFadeIn .3s ease-out;margin-top:4px;margin-bottom:4px}
 .term-card-lbl{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx)}
 .term-card-det{font-family:var(--mono);font-size:12px;color:var(--tx3);margin-top:4px;line-height:1.4}
@@ -119,7 +121,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 @keyframes cursor-blink{0%,100%{opacity:.6}50%{opacity:0}}
 
 /* ── Terminal inline upload ── */
-.term-upload-wrap{margin-left:18px;margin-top:20px;animation:termFadeIn .3s ease-out}
+.term-upload-wrap{margin-left:18px;margin-top:20px;animation:termFadeIn .3s ease-out;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:16px 18px}
 .term-upload-dz{border:1.5px dashed var(--brd);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px;background:var(--bg2)}
 .term-upload-dz:hover,.term-upload-dz.drag-over{border-color:var(--tx3);background:var(--bgH)}
 .term-upload-icon{margin-bottom:8px;opacity:.4}
@@ -140,7 +142,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-pick-cancel{color:var(--tx3)}
 
 /* ── Terminal inline write ── */
-.term-write-wrap{margin-left:18px;margin-top:20px;animation:termFadeIn .3s ease-out}
+.term-write-wrap{margin-left:18px;margin-top:20px;animation:termFadeIn .3s ease-out;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:16px 18px}
 .term-write-title{width:100%;padding:8px 0;border:none;border-bottom:1px solid var(--brd);background:transparent;color:var(--tx);font-size:15px;font-weight:600;font-family:'Libre Baskerville',Georgia,serif;outline:none;margin-bottom:8px;transition:border-color .2s}
 .term-write-title:focus{border-color:var(--tx3)}
 .term-write-title::placeholder{color:var(--tx3);font-weight:400}
@@ -220,16 +222,16 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cv-st{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
 
 /* ── Noos (AI identity) ── */
+.noos-avatar{width:18px;height:18px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:var(--tx2)}
+.noos-avatar svg{width:18px;height:18px}
 .noos-hd{display:flex;align-items:center;gap:7px;margin-bottom:6px}
-.noos-hd .term-noos-dot{padding-top:0}
-.noos-nm{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx2);margin-right:6px}
+.noos-nm{display:inline-flex;align-items:center;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--tx2);padding:1px 8px;border-radius:10px;background:var(--accBg);margin-right:6px;letter-spacing:.01em}
 .noos-msg{display:flex;align-items:center;gap:10px;padding-top:20px;animation:termFadeIn .4s ease-out}
 .noos-body{font-family:var(--mono);font-size:13px;color:var(--tx);line-height:1.6}
 .chat-msg.assistant .noos-hd .noos-nm{color:var(--tx2);font-weight:600}
 .chat-msg.assistant .noos-body{font-size:15px;line-height:1.7;white-space:pre-wrap;font-family:inherit}
 
 /* ── Unified terminal icons ── */
-.term-noos-dot{width:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--tx3);line-height:1;user-select:none}
 .term-user-chevron{width:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--tx3);line-height:1;user-select:none}
 
 /* ── Chat ── */
@@ -400,17 +402,28 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .login-back{display:inline-block;margin-top:16px;font-size:13px;color:var(--tx3);text-decoration:none}
 .login-back:hover{color:var(--tx)}
 
-/* ── Auth UI ── */
-.sb-auth{padding:6px 10px;border-top:1px solid var(--brd);margin-top:auto}
-.sb-auth-user{display:flex;align-items:center;gap:8px;min-width:0}
+/* ── Auth UI / Profile popover ── */
 .sb-auth-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0}
 .sb-auth-initial{width:24px;height:24px;border-radius:50%;background:var(--accBg);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--tx);flex-shrink:0}
 .sb-auth-name{font-size:12px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sb-auth-out{flex-shrink:0;margin-left:auto}
 .sb-auth-login{font-size:12px;color:var(--tx2)}
-.sb-auth .sb-auth-user{display:flex;align-items:center;gap:6px}
-.sidebar .sb-auth{display:flex;align-items:center;gap:6px}
-.sidebar.collapsed .sb-auth-name{display:none}
+.sb-profile{display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;padding:4px 6px;border-radius:8px;transition:background .12s;min-width:0}
+.sb-profile:hover{background:var(--bgH)}
+.sb-profile-info{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.sb-profile-chev{flex-shrink:0;color:var(--tx3);transition:transform .15s}
+.sb-tier-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;flex-shrink:0;line-height:1.5}
+.sb-tier-free{background:var(--accBg);color:var(--tx3)}
+.sb-tier-pro{background:var(--grnBg);color:var(--grn)}
+.sb-bot{position:relative}
+.sb-popover{position:absolute;bottom:calc(100% + 6px);left:8px;right:8px;background:var(--bg2);border:1px solid var(--brd);border-radius:10px;box-shadow:var(--shM);z-index:50;padding:4px;animation:termFadeIn .15s ease-out}
+.sb-popover.hidden{display:none}
+.sb-pop-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:transparent;color:var(--tx2);font-size:12px;font-family:inherit;border-radius:7px;cursor:pointer;transition:background .12s,color .12s;text-decoration:none}
+.sb-pop-item:hover{background:var(--bgH);color:var(--tx)}
+.sb-pop-danger{color:var(--tx3)}
+.sb-pop-danger:hover{color:#ef4444;background:rgba(239,68,68,.06)}
+.sb-pop-divider{height:1px;background:var(--brd);margin:4px 6px}
+.sidebar.collapsed .sb-profile-info,.sidebar.collapsed .sb-profile-chev{display:none}
+.sidebar.collapsed .sb-popover{left:4px;min-width:160px;right:auto}
 
 /* ── Pricing Page ── */
 .pg-page{max-width:720px;margin:0 auto;padding:48px 24px;overflow-y:auto;height:100%}

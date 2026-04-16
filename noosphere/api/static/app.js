@@ -93,22 +93,31 @@ async function signOut(){
 }
 
 function renderAuthUI(){
-  let el=document.getElementById('sb-auth');
-  if(!_cloudMode){if(el)el.style.display='none';return}
-  if(!el){
-    el=document.createElement('div');el.id='sb-auth';el.className='sb-auth';
-    const bot=document.querySelector('.sb-bot');
-    if(bot)bot.parentNode.insertBefore(el,bot);
+  const bot=document.getElementById('sb-bot');
+  if(!bot)return;
+  /* Non-cloud: dark mode toggle only */
+  if(!_cloudMode){
+    bot.innerHTML=`<button class="sb-btn" id="dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>`;
+    bot.querySelector('#dark-btn').addEventListener('click',toggleTheme);
+    return;
   }
   if(_authUser){
     const email=_authUser.email||'';
     const name=email.split('@')[0]||'User';
     const avatar=_authUser.user_metadata?.avatar_url;
-    el.innerHTML=`<div class="sb-auth-user">${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-auth-name sb-lb">${esc(name)}</span></div><button class="sb-btn sb-auth-out" title="Sign out"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>`;
-    el.querySelector('.sb-auth-out').onclick=signOut;
+    const tier=_authUser.user_metadata?.tier||'free';
+    const tierLabel=tier==='pro'?'Pro':'Free';
+    bot.innerHTML=`<div class="sb-profile" id="sb-profile">${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(name)}</span><span class="sb-tier-badge sb-tier-${tier}">${tierLabel}</span></span><svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="sb-popover hidden" id="sb-popover"><a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a><a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a><button class="sb-pop-item" id="sb-pop-theme"><svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span>Dark mode</span></button><div class="sb-pop-divider"></div><button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button></div>`;
+    const profile=bot.querySelector('#sb-profile');
+    const popover=bot.querySelector('#sb-popover');
+    profile.addEventListener('click',e=>{e.stopPropagation();popover.classList.toggle('hidden')});
+    bot.querySelector('#sb-pop-theme').addEventListener('click',e=>{e.stopPropagation();toggleTheme()});
+    bot.querySelector('#sb-pop-signout').addEventListener('click',signOut);
+    popover.querySelectorAll('a.sb-pop-item').forEach(a=>a.addEventListener('click',()=>popover.classList.add('hidden')));
+    document.addEventListener('click',function _closePopover(e){if(!bot.contains(e.target)){popover.classList.add('hidden')}});
   }else{
-    el.innerHTML=`<button class="sb-btn sb-auth-login" style="width:100%;justify-content:center;gap:6px;padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="sb-lb">Sign in</span></button>`;
-    el.querySelector('.sb-auth-login').onclick=signInWithGoogle;
+    bot.innerHTML=`<button class="sb-btn sb-auth-login" style="width:100%;justify-content:center;gap:6px;padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="sb-lb">Sign in</span></button>`;
+    bot.querySelector('.sb-auth-login').onclick=signInWithGoogle;
   }
 }
 function pickCorpusInline(container){
@@ -171,7 +180,7 @@ async function loadChatSessions(){
 }
 /* ── Noos icon (landing page logo SVG) ── */
 const NOOS_ICON_SVG=`<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/><circle cx="18" cy="42" r="3" fill="currentColor" opacity="0.5"/><line x1="20" y1="24" x2="44" y2="20" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="20" y1="24" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="44" y1="20" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="18" y1="42" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>`;
-const NOOS_DOT=`<span class="term-noos-dot">●</span>`;
+const NOOS_DOT=`<span class="noos-avatar">${NOOS_ICON_SVG}</span>`;
 const PROMPT_CHEVRON=`<span class="term-user-chevron">❯</span>`;
 function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">Noos</span></div>`}
 
@@ -334,13 +343,6 @@ function renderHome(){
           ${recentRows||`<div class="term-wmeta">No corpora yet — start by adding one</div>`}
         </div>
       </div>
-      <div class="gs-wrap" id="gs-wrap">
-        <div class="gs-bar">
-          <svg class="gs-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="gs-input" id="gs-input" placeholder="Search across all corpora..." />
-        </div>
-        <div class="gs-results hidden" id="gs-results"></div>
-      </div>
     </div>
     <div class="term-scroll" id="term-scroll">
       <div class="term-output" id="term-output"></div>
@@ -352,11 +354,14 @@ function renderHome(){
         </div>
       </div>
       <div class="term-hints" id="term-hints">
-        <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link to import</div>
-        <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload — add a file</div>
-        <div class="term-sg" data-cmd="/write"><span class="term-caret">/</span> write — write a note</div>
-        <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history — recent chats</div>
-        <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new — create corpus</div>
+        <div class="term-hints-label">Quick actions</div>
+        <div class="term-hints-row">
+          <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link</div>
+          <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload</div>
+          <div class="term-sg" data-cmd="/write"><span class="term-caret">/</span> write</div>
+          <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history</div>
+          <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new corpus</div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -407,35 +412,6 @@ function renderHome(){
       requestAnimationFrame(tick);
     }
     tick();
-  })();
-
-  /* ── Global search ── */
-  (function initGlobalSearch(){
-    const gsInput=document.getElementById('gs-input'),gsResults=document.getElementById('gs-results');
-    if(!gsInput||!gsResults)return;
-    let _gsTimer=null;
-    gsInput.addEventListener('input',()=>{
-      clearTimeout(_gsTimer);
-      const q=gsInput.value.trim();
-      if(!q||q.length<2){gsResults.classList.add('hidden');gsResults.innerHTML='';return}
-      _gsTimer=setTimeout(async()=>{
-        gsResults.classList.remove('hidden');gsResults.innerHTML='<div class="gs-loading">Searching...</div>';
-        try{
-          const r=await fetch(`${API}/search`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,top_k:8})});
-          const d=await r.json();
-          if(!d.results||!d.results.length){gsResults.innerHTML='<div class="gs-empty">No results found</div>';return}
-          gsResults.innerHTML=d.results.map(r=>{
-            const cite=r.citation||{};const title=cite.document_title||'';const corpus=r.corpus_name||'';
-            const txt=(r.text||'').slice(0,180)+(r.text&&r.text.length>180?'...':'');
-            const score=((r.score||0)*100).toFixed(0);
-            return`<div class="gs-item" data-corpus="${r.corpus_id}"><div class="gs-item-top"><span class="gs-item-score">${score}%</span><span class="gs-item-title">${esc(title)}</span><span class="gs-item-corpus">${esc(corpus)}</span></div><div class="gs-item-text">${esc(txt)}</div></div>`
-          }).join('');
-          gsResults.querySelectorAll('.gs-item').forEach(item=>{item.onclick=()=>{location.hash='#/corpus/'+item.dataset.corpus}});
-        }catch(e){gsResults.innerHTML='<div class="gs-empty">Search failed</div>'}
-      },350);
-    });
-    gsInput.addEventListener('keydown',e=>{if(e.key==='Escape'){gsInput.value='';gsResults.classList.add('hidden');gsResults.innerHTML=''}});
-    document.addEventListener('click',e=>{if(!e.target.closest('#gs-wrap')){gsResults.classList.add('hidden')}});
   })();
 
   const input=document.getElementById('term-input');
@@ -1354,11 +1330,9 @@ async function renderAccount(){
 function toggleTheme(){if(isDark()){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');localStorage.setItem('noosphere-theme','light')}else{document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');localStorage.setItem('noosphere-theme','dark')}}
 
 document.addEventListener('DOMContentLoaded',async()=>{
-  document.getElementById('dark-btn')?.addEventListener('click',toggleTheme);
   const sbToggle=()=>document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
   await initAuth();renderAuthUI();
-  document.querySelectorAll('.sb-cloud-only').forEach(el=>{el.style.display=_cloudMode?'':'none'});
   window.addEventListener('hashchange',route);route()});
