@@ -1201,37 +1201,38 @@ function renderPricing(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   const isAuth=!!_authUser;
   const currentTier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
+  const email=_authUser?.email||'';
   ct.innerHTML=`<div class="pg-page">
-    <div class="pg-hd"><h1 class="pg-title">Plans</h1><p class="pg-sub">Start free. Upgrade when you need more.</p></div>
+    <div class="pg-hd"><h1 class="pg-title">Plans</h1><p class="pg-sub">Publish your knowledge. Grow your network.<br>Start free, upgrade when you need more.</p></div>
     <div class="pg-cards">
       <div class="pg-card${currentTier==='free'?' pg-current':''}">
-        <div class="pg-tier">Free</div>
-        <div class="pg-price"><span class="pg-amt">$0</span></div>
+        <div class="pg-tier-row"><span class="pg-tier">Free</span></div>
+        <div class="pg-price"><span class="pg-amt">$0</span><span class="pg-period">/mo</span></div>
+        <div class="pg-desc">Get started, no credit card needed</div>
         <ul class="pg-features">
-          <li>1 corpus</li>
-          <li>100 documents per corpus</li>
-          <li>50 searches / day</li>
-          <li>20 chats / day</li>
-          <li>1,000 queries / month</li>
-          <li>5 URL imports / day</li>
-          <li>2 compiles / day</li>
+          <li>1 corpus, 100 documents</li>
+          <li>50 searches per day</li>
+          <li>20 chat messages per day</li>
+          <li>1,000 queries per month</li>
+          <li>5 URL imports per day</li>
         </ul>
         ${currentTier==='free'?'<div class="pg-badge">Current plan</div>':''}
       </div>
       <div class="pg-card pg-card-pro${currentTier==='pro'?' pg-current':''}">
-        <div class="pg-tier">Pro</div>
-        <div class="pg-price"><span class="pg-amt">$9</span><span class="pg-period">/month</span></div>
+        <div class="pg-tier-row"><span class="pg-tier">Pro</span>${currentTier==='pro'?'<span class="pg-tier-badge">Current</span>':''}</div>
+        <div class="pg-price"><span class="pg-amt">$9</span><span class="pg-period">/mo</span></div>
+        <div class="pg-desc">For power users who build and share knowledge</div>
         <ul class="pg-features">
-          <li>Unlimited corpora</li>
-          <li>Unlimited documents</li>
-          <li>10,000 searches / day</li>
-          <li>500 chats / day</li>
-          <li>100,000 queries / month</li>
-          <li>100 URL imports / day</li>
-          <li>50 compiles / day</li>
+          <li>Everything in Free</li>
+          <li>Unlimited corpora & documents</li>
+          <li>10,000 searches per day</li>
+          <li>500 chat messages per day</li>
+          <li>100,000 queries per month</li>
+          <li>100 URL imports per day</li>
           <li>Stripe Connect — earn from paid corpora</li>
+          <li>Priority access</li>
         </ul>
-        ${currentTier==='pro'?'<div class="pg-badge">Current plan</div>':
+        ${currentTier==='pro'?'<button class="pg-upgrade" id="pg-upgrade-btn">Manage Subscription</button>':
           isAuth?'<button class="pg-upgrade" id="pg-upgrade-btn">Upgrade to Pro</button>':
           '<a href="#/login" class="pg-upgrade">Sign in to upgrade</a>'}
       </div>
@@ -1239,17 +1240,23 @@ function renderPricing(){
     <div class="pg-self-host">
       <strong>Self-hosted?</strong> All features are free and unlimited. No cloud account needed. <code>pip install noosphere && noosphere serve</code>
     </div>
+    ${isAuth?`<div class="pg-footer"><div class="pg-footer-email">${esc(email)}</div><button class="pg-footer-signout" id="pg-signout-btn">Sign Out</button></div>`:''}
   </div>`;
   const btn=document.getElementById('pg-upgrade-btn');
-  if(btn)btn.onclick=async()=>{
-    btn.disabled=true;btn.textContent='Loading...';
-    try{
-      const r=await fetch(`${API}/cloud/create-checkout-session`,{method:'POST'});
-      const d=await r.json();
-      if(d.url)window.location.href=d.url;
-      else{toast(d.detail||'Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}
-    }catch(e){toast('Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}
-  };
+  if(btn){
+    if(currentTier==='pro'){
+      btn.onclick=async()=>{
+        btn.disabled=true;btn.textContent='Loading...';
+        try{const r=await fetch(`${API}/cloud/create-portal-session`,{method:'POST'});const d=await r.json();if(d.url)window.location.href=d.url;else{toast(d.detail||'Failed');btn.disabled=false;btn.textContent='Manage Subscription'}}catch(e){toast('Failed');btn.disabled=false;btn.textContent='Manage Subscription'}
+      };
+    }else{
+      btn.onclick=async()=>{
+        btn.disabled=true;btn.textContent='Loading...';
+        try{const r=await fetch(`${API}/cloud/create-checkout-session`,{method:'POST'});const d=await r.json();if(d.url)window.location.href=d.url;else{toast(d.detail||'Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}}catch(e){toast('Failed to start checkout');btn.disabled=false;btn.textContent='Upgrade to Pro'}
+      };
+    }
+  }
+  document.getElementById('pg-signout-btn')?.addEventListener('click',signOut);
 }
 
 /* ── Account Settings ── */
