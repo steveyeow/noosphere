@@ -1276,26 +1276,43 @@ async function renderAccount(){
   const corporaRes=res.corpora||{};
   const queriesRes=res.queries_this_month||{};
 
+  const initial=(email||'U')[0].toUpperCase();
+  const avatar=_authUser?.user_metadata?.avatar_url;
+  const name=_authUser?.user_metadata?.full_name||_authUser?.user_metadata?.name||email.split('@')[0]||'User';
+
   ct.innerHTML=`<div class="pg-page">
-    <div class="pg-hd"><h1 class="pg-title">Account</h1></div>
-    <div class="acct-section">
-      <div class="acct-row"><span class="acct-label">Email</span><span class="acct-val">${esc(email)}</span></div>
-      <div class="acct-row"><span class="acct-label">Plan</span><span class="acct-val acct-tier-${tier}">${tier==='pro'?'Pro':'Free'}</span></div>
-      ${user.subscription_status?`<div class="acct-row"><span class="acct-label">Subscription</span><span class="acct-val">${user.subscription_status}</span></div>`:''}
-      ${tier==='free'?`<div class="acct-row"><a href="#/pricing" class="acct-upgrade">Upgrade to Pro →</a></div>`:''}
-      ${tier==='pro'?`<div class="acct-row"><button class="acct-manage" id="acct-portal-btn">Manage subscription</button></div>`:''}
+    <div class="acct-profile">
+      ${avatar?`<img src="${esc(avatar)}" class="acct-avatar"/>`:`<span class="acct-avatar acct-avatar-init">${esc(initial)}</span>`}
+      <div class="acct-profile-info">
+        <div class="acct-profile-name">${esc(name)}</div>
+        <div class="acct-profile-email">${esc(email)}</div>
+      </div>
+      <span class="acct-profile-tier sb-tier-badge sb-tier-${tier}">${tier==='pro'?'Pro':'Free'}</span>
+    </div>
+    <div class="acct-grid">
+      <div class="acct-section">
+        <h2 class="acct-section-title">Plan</h2>
+        <div class="acct-plan-row">
+          <span class="acct-plan-tier">${tier==='pro'?'Pro':'Free'}</span>
+          ${user.subscription_status?`<span class="acct-plan-status">${user.subscription_status}</span>`:''}
+        </div>
+        ${tier==='free'?`<a href="#/pricing" class="acct-upgrade">Upgrade to Pro →</a>`:''}
+        ${tier==='pro'?`<button class="acct-manage" id="acct-portal-btn">Manage subscription</button>`:''}
+      </div>
+      <div class="acct-section">
+        <h2 class="acct-section-title">Resources</h2>
+        <div class="acct-res-grid">
+          <div class="acct-res-item"><span class="acct-res-val">${corporaRes.used||0}<span class="acct-res-lim"> / ${corporaRes.limit==='unlimited'||corporaRes.limit>=999999?'∞':corporaRes.limit||'—'}</span></span><span class="acct-res-label">Corpora</span></div>
+          <div class="acct-res-item"><span class="acct-res-val">${queriesRes.used||0}<span class="acct-res-lim"> / ${queriesRes.limit>=999999?'∞':queriesRes.limit||'—'}</span></span><span class="acct-res-label">Queries this month</span></div>
+        </div>
+      </div>
     </div>
     <div class="acct-section">
       <h2 class="acct-section-title">Today's usage</h2>
-      ${usageRows||'<div class="acct-empty">No usage data</div>'}
+      ${usageRows||'<div class="acct-empty">No activity yet today</div>'}
     </div>
-    <div class="acct-section">
-      <h2 class="acct-section-title">Resources</h2>
-      <div class="acct-usage-row"><span class="acct-usage-label">Corpora</span><span class="acct-usage-num">${corporaRes.used||0} / ${corporaRes.limit==='unlimited'||corporaRes.limit>=999999?'∞':corporaRes.limit||'—'}</span></div>
-      <div class="acct-usage-row"><span class="acct-usage-label">Queries this month</span><span class="acct-usage-num">${queriesRes.used||0} / ${queriesRes.limit>=999999?'∞':queriesRes.limit||'—'}</span></div>
-    </div>
-    ${tier==='pro'?`<div class="acct-section"><h2 class="acct-section-title">Stripe Connect</h2><p class="acct-sub">Earn from paid corpora. Consumers pay, you get 90%.</p><button class="acct-connect" id="acct-connect-btn">Set up payouts</button></div>`:''}
-    <div class="acct-section acct-danger">
+    ${tier==='pro'?`<div class="acct-section"><h2 class="acct-section-title">Payouts</h2><p class="acct-sub">Earn from paid corpora. Consumers pay, you get 90%.</p><button class="acct-connect" id="acct-connect-btn">Set up payouts</button></div>`:''}
+    <div class="acct-footer">
       <button class="acct-signout" id="acct-signout-btn">Sign out</button>
     </div>
   </div>`;
