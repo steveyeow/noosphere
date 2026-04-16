@@ -18,3 +18,9 @@ uploads/
 .cursor/
 .claude/
 node_modules/
+
+# Internal dev docs
+GAP-PLAN.md
+HARDENING.md
+RETRIEVAL_UPGRADE.md
+docs/NEXT-SESSION.md
