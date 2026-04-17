@@ -192,7 +192,13 @@ const PROMPT_CHEVRON=`<span class="term-user-chevron">❯</span>`;
 function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">Noos</span></div>`}
 
 /* ── Command picker ── */
-const TERM_CMDS=[{cmd:'/upload',desc:'Add a file to a corpus'},{cmd:'/history',desc:'View recent conversations'},{cmd:'/new',desc:'Create a new corpus'},{cmd:'/help',desc:'Show all commands'}];
+const TERM_CMDS=[
+  {cmd:'/new',desc:'Create a new corpus'},
+  {cmd:'/upload',desc:'Upload a file'},
+  {cmd:'/history',desc:'Recent conversations'},
+  {cmd:'/status',desc:'Show your corpora stats'},
+  {cmd:'/help',desc:'Show all commands'},
+];
 function showCmdPicker(input,matches){
   let p=document.getElementById('term-cmd-picker');
   if(!p){p=document.createElement('div');p.id='term-cmd-picker';p.className='term-cmd-picker';document.getElementById('term-input-area')?.appendChild(p)}
@@ -357,14 +363,14 @@ function renderHome(){
         <div class="term-input-wrap">
           <span class="term-user-chevron">❯</span>
           <span class="term-cursor">\u2588</span>
-          <input type="text" class="term-input" id="term-input" placeholder="Paste a URL, upload a file, or ask a question" autofocus />
+          <input type="text" class="term-input" id="term-input" placeholder="Ask Noos anything, or paste a URL..." autofocus />
         </div>
       </div>
-      <div class="term-hints" id="term-hints">
-        <div class="term-sg" data-cmd="url"><span class="term-caret">/</span> Paste a link to import</div>
-        <div class="term-sg" data-cmd="/upload"><span class="term-caret">/</span> upload — add a file</div>
-        <div class="term-sg" data-cmd="/history"><span class="term-caret">/</span> history — recent chats</div>
-        <div class="term-sg" data-cmd="/new"><span class="term-caret">/</span> new — create corpus</div>
+      <div class="term-hints term-hints-foot" id="term-hints">
+        <div class="term-hint-col"><span class="term-hint-k">/</span> for commands</div>
+        <div class="term-hint-col"><span class="term-hint-k">URL</span> to import a page</div>
+        <div class="term-hint-col"><span class="term-hint-k">/upload</span> to add a file</div>
+        <div class="term-hint-col"><span class="term-hint-k">/new</span> to create a corpus</div>
       </div>
     </div>
   </div>`;
@@ -423,9 +429,9 @@ function renderHome(){
   const cursorEl=document.querySelector('.term-cursor');
   _termCtx={};
 
-  // Noos greeting
+  // Noos greeting — chat-first: Noos is your assistant over the whole KB network
   const greetEl=document.createElement('div');greetEl.className='noos-msg';
-  greetEl.innerHTML=`${NOOS_DOT}<span><span class="noos-nm">Noos</span><span class="noos-body">Hi, ${_firstName||'explorer'}. What would you like to add to Noosphere today?</span></span>`;
+  greetEl.innerHTML=`${NOOS_DOT}<span><span class="noos-nm">Noos</span><span class="noos-body">Hi${_firstName?', '+_firstName:''}. Ask me about anything you've saved, or drop in something new.</span></span>`;
   output.appendChild(greetEl);
 
   input.addEventListener('focus',()=>{if(cursorEl)cursorEl.style.display='none'});
@@ -436,13 +442,6 @@ function renderHome(){
     if(v.startsWith('/')){const q=v.toLowerCase();showCmdPicker(input,TERM_CMDS.filter(c=>c.cmd.startsWith(q)))}
     else hideCmdPicker();
   });
-
-  document.querySelectorAll('.term-sg').forEach(s=>{s.onclick=()=>{
-    const cmd=s.dataset.cmd;
-    if(cmd==='/upload'){input.value='';hints.style.display='none';document.getElementById('term-input-area').style.display='none';showTermUpload(output,input,hints);return}
-    if(cmd==='url'){input.value='';input.placeholder='Paste a URL and press Enter...';input.focus();return}
-    input.value=cmd;input.focus();
-  }});
 
   let _sending=false;
   async function sendInput(){

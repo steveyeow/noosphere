@@ -9,8 +9,12 @@ from noosphere.core.indexer import index_corpus
 def handle_terminal_input(text: str, context: dict | None = None) -> dict:
     """Process terminal input and return structured response.
 
-    Context tracks conversation state (e.g. waiting for corpus selection).
-    Returns dict with 'lines' (list of response items) and 'context' (updated state).
+    Home terminal is chat-first (you're talking to Noos). Routing:
+      - URL → ingest into a corpus (with inline corpus picker)
+      - /command → slash-command handler
+      - anything else → chat with Noos across all your corpora
+
+    State tracks mid-flow interactions (e.g. waiting for corpus choice).
     """
     text = text.strip()
     ctx = context or {}
@@ -19,28 +23,14 @@ def handle_terminal_input(text: str, context: dict | None = None) -> dict:
     if state == "pick_corpus":
         return _handle_corpus_pick(text, ctx)
 
-    if state == "confirm_write":
-        return _handle_write_confirm(text, ctx)
-
     if _is_url(text):
         return _handle_url(text)
 
     if text.startswith("/"):
         return _handle_slash(text)
 
-    if len(text) > 20 and not text.endswith("?"):
-        return _suggest_write_or_search(text)
-
-    if text.endswith("?") or text.lower().startswith(("how", "what", "why", "when", "where", "who", "tell", "explain")):
-        return _handle_question(text)
-
-    return {
-        "lines": [
-            {"type": "resp", "text": f'Not sure what to do with "{text}". Try:'},
-            {"type": "hint", "text": "Paste a URL to import, ask a question, or type / for shortcuts"},
-        ],
-        "context": {"state": "idle"},
-    }
+    # Default: chat with Noos.
+    return _handle_question(text)
 
 
 def _is_url(text: str) -> bool:
@@ -209,89 +199,78 @@ def _handle_slash(text: str) -> dict:
     return {"lines": [{"type": "resp", "text": f'Unknown command: {text}. Type / for help.'}], "context": {"state": "idle"}}
 
 
-def _suggest_write_or_search(text: str) -> dict:
-    return {
-        "lines": [
-            {"type": "resp", "text": "What would you like to do with this?"},
-            {"type": "option", "text": "[1] Save as a new source in a corpus", "value": "1"},
-            {"type": "option", "text": "[2] Search this across the Noosphere", "value": "2"},
-        ],
-        "context": {"state": "confirm_write", "original_text": text},
-    }
-
-
-def _handle_write_confirm(text: str, ctx: dict) -> dict:
-    original = ctx.get("original_text", "")
-    if text.strip() == "1":
-        result = _resolve_corpus_or_prompt(write_content=original, write_title="Note")
-        if result["prompt"]:
-            return result["prompt"]
-
-        corpus = result["corpus"]
-        ingest_text(corpus["id"], title="Note", content=original)
-        idx = index_corpus(corpus["id"])
-        return {
-            "lines": [
-                {"type": "resp", "text": f'✓ Saved to "{corpus["name"]}"'},
-                {"type": "resp", "text": f"✓ Indexed: {idx['chunk_count']} chunks"},
-                {"type": "card", "label": "Source Added", "status": "READY",
-                 "detail": f'{corpus["name"]} · {idx["chunk_count"]} chunks',
-                 "corpus_id": corpus["id"]},
-            ],
-            "context": {"state": "idle"},
-        }
-
-    if text.strip() == "2":
-        return _handle_question(original)
-
-    return {"lines": [{"type": "resp", "text": "Please enter 1 or 2."}], "context": ctx}
-
-
 def _handle_question(text: str) -> dict:
+    """Chat with Noos: LLM-synthesized answer grounded in cross-corpus retrieval.
+
+    Falls back to a raw search-result list if no LLM provider is configured
+    (so the home terminal still gives useful output without API keys).
+    """
     corpora = list_corpora(include_private=False)
     ready = [c for c in corpora if c.get("status") == "ready" and c.get("access_level") == "public"]
 
     if not ready:
         return {
-            "lines": [{"type": "resp", "text": "No indexed corpora yet. Import a URL or upload files first."}],
+            "lines": [{"type": "resp", "text": "Nothing indexed yet — paste a URL or drop a file to start."}],
             "context": {"state": "idle"},
         }
 
-    from noosphere.core.retrieval import search_corpus
-    all_results = []
-    corpus_names = {}
-    for c in ready:
-        corpus_names[c["id"]] = c["name"]
-        try:
-            result = search_corpus(c["id"], text, top_k=3, include_context=True)
-            for r in result.get("results", []):
-                r["corpus_id"] = c["id"]
-                r["corpus_name"] = c["name"]
-                all_results.append(r)
-        except Exception:
-            continue
+    from noosphere.core.chat import chat_with_noosphere
 
-    all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
-    top = all_results[:5]
-
-    if not top:
+    try:
+        result = chat_with_noosphere(text, top_k=5)
+    except Exception as e:
         return {
-            "lines": [{"type": "resp", "text": f"No results found for \"{text}\" across {len(ready)} corpora."}],
+            "lines": [{"type": "resp", "text": f"Error: {str(e)[:120]}"}],
             "context": {"state": "idle"},
         }
 
-    lines = [{"type": "resp", "text": f"Found {len(all_results)} results across {len(ready)} corpora:"}]
-    for r in top:
-        chunk_text = r.get("text", "")
-        if len(chunk_text) > 200:
-            chunk_text = chunk_text[:200] + "..."
-        cite = r.get("citation", {})
-        title = cite.get("document_title", "") or r.get("text", "")[:60]
-        lines.append({
-            "type": "search_result",
-            "title": title,
-            "text": chunk_text,
-            "score": r.get("score", 0),
-            "source": r.get("corpus_name", ""),
-        })
+    response_text = (result.get("response") or "").strip()
+    citations = result.get("citations", []) or []
+
+    # No LLM configured → fall back to raw top-chunks display so the terminal
+    # is still useful without API keys (e.g. on a demo install).
+    if not response_text or response_text.startswith("No LLM provider"):
+        from noosphere.core.retrieval import search_corpus
+        all_results = []
+        for c in ready:
+            try:
+                sr = search_corpus(c["id"], text, top_k=3, include_context=True)
+                for r in sr.get("results", []):
+                    r["corpus_name"] = c["name"]
+                    all_results.append(r)
+            except Exception:
+                continue
+        all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        top = all_results[:5]
+        if not top:
+            return {
+                "lines": [{"type": "resp", "text": f'No matches for "{text}" across {len(ready)} corpora.'}],
+                "context": {"state": "idle"},
+            }
+        lines = [{"type": "resp", "text": "Top matches (no LLM configured — showing raw chunks):"}]
+        for r in top:
+            chunk_text = r.get("text", "")
+            if len(chunk_text) > 200:
+                chunk_text = chunk_text[:200] + "..."
+            cite = r.get("citation", {})
+            title = cite.get("document_title", "") or chunk_text[:60]
+            lines.append({
+                "type": "search_result",
+                "title": title,
+                "text": chunk_text,
+                "score": r.get("score", 0),
+                "source": r.get("corpus_name", ""),
+            })
+        return {"lines": lines, "context": {"state": "idle"}}
+
+    # Noos answer + compact sources footer
+    lines = [{"type": "resp", "text": response_text}]
+    if citations:
+        source_names = []
+        for c in citations[:5]:
+            name = c.get("corpus_name") or c.get("title") or ""
+            if name and name not in source_names:
+                source_names.append(name)
+        if source_names:
+            lines.append({"type": "hint", "text": "Sources: " + " · ".join(source_names[:4])})
     return {"lines": lines, "context": {"state": "idle"}}
