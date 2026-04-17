@@ -410,30 +410,42 @@ def test_access_level_change_to_public_blocked_when_external_only(client, corpus
 
 
 def test_search_filters_external_for_external_caller(client, corpus):
-    # Arrange: one user_original doc, one external doc. Index, then search with owner vs external.
+    """Caller-aware filter hides external_* from non-owners. Uses a mocked embedder
+    so the test doesn't require a real API key in CI.
+    """
     from noosphere.core.ingest import ingest_text
-    from noosphere.core.indexer import index_corpus
     ingest_text(corpus["id"], title="My note", content="alpha beta gamma original thinking here", source_kind="user_original")
     ingest_text(corpus["id"], title="External", content="alpha beta gamma external material here", source_kind="external_public")
-    index_corpus(corpus["id"])
 
-    # Owner caller (owner is detected via TestClient being localhost + no x-agent-id header)
-    r = client.post(f"/api/v1/corpora/{corpus['id']}/search", json={"query": "alpha beta"})
-    assert r.status_code == 200
-    owner_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
-    assert "My note" in owner_titles
-    assert "External" in owner_titles
+    def _mock_embedder():
+        m = MagicMock()
+        m.embed.side_effect = lambda texts: np.random.randn(len(texts), 8).astype(np.float32)
+        m.dim.return_value = 8
+        m.model_name.return_value = "mock-embed"
+        return m
 
-    # External caller (x-agent-id header forces non-owner detection)
-    r = client.post(
-        f"/api/v1/corpora/{corpus['id']}/search",
-        json={"query": "alpha beta"},
-        headers={"x-agent-id": "agent-1"},
-    )
-    assert r.status_code == 200
-    external_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
-    assert "My note" in external_titles
-    assert "External" not in external_titles
+    with patch("noosphere.core.indexer.get_embedder", return_value=_mock_embedder()):
+        from noosphere.core.indexer import index_corpus
+        index_corpus(corpus["id"])
+
+    with patch("noosphere.core.retrieval.get_embedder", return_value=_mock_embedder()):
+        # Owner caller (owner is detected via TestClient being localhost + no x-agent-id header)
+        r = client.post(f"/api/v1/corpora/{corpus['id']}/search", json={"query": "alpha beta"})
+        assert r.status_code == 200
+        owner_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
+        assert "My note" in owner_titles
+        assert "External" in owner_titles
+
+        # External caller (x-agent-id header forces non-owner detection)
+        r = client.post(
+            f"/api/v1/corpora/{corpus['id']}/search",
+            json={"query": "alpha beta"},
+            headers={"x-agent-id": "agent-1"},
+        )
+        assert r.status_code == 200
+        external_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
+        assert "My note" in external_titles
+        assert "External" not in external_titles
 
 
 # ── Phase 0.5: entity extraction ──
