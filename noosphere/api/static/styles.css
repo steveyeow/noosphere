@@ -181,10 +181,10 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .rp-subtle-link:hover{color:var(--tx)}
 .rp-subtle-link.rp-danger{color:#ef4444}
 .rp-subtle-link.rp-danger:hover{color:#b91c1c}
-.rp-handles-row{flex-direction:column;align-items:flex-start}
-.rp-handles-row .rp-detail-label{margin-bottom:4px}
 .rp-entities-row{font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .rp-maint-row{display:flex;gap:14px;flex-wrap:wrap;font-size:12px}
+.rp-handles-body{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;margin-bottom:6px}
+.rp-hint{font-size:11px;color:var(--tx3);line-height:1.5;font-style:italic}
 
 /* ── Entity list (corpus detail page) ── */
 .cv-ent-group{margin-bottom:10px}
