@@ -618,6 +618,55 @@ async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ── Entity extraction (Phase 0.5) ──
+
+
+class ExtractEntitiesRequest(BaseModel):
+    limit: int = 50
+
+
+@router.get("/corpora/{corpus_id}/entities")
+async def api_list_entities(corpus_id: str, request: Request, kind: Optional[str] = None):
+    """List entities in the corpus, annotated with mention counts."""
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    from noosphere.core.entities import list_entities
+    return {"entities": list_entities(corpus["id"], kind=kind)}
+
+
+@router.post("/corpora/{corpus_id}/documents/{doc_id}/extract-entities")
+async def api_extract_document_entities(corpus_id: str, doc_id: str, request: Request):
+    """Run entity extraction on a single document."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "extract_entities")
+    from noosphere.core.entities import enrich_document
+    result = enrich_document(doc_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _track_usage(request, "extract_entities")
+    return result
+
+
+@router.post("/corpora/{corpus_id}/extract-entities")
+async def api_extract_corpus_entities(
+    corpus_id: str, req: ExtractEntitiesRequest, request: Request,
+):
+    """Batch entity extraction across unenriched documents.
+
+    Separate from /enrich (which polls RSS feeds). This runs an LLM pass
+    per doc to populate the entities table; call repeatedly until
+    remaining == 0 on large corpora.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "extract_entities")
+    from noosphere.core.entities import enrich_corpus
+    result = enrich_corpus(corpus["id"], limit=max(1, min(req.limit, 200)))
+    _track_usage(request, "extract_entities", tokens_used=result.get("enriched", 0))
+    return result
+
+
 @router.post("/corpora/{corpus_id}/compile")
 async def api_compile_concept(corpus_id: str, req: CompileRequest, request: Request):
     """LLM-compile a concept note from retrieved passages (knowledge fusion)."""

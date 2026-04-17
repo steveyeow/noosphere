@@ -132,6 +132,14 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-upload-remove{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px;transition:color .12s}.term-upload-remove:hover{color:var(--tx)}
 .term-upload-size{color:var(--tx3);font-size:10px}
 .term-upload-actions{display:flex;gap:8px;margin-top:12px;margin-bottom:10px}
+/* ── Entity list (corpus detail page) ── */
+.cv-ent-group{margin-bottom:10px}
+.cv-ent-kind{font-size:11px;color:var(--tx3);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.cv-ent-row{display:flex;flex-wrap:wrap;gap:5px}
+.cv-ent-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--tx2);padding:3px 9px;border-radius:12px;background:var(--bg2);border:1px solid var(--brd);transition:background .12s}
+.cv-ent-chip:hover{background:var(--bgH)}
+.cv-ent-cnt{font-size:9px;color:var(--tx3);padding:1px 5px;background:var(--bg);border-radius:8px}
+
 /* ── Access confirm modal ── */
 .acm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;animation:termFadeIn .15s ease-out}
 .acm-panel{background:var(--bg);border:1px solid var(--brd);border-radius:14px;padding:24px;max-width:460px;width:92%;box-shadow:0 12px 36px rgba(0,0,0,.22)}

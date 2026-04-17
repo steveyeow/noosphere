@@ -336,9 +336,19 @@ def ingest_url(
                 owned = []
         source_kind = "user_original" if _url_matches_owned_handles(url, owned) else "external_public"
 
+    # Free author detection from <meta> tags — attaches author entity for
+    # external content so entity pages can aggregate "what Lenny wrote".
+    author_entity_id: str | None = None
+    if source_kind.startswith("external_"):
+        from noosphere.core.entities import detect_html_author, upsert_entity
+        author_name = detect_html_author(html)
+        if author_name:
+            author_entity_id = upsert_entity(corpus_id, "person", author_name)
+
     return ingest_text(
         corpus_id, title=title, content=body, doc_type=doc_type,
         source_kind=source_kind,
+        author_entity_id=author_entity_id,
         metadata={"source_url": url},
     )
 
