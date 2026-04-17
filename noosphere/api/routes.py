@@ -214,6 +214,16 @@ class CompileRequest(BaseModel):
     top_k: int = 10
 
 
+class RecompileRequest(BaseModel):
+    """Force-recompile a living concept's compiled truth from its timeline sources."""
+    force: bool = False
+
+
+class RecompileDirtyRequest(BaseModel):
+    """Batch recompile every concept in a corpus that is dirty (or all, with force)."""
+    force: bool = False
+
+
 class MaintainRequest(BaseModel):
     force: bool = False
 
@@ -554,6 +564,52 @@ async def api_compile_concept(corpus_id: str, req: CompileRequest, request: Requ
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/documents/{doc_id}/recompile")
+async def api_recompile_concept(
+    corpus_id: str, doc_id: str, req: RecompileRequest, request: Request,
+):
+    """Regenerate a concept doc's compiled truth from its timeline sources.
+
+    Snapshots the prior version to ``concept_versions`` so history is diff-able.
+    Body ``{"force": true}`` bypasses the pending-changes threshold.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
+    from noosphere.core.knowledge_growth import recompile_concept_if_dirty
+
+    try:
+        result = recompile_concept_if_dirty(doc_id, force=req.force)
+        if result.get("status") == "recompiled":
+            _track_usage(request, "compile")
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/corpora/{corpus_id}/documents/{doc_id}/versions")
+async def api_concept_versions(corpus_id: str, doc_id: str, request: Request):
+    """List all snapshot versions of a concept doc (oldest first)."""
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    from noosphere.core.knowledge_growth import get_concept_versions
+
+    return {"document_id": doc_id, "versions": get_concept_versions(doc_id)}
+
+
+@router.post("/corpora/{corpus_id}/recompile-dirty")
+async def api_recompile_dirty(
+    corpus_id: str, req: RecompileDirtyRequest, request: Request,
+):
+    """Batch-recompile all dirty concept docs in this corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
+    from noosphere.core.knowledge_growth import recompile_dirty_concepts
+
+    return recompile_dirty_concepts(corpus["id"], force=req.force)
 
 
 @router.get("/corpora/{corpus_id}/knowledge-health")

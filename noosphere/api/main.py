@@ -34,7 +34,6 @@ async def _enrichment_loop():
         try:
             from noosphere.core.corpus import list_corpora
             from noosphere.core.knowledge_growth import ingest_rss_feed, run_corpus_maintain
-            import json as _json
             conn = get_conn()
             for c in list_corpora():
                 feed_rows = conn.execute(
