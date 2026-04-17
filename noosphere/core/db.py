@@ -334,6 +334,7 @@ MIGRATION_SQL = [
     "ALTER TABLE documents ADD COLUMN indexed_at TEXT",
     "ALTER TABLE corpora ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph'",
     "ALTER TABLE corpora ADD COLUMN stale_threshold_days INTEGER DEFAULT 365",
+    "ALTER TABLE corpora ADD COLUMN auto_capture INTEGER DEFAULT 1",
 ]
 
 

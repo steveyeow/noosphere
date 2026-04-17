@@ -33,10 +33,14 @@ async def _enrichment_loop():
     while True:
         try:
             from noosphere.core.corpus import list_corpora
-            from noosphere.core.knowledge_growth import ingest_rss_feed, run_corpus_maintain
+            from noosphere.core.knowledge_growth import (
+                ingest_rss_feed, run_corpus_maintain,
+                enrich_extract_backfill, enrich_auto_compile,
+            )
             import json as _json
             conn = get_conn()
             for c in list_corpora():
+                # Phase 1: RSS Polling
                 feed_rows = conn.execute(
                     "SELECT DISTINCT json_extract(metadata_json, '$.source_feed') as feed "
                     "FROM documents WHERE corpus_id=? AND json_extract(metadata_json, '$.source_feed') IS NOT NULL",
@@ -55,6 +59,26 @@ async def _enrichment_loop():
                         run_corpus_maintain(c["id"], force_reindex=False)
                     except Exception:
                         pass
+
+                # Phase 2 & 3: LLM-based enrichment (entity extraction + auto-compile)
+                # Skipped in cloud mode — users trigger manually via "Enrich Now" within their quota.
+                # Self-hosted: runs only if an LLM API key is configured.
+                from noosphere.core.config import ENABLE_CLOUD, GEMINI_API_KEY, OPENAI_API_KEY
+                if not ENABLE_CLOUD and (GEMINI_API_KEY or OPENAI_API_KEY):
+                    try:
+                        result = enrich_extract_backfill(c["id"], limit=10)
+                        if result.get("extracted", 0) > 0:
+                            logger.info("Background enrich: extracted entities for %d docs in corpus %s", result["extracted"], c["id"])
+                    except Exception:
+                        pass
+                    try:
+                        result = enrich_auto_compile(c["id"], limit=2)
+                        compiled = result.get("compiled", [])
+                        if compiled:
+                            logger.info("Background enrich: compiled %d concept notes in corpus %s", len(compiled), c["id"])
+                    except Exception:
+                        pass
+
             logger.info("Enrichment cycle complete")
         except Exception:
             logger.warning("Enrichment cycle error", exc_info=True)
@@ -90,6 +114,12 @@ async def _health_check_loop():
 async def lifespan(app):
     global _scheduler_task
     get_conn()
+    # Register post-ingest hooks (entity extraction on new documents)
+    try:
+        from noosphere.core.knowledge_growth import register_entity_extraction_hook
+        register_entity_extraction_hook()
+    except Exception:
+        logger.warning("Failed to register entity extraction hook", exc_info=True)
     _scheduler_task = asyncio.gather(
         asyncio.create_task(_enrichment_loop()),
         asyncio.create_task(_health_check_loop()),

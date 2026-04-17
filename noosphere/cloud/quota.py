@@ -27,6 +27,7 @@ QUOTA_LIMITS = {
         "ingest_feed": 1,      # feed ingestions per day
         "compile": 2,          # concept compilations per day
         "chat": 20,            # chat messages per day
+        "enrich": 2,           # enrichment cycles (entity extraction, compile) per day
     },
     "pro": {
         "search": 10000,
@@ -34,6 +35,7 @@ QUOTA_LIMITS = {
         "ingest_feed": 20,
         "compile": 50,
         "chat": 500,
+        "enrich": 50,
     },
 }
 

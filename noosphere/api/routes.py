@@ -173,6 +173,7 @@ class UpdateCorpusRequest(BaseModel):
     description: Optional[str] = None
     access_level: Optional[str] = None
     tags: Optional[list[str]] = None
+    auto_capture: Optional[int] = None
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -521,6 +522,52 @@ async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Reque
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.post("/corpora/{corpus_id}/import-twitter-archive")
+async def api_import_twitter_archive(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import a Twitter/X data archive ZIP into a corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+
+    import tempfile
+    from noosphere.core.importers import import_twitter_archive
+
+    raw = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp.write(raw)
+        tmp_path = tmp.name
+
+    try:
+        return import_twitter_archive(corpus["id"], tmp_path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        import os
+        os.unlink(tmp_path)
+
+
+@router.post("/corpora/{corpus_id}/import-notion-export")
+async def api_import_notion_export(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import a Notion workspace export ZIP into a corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+
+    import tempfile
+    from noosphere.core.importers import import_notion_export
+
+    raw = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp.write(raw)
+        tmp_path = tmp.name
+
+    try:
+        return import_notion_export(corpus["id"], tmp_path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        import os
+        os.unlink(tmp_path)
+
+
 @router.post("/corpora/{corpus_id}/capture")
 async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
     """Persist text into the corpus (e.g. assistant reply from chat)."""
@@ -638,6 +685,75 @@ async def api_enrich_corpus(corpus_id: str, request: Request):
         "index": index_result,
         "health": health,
     }
+
+
+# ── Enrichment Cycle ──
+
+@router.post("/corpora/{corpus_id}/dream")
+async def api_dream_cycle(corpus_id: str, request: Request):
+    """Trigger an enrichment cycle: entity backfill, auto-compile, health check."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "enrich")
+    from noosphere.core.knowledge_growth import run_enrich_cycle
+
+    try:
+        result = run_enrich_cycle(corpus["id"])
+        _track_usage(request, "enrich")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Entity Extraction ──
+
+@router.post("/corpora/{corpus_id}/documents/{doc_id}/extract-entities")
+async def api_extract_entities(corpus_id: str, doc_id: str, request: Request):
+    """Run entity extraction on a single document."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "enrich")
+    from noosphere.core.knowledge_growth import extract_and_tag
+
+    result = extract_and_tag(doc_id)
+    if result is None:
+        raise HTTPException(status_code=400, detail="Extraction failed or document too short")
+    _track_usage(request, "enrich")
+    return result
+
+
+@router.post("/corpora/{corpus_id}/extract-all-entities")
+async def api_extract_all_entities(corpus_id: str, request: Request):
+    """Run entity extraction on all documents missing entities in this corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "enrich")
+    from noosphere.core.knowledge_growth import extract_and_tag
+
+    conn = get_conn()
+    docs = conn.execute(
+        "SELECT id, metadata_json FROM documents WHERE corpus_id=?",
+        (corpus["id"],),
+    ).fetchall()
+
+    extracted = 0
+    skipped = 0
+    for doc in docs:
+        try:
+            meta = _json.loads(doc["metadata_json"] or "{}")
+        except _json.JSONDecodeError:
+            meta = {}
+        if "entities" in meta:
+            skipped += 1
+            continue
+        result = extract_and_tag(doc["id"])
+        if result:
+            extracted += 1
+        else:
+            skipped += 1
+
+    _track_usage(request, "enrich")
+    return {"corpus_id": corpus["id"], "extracted": extracted, "skipped": skipped, "total": len(docs)}
 
 
 # ── Indexing ──
@@ -993,10 +1109,13 @@ def _search_registered_corpora(query: str, limit: int = 20) -> list[dict]:
 # ── Chat ──
 
 @router.post("/chat")
-async def api_global_chat(req: ChatRequest):
+async def api_global_chat(req: ChatRequest, request: Request):
     """Chat across all public corpora in the Noosphere."""
+    _check_quota(request, "chat")
     from noosphere.core.chat import chat_with_noosphere
-    return chat_with_noosphere(req.message, history=req.history, top_k=req.top_k)
+    result = chat_with_noosphere(req.message, history=req.history, top_k=req.top_k)
+    _track_usage(request, "chat")
+    return result
 
 
 @router.post("/corpora/{corpus_id}/chat")
@@ -1041,6 +1160,24 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
 
     _track_usage(request, "chat")
     result["session_id"] = session_id
+
+    # Auto-capture qualifying responses if enabled on this corpus
+    try:
+        auto_capture_enabled = corpus.get("auto_capture", 1)
+        if auto_capture_enabled:
+            from noosphere.core.knowledge_growth import evaluate_and_auto_capture
+            cap = evaluate_and_auto_capture(
+                corpus["id"],
+                user_message=req.message,
+                assistant_response=result.get("response", ""),
+                citations=result.get("citations", []),
+                session_id=session_id,
+            )
+            if cap:
+                result["auto_captured"] = {"id": cap["id"], "title": cap["title"]}
+    except Exception:
+        pass  # Never fail the chat response
+
     return result
 
 

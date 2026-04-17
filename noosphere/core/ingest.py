@@ -7,7 +7,28 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import logging
+
 from noosphere.core.db import get_conn
+
+logger = logging.getLogger(__name__)
+
+# Post-ingest hooks: list of callables(doc_dict) invoked after each document insert.
+_post_ingest_hooks: list = []
+
+
+def register_post_ingest_hook(fn):
+    """Register a function to be called after each document is ingested."""
+    _post_ingest_hooks.append(fn)
+
+
+def _run_post_ingest_hooks(doc: dict):
+    """Run all registered post-ingest hooks, catching errors."""
+    for hook in _post_ingest_hooks:
+        try:
+            hook(doc)
+        except Exception as e:
+            logger.warning("Post-ingest hook %s failed for doc %s: %s", hook.__name__, doc.get("id"), e)
 
 
 def _now() -> str:
@@ -247,7 +268,7 @@ def ingest_text(
     conn.commit()
     _update_corpus_counts(corpus_id)
 
-    return {
+    doc = {
         "id": doc_id,
         "corpus_id": corpus_id,
         "title": title,
@@ -255,6 +276,8 @@ def ingest_text(
         "date": date,
         "word_count": wc,
     }
+    _run_post_ingest_hooks(doc)
+    return doc
 
 
 def ingest_url(corpus_id: str, url: str, *, doc_type: str = "blog") -> dict:

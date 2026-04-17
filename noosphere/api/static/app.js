@@ -808,7 +808,7 @@ function showCorpusAddDoc(corpusId){
   const container=document.getElementById('cv-docs');if(!container)return;
   if(document.getElementById('cv-add-panel'))return;
   const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
+  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="twitter">Twitter Archive</button><button class="cv-add-tab" data-tab="notion">Notion Export</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
   container.parentNode.insertBefore(panel,container);
 
   const body=panel.querySelector('#cv-add-body');
@@ -835,20 +835,6 @@ function showCorpusAddDoc(corpusId){
         goBtn.textContent='Indexing...';
         try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
         _files=[];panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='write'){
-      body.innerHTML=`<input type="text" class="term-write-title" id="cv-add-title" placeholder="Title" style="margin-bottom:6px" /><textarea class="term-write-body" id="cv-add-text" placeholder="Write your knowledge here... (Markdown supported)" rows="6" style="min-height:100px"></textarea><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Save & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-title').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const title=body.querySelector('#cv-add-title').value.trim(),text=body.querySelector('#cv-add-text').value.trim();
-        if(!title||!text){toast('Title and content are required');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Saving...';
-        const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+text],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
-        try{await fetch(`${API}/corpora/${corpusId}/upload`,{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save & Index';return}
-        btn.textContent='Indexing...';
-        try{await fetch(`${API}/corpora/${corpusId}/index`,{method:'POST'})}catch(e){}
-        panel.remove();renderCorpus(corpusId);
       };
     } else if(tab==='url'){
       body.innerHTML=`<input type="text" class="fi" id="cv-add-url" placeholder="https://example.com/article" style="font-size:13px" /><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
@@ -879,7 +865,7 @@ function showCorpusAddDoc(corpusId){
         panel.remove();renderCorpus(corpusId);
       };
     } else if(tab==='feed'){
-      body.innerHTML=`<input type="text" class="fi" id="cv-add-feed" placeholder="https://example.com/feed.xml" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Max items:</label><input type="number" class="fi" id="cv-add-feed-max" value="25" min="1" max="100" style="width:60px;font-size:12px" /></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch Feed & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      body.innerHTML=`<input type="text" class="fi" id="cv-add-feed" placeholder="https://blog.example.com/feed or /rss or /atom.xml" style="font-size:13px" /><div style="font-size:11px;color:var(--tx3);margin-top:6px">Any RSS or Atom feed URL. Most blogs have one — try /feed, /rss, or /index.xml. Once added, new entries are <strong>automatically fetched every hour</strong>.</div><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Max items:</label><input type="number" class="fi" id="cv-add-feed-max" value="25" min="1" max="100" style="width:60px;font-size:12px" /></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Fetch Feed & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
       body.querySelector('#cv-add-feed').focus();
       body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
       body.querySelector('#cv-add-go').onclick=async()=>{
@@ -890,16 +876,38 @@ function showCorpusAddDoc(corpusId){
         try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-feed`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feed_url:feedUrl,max_items:maxItems})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Fetched ${d.fetched||0} entries, ingested ${d.ingested||0}`,'success')}catch(e){toast('Feed ingest failed: '+e.message);btn.disabled=false;btn.textContent='Fetch Feed & Index';return}
         panel.remove();renderCorpus(corpusId);
       };
-    } else if(tab==='compile'){
-      body.innerHTML=`<input type="text" class="fi" id="cv-add-topic" placeholder="Topic to compile, e.g. &quot;pricing strategy&quot;" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cv-add-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px">Retrieves top passages and uses an LLM to compile a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Compile</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-topic').focus();
+    } else if(tab==='twitter'){
+      body.innerHTML=`<div class="cv-add-dz" id="cv-add-dz-tw"><input type="file" id="cv-add-tw-fi" accept=".zip" hidden /><div style="color:var(--tx3);font-size:13px">Drop your Twitter/X archive ZIP here, or <span style="color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px" id="cv-add-tw-browse">browse</span></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">Download from Settings > Your Account > Download an archive</div></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Import Archive</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      let _twFile=null;
+      const dz=body.querySelector('#cv-add-dz-tw'),fi=body.querySelector('#cv-add-tw-fi');
+      const goBtn=body.querySelector('#cv-add-go');
+      body.querySelector('#cv-add-tw-browse').onclick=()=>fi.click();
+      dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
+      dz.ondragleave=()=>dz.classList.remove('drag-over');
+      dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0]){_twFile=e.dataTransfer.files[0];dz.querySelector('div').textContent=_twFile.name;goBtn.disabled=false}};
+      fi.onchange=()=>{if(fi.files[0]){_twFile=fi.files[0];dz.querySelector('div').textContent=_twFile.name;goBtn.disabled=false}};
       body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const topic=body.querySelector('#cv-add-topic').value.trim();
-        const topK=parseInt(body.querySelector('#cv-add-topk').value)||10;
-        if(!topic){toast('Enter a topic');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Compiling...';
-        try{const r=await fetch(`${API}/corpora/${corpusId}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,top_k:topK})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Compiled: ${d.title||topic}`,'success')}catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='Compile';return}
+      goBtn.onclick=async()=>{
+        if(!_twFile)return;goBtn.disabled=true;goBtn.textContent='Importing...';
+        const fd=new FormData();fd.append('file',_twFile);
+        try{const r=await fetch(`${API}/corpora/${corpusId}/import-twitter-archive`,{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Imported ${d.imported||0} tweets (${d.skipped||0} skipped)`,'success')}catch(e){toast('Import failed: '+e.message);goBtn.disabled=false;goBtn.textContent='Import Archive';return}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='notion'){
+      body.innerHTML=`<div class="cv-add-dz" id="cv-add-dz-nt"><input type="file" id="cv-add-nt-fi" accept=".zip" hidden /><div style="color:var(--tx3);font-size:13px">Drop your Notion export ZIP here, or <span style="color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px" id="cv-add-nt-browse">browse</span></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">Export from Notion: Settings > Export all workspace content</div></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Import Notion</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
+      let _ntFile=null;
+      const dz=body.querySelector('#cv-add-dz-nt'),fi=body.querySelector('#cv-add-nt-fi');
+      const goBtn=body.querySelector('#cv-add-go');
+      body.querySelector('#cv-add-nt-browse').onclick=()=>fi.click();
+      dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
+      dz.ondragleave=()=>dz.classList.remove('drag-over');
+      dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0]){_ntFile=e.dataTransfer.files[0];dz.querySelector('div').textContent=_ntFile.name;goBtn.disabled=false}};
+      fi.onchange=()=>{if(fi.files[0]){_ntFile=fi.files[0];dz.querySelector('div').textContent=_ntFile.name;goBtn.disabled=false}};
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      goBtn.onclick=async()=>{
+        if(!_ntFile)return;goBtn.disabled=true;goBtn.textContent='Importing...';
+        const fd=new FormData();fd.append('file',_ntFile);
+        try{const r=await fetch(`${API}/corpora/${corpusId}/import-notion-export`,{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Imported ${d.imported||0} pages (${d.skipped||0} skipped)`,'success')}catch(e){toast('Import failed: '+e.message);goBtn.disabled=false;goBtn.textContent='Import Notion';return}
         panel.remove();renderCorpus(corpusId);
       };
     }
@@ -1083,6 +1091,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     <div id="rp-tokens" class="rp-sec" style="display:${al==='token'?'block':'none'}"><div class="rp-lbl">Access Tokens</div><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate Token</button><div id="rp-tk-list"></div></div>
     <div id="rp-pricing" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Pricing</div><div id="rp-pricing-body"></div></div>
     <div id="rp-revenue" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Revenue</div><div id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading...</div></div>
+    <div class="rp-sec"><div class="rp-lbl">Knowledge Growth</div><div class="rp-detail-row"><span class="rp-detail-label">Auto-capture chat insights</span><label class="rp-toggle"><input type="checkbox" id="rp-auto-capture" ${c.auto_capture!==0?'checked':''}><span class="rp-toggle-slider"></span></label></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">Qualifying chat responses are automatically saved as documents.</div><div style="margin-top:10px"><button class="btn-sm" id="rp-enrich-full" style="width:100%">Enrich Now</button></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">Extract entities, compile concepts, and check health.</div><div id="rp-enrich-result"></div></div>
     <div class="rp-sec"><div class="rp-lbl">Details</div>${c.author_name?`<div class="rp-detail-row"><span class="rp-detail-label">Author</span><span>${esc(c.author_name)}</span></div>`:''}${c.embedding_model?`<div class="rp-detail-row"><span class="rp-detail-label">Model</span><span>${esc(c.embedding_model)}</span></div>`:''}<div class="rp-detail-row"><span class="rp-detail-label">Status</span><span>${esc(c.status)}</span></div></div>`;
 
   document.getElementById('rp-acc').onchange=()=>{
@@ -1094,6 +1103,26 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     if(v==='paid')loadPricingUI(c);
   };
   document.getElementById('rp-sv').onclick=async()=>{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:document.getElementById('rp-acc').value})});await loadC();renderCorpus(c.id)};
+
+  /* Auto-capture toggle */
+  document.getElementById('rp-auto-capture').onchange=async(e)=>{
+    const val=e.target.checked?1:0;
+    await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({auto_capture:val})});
+    await loadC();
+  };
+
+  /* Enrich trigger */
+  document.getElementById('rp-enrich-full').onclick=async()=>{
+    const btn=document.getElementById('rp-enrich-full');const res=document.getElementById('rp-enrich-result');
+    btn.disabled=true;btn.textContent='Enriching...';res.innerHTML='';
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/dream`,{method:'POST'});const d=await r.json();
+      const eb=d.entity_backfill||{};const ac=d.auto_compile||{};
+      res.innerHTML=`<div style="font-size:11px;color:var(--tx2);margin-top:6px;line-height:1.5">Entities extracted: ${eb.extracted||0}<br>Concepts compiled: ${(ac.compiled||[]).length}<br>Health: ${d.health?.document_count||'?'} docs</div>`;
+      toast('Enrichment complete','success');
+    }catch(e){toast('Enrichment failed');res.innerHTML=''}
+    btn.disabled=false;btn.textContent='Enrich Now';
+  };
 
   /* Token management */
   async function loadTokens(){
@@ -1215,6 +1244,9 @@ function renderPricing(){
           <li>20 chat messages per day</li>
           <li>1,000 queries per month</li>
           <li>5 URL imports per day</li>
+          <li>1 RSS feed import per day</li>
+          <li>2 enrichment cycles per day</li>
+          <li>2 auto-compiled concept notes per day</li>
         </ul>
         ${currentTier==='free'?'<div class="pg-badge">Current plan</div>':''}
       </div>
@@ -1229,6 +1261,9 @@ function renderPricing(){
           <li>500 chat messages per day</li>
           <li>100,000 queries per month</li>
           <li>100 URL imports per day</li>
+          <li>20 RSS feed imports per day</li>
+          <li>50 enrichment cycles per day</li>
+          <li>50 auto-compiled concept notes per day</li>
           <li>Stripe Connect — earn from paid corpora</li>
           <li>Priority access</li>
         </ul>
