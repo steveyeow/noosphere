@@ -817,7 +817,7 @@ function showCorpusCompile(corpusId){
   const container=document.getElementById('cv-wiki-docs');if(!container)return;
   if(document.getElementById('cv-compile-panel'))return;
   const panel=document.createElement('div');panel.id='cv-compile-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-body"><input type="text" class="fi" id="cc-topic" placeholder='Topic to compile, e.g. "pricing strategy"' style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cc-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">Retrieves top passages from your Sources and uses an LLM to synthesize a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cc-go">✨ Compile</button><button class="btn-sm-ghost" id="cc-cancel">Cancel</button></div></div>`;
+  panel.innerHTML=`<div class="cv-add-body"><input type="text" class="fi" id="cc-topic" placeholder='Topic to compile, e.g. "pricing strategy"' style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cc-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">Retrieves top passages from your Sources and uses an LLM to synthesize a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cc-go">Compile</button><button class="btn-sm-ghost" id="cc-cancel">Cancel</button></div></div>`;
   container.parentNode.insertBefore(panel,container);
   const topic=panel.querySelector('#cc-topic');topic.focus();
   panel.querySelector('#cc-cancel').onclick=()=>panel.remove();
@@ -830,7 +830,7 @@ function showCorpusCompile(corpusId){
       if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
       const d=await r.json();toast(`Compiled: ${d.title||t}`,'success');
       panel.remove();renderCorpus(corpusId);
-    }catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='✨ Compile'}
+    }catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='Compile'}
   };
 }
 
@@ -964,9 +964,9 @@ async function renderCorpus(id,sessionId){
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
     return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span></span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
   };
-  const wikiEmpty='<div class="empty">No concept notes yet — ✨ Compile to synthesize from your sources.</div>';
+  const wikiEmpty='<div class="empty">No concept notes yet — Compile to synthesize from your sources.</div>';
   const rawEmpty='<div class="empty">No sources yet — + Add to import URLs, upload files, or import an archive.</div>';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">✨ Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div></div>`;
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div></div>`;
   showRP(c,an);
   document.getElementById('cv-desc-edit').onclick=()=>{
     const wrap=document.querySelector('.cv-desc-wrap');
@@ -996,7 +996,6 @@ async function renderCorpus(id,sessionId){
   setupCorpusInteract(id,sessionId);
 }
 
-const ENTITY_KIND_ICON={person:'👤',concept:'💡',work:'📚',place:'📍'};
 async function loadCorpusEntities(corpusId){
   const list=document.getElementById('cv-entities-list');if(!list)return;
   try{
@@ -1004,14 +1003,14 @@ async function loadCorpusEntities(corpusId){
     if(!r.ok){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>';return}
     const d=await r.json();
     const ents=(d.entities||[]).filter(e=>e.mention_count>0);
-    if(!ents.length){list.innerHTML='<div class="empty" style="font-size:12px;color:var(--tx3)">No entities extracted yet — click ⚡ Extract to identify people, companies, and concepts mentioned in your documents.</div>';return}
+    if(!ents.length){list.innerHTML='<div class="empty" style="font-size:12px;color:var(--tx3)">No entities extracted yet — click Extract to identify people and concepts in your documents.</div>';return}
     // Group by kind
     const byKind={};
     for(const e of ents){(byKind[e.kind]=byKind[e.kind]||[]).push(e)}
     const order=['person','concept','work','place'];
     list.innerHTML=order.filter(k=>byKind[k]).map(k=>{
       const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count).slice(0,30);
-      return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
+      return `<div class="cv-ent-group"><div class="cv-ent-kind">${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
     }).join('');
   }catch(e){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>'}
 }
@@ -1022,7 +1021,7 @@ function showEntitiesModal(corpusId,entities){
   const order=['person','concept','work','place'];
   const sections=order.filter(k=>byKind[k]).map(k=>{
     const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count);
-    return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}"><span>${esc(e.canonical_name)}</span><span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
+    return `<div class="cv-ent-group"><div class="cv-ent-kind">${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}"><span>${esc(e.canonical_name)}</span><span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
   }).join('');
   const wrap=document.createElement('div');wrap.className='acm-overlay';
   wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Entities in this corpus</div><div class="acm-sub">People, concepts, and works extracted from your documents</div><div style="max-height:60vh;overflow-y:auto">${sections||'<div class="empty">None with mentions yet.</div>'}</div><div class="acm-actions"><button class="btn-sm-ghost" id="acm-close">Close</button></div></div>`;
@@ -1039,7 +1038,6 @@ async function renderEntity(corpusId,entityId){
   hideRP();
   let c=null;try{const r=await fetch(`${API}/corpora/${corpusId}`);if(r.ok)c=await r.json()}catch(e){}
   let ent=null;try{const r=await fetch(`${API}/corpora/${corpusId}/entities/${entityId}`);if(!r.ok){ct.innerHTML=`<a class="cv-back" href="#/corpus/${corpusId}">&larr; Back</a><div class="empty" style="margin-top:40px">Entity not found</div>`;return}ent=await r.json()}catch(e){ct.innerHTML='<div class="empty">Failed to load</div>';return}
-  const kindIcon=ENTITY_KIND_ICON[ent.kind]||'•';
   const aliases=Array.isArray(ent.aliases)?ent.aliases:[];
   const buckets=[
     {key:'authored_by',label:'Authored',docs:ent.authored_by||[]},
@@ -1051,8 +1049,8 @@ async function renderEntity(corpusId,entityId){
   const compileBtnLabel=ent.description?'Recompile':'Compile truth';
   const compiledBlock=ent.description
     ? `<div class="ep-compiled"><div class="ep-compiled-hd"><span class="ep-compiled-lbl">Compiled truth</span><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></div><div class="ep-compiled-body" id="ep-compiled-body">${esc(ent.description).replace(/\n/g,'<br/>')}</div></div>`
-    : (canCompile?`<div class="ep-compile-empty"><button class="btn-sm" id="ep-compile-btn">⚡ ${compileBtnLabel}</button><span class="ep-compile-hint">Synthesize a summary from the ${ent.doc_count} related doc${ent.doc_count===1?'':'s'}</span></div>`:'');
-  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${kindIcon} ${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats"><span><strong>${ent.doc_count||0}</strong> document${ent.doc_count===1?'':'s'}</span>${ent.authored_by?.length?`<span>${ent.authored_by.length} authored</span>`:''}${ent.participated?.length?`<span>${ent.participated.length} participated</span>`:''}${ent.mentioned_in?.length?`<span>${ent.mentioned_in.length} mentioned</span>`:''}</div></div>${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
+    : (canCompile?`<div class="ep-compile-empty"><button class="btn-sm" id="ep-compile-btn">${compileBtnLabel}</button><span class="ep-compile-hint">Synthesize a summary from the ${ent.doc_count} related doc${ent.doc_count===1?'':'s'}</span></div>`:'');
+  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats"><span><strong>${ent.doc_count||0}</strong> document${ent.doc_count===1?'':'s'}</span>${ent.authored_by?.length?`<span>${ent.authored_by.length} authored</span>`:''}${ent.participated?.length?`<span>${ent.participated.length} participated</span>`:''}${ent.mentioned_in?.length?`<span>${ent.mentioned_in.length} mentioned</span>`:''}</div></div>${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
 
   async function doCompile(btnId){
     const btn=document.getElementById(btnId);if(!btn)return;
@@ -1285,9 +1283,9 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
       const total=ents.length;
       const shown=ents.filter(e=>e.mention_count>0).length;
       if(total===0){
-        row.innerHTML=`<span style="font-size:12px;color:var(--tx3)">None yet</span> <a href="#" class="rp-subtle-link" id="rp-extract-btn">⚡ Extract with AI</a>`;
+        row.innerHTML=`<span style="font-size:12px;color:var(--tx3)">None yet</span> <a href="#" class="rp-subtle-link" id="rp-extract-btn">Extract with AI</a>`;
       }else{
-        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> entities</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <a href="#" class="rp-subtle-link" id="rp-extract-btn">⚡ Re-extract</a>`;
+        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> entities</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <a href="#" class="rp-subtle-link" id="rp-extract-btn">Re-extract</a>`;
       }
       const extractBtn=document.getElementById('rp-extract-btn');
       if(extractBtn)extractBtn.onclick=async(ev)=>{
@@ -1298,7 +1296,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
           const dd=await rr.json();
           toast(`Enriched ${dd.enriched||0} doc${dd.enriched===1?'':'s'}${dd.remaining?', '+dd.remaining+' remaining':''}`,'success');
           renderCorpus(c.id);
-        }catch(e){toast('Extract failed: '+e.message,'error');extractBtn.textContent='⚡ Extract with AI'}
+        }catch(e){toast('Extract failed: '+e.message,'error');extractBtn.textContent='Extract with AI'}
       };
       const browseBtn=document.getElementById('rp-browse-ent');
       if(browseBtn)browseBtn.onclick=(ev)=>{ev.preventDefault();showEntitiesModal(c.id,ents)};
