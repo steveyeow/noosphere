@@ -303,7 +303,7 @@ def _llm_recompile_compiled_truth(
     source_doc_ids: list[str],
 ) -> str:
     """Call the LLM to regenerate compiled truth from sources + prior synthesis."""
-    from noosphere.core.chat import _call_llm
+    from noosphere.core.llm import call_llm as _call_llm
     from noosphere.core.ingest import get_document
 
     parts: list[str] = []
@@ -614,6 +614,7 @@ def ingest_rss_feed(
                 title=title,
                 content=f"# {title}\n\n{body}",
                 doc_type="note",
+                source_kind="external_public",
                 date="",
                 tags=["feed"],
                 metadata=meta,
@@ -698,6 +699,7 @@ def save_capture(
         title=safe_title,
         content=body,
         doc_type="capture",
+        source_kind="user_capture",
         tags=["capture"],
         metadata=meta,
     )
@@ -734,7 +736,7 @@ def compile_concept_note(
     timeline via the hook; ``recompile_concept_if_dirty`` rewrites the compiled
     truth without touching the timeline.
     """
-    from noosphere.core.chat import _call_llm
+    from noosphere.core.llm import call_llm as _call_llm
     from noosphere.core.ingest import get_document
 
     retrieval = search_corpus(corpus_id, topic, top_k=top_k)
@@ -792,6 +794,7 @@ def compile_concept_note(
         title=title,
         content=body,
         doc_type="concept",
+        source_kind="user_original",
         tags=["concept", "compiled"],
         metadata=meta,
     )
@@ -802,7 +805,13 @@ def compile_concept_note(
     return doc
 
 
-def ingest_urls_bulk(corpus_id: str, urls: list[str], *, doc_type: str = "blog") -> dict[str, Any]:
+def ingest_urls_bulk(
+    corpus_id: str,
+    urls: list[str],
+    *,
+    doc_type: str = "blog",
+    source_kind: str | None = None,
+) -> dict[str, Any]:
     """Ingest multiple HTTP URLs (lower-friction batch inflow)."""
     results: list[dict] = []
     errors: list[dict] = []
@@ -812,7 +821,7 @@ def ingest_urls_bulk(corpus_id: str, urls: list[str], *, doc_type: str = "blog")
             errors.append({"url": url, "error": "invalid URL"})
             continue
         try:
-            results.append(ingest_url(corpus_id, u, doc_type=doc_type))
+            results.append(ingest_url(corpus_id, u, doc_type=doc_type, source_kind=source_kind))
         except Exception as e:
             errors.append({"url": u, "error": str(e)})
     idx: dict[str, Any] = {}

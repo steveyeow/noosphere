@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS corpora (
     source_url TEXT,
     chunk_strategy TEXT DEFAULT 'paragraph',
     stale_threshold_days INTEGER DEFAULT 365,
+    owned_handles TEXT DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -161,11 +162,29 @@ CREATE TABLE IF NOT EXISTS documents (
     word_count INTEGER,
     content_hash TEXT,
     indexed_at TEXT,
+    source_kind TEXT DEFAULT 'user_original',
+    author_entity_id TEXT,
+    participant_entity_ids TEXT DEFAULT '[]',
     tags TEXT DEFAULT '[]',
     metadata_json TEXT DEFAULT '{}',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_documents_corpus ON documents(corpus_id);
+
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    kind TEXT NOT NULL,
+    canonical_name TEXT NOT NULL,
+    aliases TEXT DEFAULT '[]',
+    description TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(corpus_id, kind, canonical_name)
+);
+CREATE INDEX IF NOT EXISTS idx_entities_corpus ON entities(corpus_id);
+CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(corpus_id, kind);
 
 CREATE TABLE IF NOT EXISTS chunks (
     id TEXT PRIMARY KEY,
@@ -345,6 +364,15 @@ MIGRATION_SQL = [
     "ALTER TABLE documents ADD COLUMN indexed_at TEXT",
     "ALTER TABLE corpora ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph'",
     "ALTER TABLE corpora ADD COLUMN stale_threshold_days INTEGER DEFAULT 365",
+    "ALTER TABLE documents ADD COLUMN source_kind TEXT DEFAULT 'user_original'",
+    "ALTER TABLE documents ADD COLUMN author_entity_id TEXT",
+    "ALTER TABLE documents ADD COLUMN participant_entity_ids TEXT DEFAULT '[]'",
+    "ALTER TABLE corpora ADD COLUMN owned_handles TEXT DEFAULT '[]'",
+]
+
+# Indexes that reference columns added via MIGRATION_SQL — must run after migrations
+POST_MIGRATION_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_documents_source_kind ON documents(corpus_id, source_kind)",
 ]
 
 
@@ -358,6 +386,11 @@ def _run_migrations_sqlite(conn):
             conn.execute(stmt)
         except sqlite3.OperationalError:
             pass
+    for stmt in POST_MIGRATION_INDEXES:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
 
 
@@ -366,6 +399,14 @@ def _run_migrations_pg(conn):
     for stmt in MIGRATION_SQL:
         col_name = stmt.split("ADD COLUMN")[1].strip().split()[0] if "ADD COLUMN" in stmt else ""
         sp = f"sp_mig_{col_name}" if col_name else "sp_mig"
+        try:
+            conn.execute(f"SAVEPOINT {sp}")
+            conn.execute(stmt)
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+    for idx, stmt in enumerate(POST_MIGRATION_INDEXES):
+        sp = f"sp_pmidx_{idx}"
         try:
             conn.execute(f"SAVEPOINT {sp}")
             conn.execute(stmt)

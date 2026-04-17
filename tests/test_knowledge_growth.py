@@ -76,7 +76,7 @@ def stub_llm(monkeypatch):
         calls.append(messages)
         return "# Refreshed synthesis\n\nTest recompiled body."
 
-    monkeypatch.setattr("noosphere.core.chat._call_llm", _fake)
+    monkeypatch.setattr("noosphere.core.llm.call_llm", _fake)
     return calls
 
 

@@ -107,7 +107,7 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
         "document_count", "chunk_count", "word_count",
         "embedding_model", "embedding_dim",
         "chunk_strategy", "stale_threshold_days", "pricing_json",
-        "owner_id",
+        "owner_id", "owned_handles",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
@@ -115,6 +115,8 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
 
     if "tags" in updates and isinstance(updates["tags"], list):
         updates["tags"] = json.dumps(updates["tags"])
+    if "owned_handles" in updates and isinstance(updates["owned_handles"], list):
+        updates["owned_handles"] = json.dumps(updates["owned_handles"])
 
     updates["updated_at"] = _now()
     set_clause = ", ".join(f"{k}=?" for k in updates)
@@ -143,7 +145,7 @@ def delete_corpus(corpus_id: str) -> bool:
 
 def _row_to_dict(row) -> dict:
     d = dict(row)
-    for key in ("tags",):
+    for key in ("tags", "owned_handles"):
         if key in d and isinstance(d[key], str):
             try:
                 d[key] = json.loads(d[key])

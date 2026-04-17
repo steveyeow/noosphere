@@ -8,7 +8,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
 from noosphere import __version__
@@ -173,6 +173,7 @@ class UpdateCorpusRequest(BaseModel):
     description: Optional[str] = None
     access_level: Optional[str] = None
     tags: Optional[list[str]] = None
+    owned_handles: Optional[list[str]] = None
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -183,6 +184,7 @@ class UpdateDocumentRequest(BaseModel):
 class IngestURLRequest(BaseModel):
     url: str
     doc_type: str = "blog"
+    source_kind: Optional[str] = None
 
 
 class IndexRequest(BaseModel):
@@ -207,6 +209,7 @@ class IngestFeedRequest(BaseModel):
 class IngestUrlsRequest(BaseModel):
     urls: list[str]
     doc_type: str = "blog"
+    source_kind: Optional[str] = None
 
 
 class CompileRequest(BaseModel):
@@ -428,6 +431,7 @@ async def api_upload_files(
     corpus_id: str,
     request: Request,
     files: list[UploadFile] = File(...),
+    source_kind: str = Form("user_original"),
 ):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
@@ -477,6 +481,7 @@ async def api_upload_files(
 
         doc = ingest_text(
             corpus["id"], title=title, content=body, doc_type=doc_type,
+            source_kind=source_kind,
             date=metadata.get("date", "") if isinstance(metadata, dict) else "",
             tags=tags, metadata=metadata if isinstance(metadata, dict) else {},
         )
@@ -494,7 +499,7 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request
     _check_quota(request, "ingest_url")
     _check_document_limit(request, corpus["id"])
     try:
-        doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type)
+        doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type, source_kind=req.source_kind)
         return doc
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -510,7 +515,7 @@ async def api_ingest_urls_bulk(corpus_id: str, req: IngestUrlsRequest, request: 
     from noosphere.core.knowledge_growth import ingest_urls_bulk
 
     try:
-        return ingest_urls_bulk(corpus["id"], req.urls, doc_type=req.doc_type)
+        return ingest_urls_bulk(corpus["id"], req.urls, doc_type=req.doc_type, source_kind=req.source_kind)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

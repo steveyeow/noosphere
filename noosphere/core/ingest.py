@@ -223,11 +223,19 @@ def ingest_text(
     title: str,
     content: str,
     doc_type: str = "doc",
+    source_kind: str = "user_original",
+    author_entity_id: str | None = None,
+    participant_entity_ids: list[str] | None = None,
     date: str = "",
     tags: list[str] | None = None,
     metadata: dict | None = None,
 ) -> dict:
-    """Ingest raw text content as a document."""
+    """Ingest raw text content as a document.
+
+    source_kind: one of "user_original", "user_capture", "external_public",
+    "external_subscription". Determines access-filter behavior when a non-owner
+    caller queries the corpus (see Principle 3 in project_noosphere_ingestion).
+    """
     doc_id = uuid.uuid4().hex[:12]
     wc = _word_count(content)
     c_hash = _content_hash(content)
@@ -237,11 +245,14 @@ def ingest_text(
     conn.execute(
         """INSERT INTO documents
            (id, corpus_id, title, content, doc_type, date,
-            word_count, content_hash, tags, metadata_json, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            word_count, content_hash, source_kind, author_entity_id,
+            participant_entity_ids, tags, metadata_json, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             doc_id, corpus_id, title, content, doc_type, date,
-            wc, c_hash, json.dumps(tags or []), json.dumps(metadata or {}), now,
+            wc, c_hash, source_kind, author_entity_id,
+            json.dumps(participant_entity_ids or []),
+            json.dumps(tags or []), json.dumps(metadata or {}), now,
         ),
     )
     conn.commit()
@@ -254,11 +265,51 @@ def ingest_text(
         "doc_type": doc_type,
         "date": date,
         "word_count": wc,
+        "source_kind": source_kind,
     }
 
 
-def ingest_url(corpus_id: str, url: str, *, doc_type: str = "blog") -> dict:
-    """Fetch a URL, convert HTML to markdown, and ingest as a document."""
+def _url_matches_owned_handles(url: str, owned_handles: list[str]) -> bool:
+    """Return True if URL matches any of the corpus owner's declared handles/domains.
+
+    Handle forms:
+      "twitter.com/username"         — match host + path prefix
+      "mysite.com" or "mysite.com/*" — match host (incl. subdomains)
+      "blog.me.dev"                  — match exact host
+    """
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    host = (p.hostname or "").lower()
+    path = p.path or ""
+    for handle in owned_handles or []:
+        h = handle.strip().lower().rstrip("*").rstrip("/")
+        if not h:
+            continue
+        if "/" in h:
+            h_host, _, h_path = h.partition("/")
+            if (host == h_host or host.endswith("." + h_host)) and path.startswith("/" + h_path):
+                return True
+        else:
+            if host == h or host.endswith("." + h):
+                return True
+    return False
+
+
+def ingest_url(
+    corpus_id: str,
+    url: str,
+    *,
+    doc_type: str = "blog",
+    source_kind: str | None = None,
+) -> dict:
+    """Fetch a URL, convert HTML to markdown, and ingest as a document.
+
+    If source_kind is None, defaults to "external_public" unless the URL
+    matches the corpus owner's owned_handles list (then "user_original").
+    """
     import httpx
 
     resp = httpx.get(url, follow_redirects=True, timeout=30, headers={
@@ -274,8 +325,20 @@ def ingest_url(corpus_id: str, url: str, *, doc_type: str = "blog") -> dict:
     if not body.strip():
         raise ValueError(f"No readable content extracted from {url}")
 
+    if source_kind is None:
+        from noosphere.core.corpus import get_corpus
+        corpus = get_corpus(corpus_id) or {}
+        owned = corpus.get("owned_handles") or []
+        if isinstance(owned, str):
+            try:
+                owned = json.loads(owned)
+            except (json.JSONDecodeError, TypeError):
+                owned = []
+        source_kind = "user_original" if _url_matches_owned_handles(url, owned) else "external_public"
+
     return ingest_text(
         corpus_id, title=title, content=body, doc_type=doc_type,
+        source_kind=source_kind,
         metadata={"source_url": url},
     )
 

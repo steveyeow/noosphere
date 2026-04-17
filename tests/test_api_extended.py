@@ -317,7 +317,7 @@ def test_ingest_feed_api_mock(client, corpus, monkeypatch):
 def test_ingest_urls_bulk_mock(client, corpus, monkeypatch):
     monkeypatch.setattr(
         "noosphere.core.knowledge_growth.ingest_url",
-        lambda cid, url, doc_type="blog": {"id": "x1", "title": url, "corpus_id": cid},
+        lambda cid, url, doc_type="blog", source_kind=None: {"id": "x1", "title": url, "corpus_id": cid},
     )
     monkeypatch.setattr(
         "noosphere.core.knowledge_growth.index_corpus",
@@ -357,7 +357,7 @@ def test_compile_endpoint_mock(client, corpus_with_doc, monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "noosphere.core.chat._call_llm",
+        "noosphere.core.llm.call_llm",
         lambda messages: "# Summary\n\nSynth.\n\n## Sources\n- Src",
     )
     monkeypatch.setattr(
