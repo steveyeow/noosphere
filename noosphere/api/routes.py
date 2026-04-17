@@ -618,6 +618,64 @@ async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ── Archive imports (Twitter / Notion) ──
+
+async def _save_upload_to_temp(file: UploadFile, suffix: str = ".zip") -> str:
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            tmp.write(chunk)
+    finally:
+        tmp.close()
+    return tmp.name
+
+
+@router.post("/corpora/{corpus_id}/import/twitter")
+async def api_import_twitter(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import a Twitter/X data export ZIP. Tweets are ingested as user_original."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Expected a .zip archive")
+    path = await _save_upload_to_temp(file)
+    try:
+        from noosphere.core.importers import import_twitter_archive
+        return import_twitter_archive(corpus["id"], path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+@router.post("/corpora/{corpus_id}/import/notion")
+async def api_import_notion(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import a Notion workspace export ZIP. Pages are ingested as user_original."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Expected a .zip archive")
+    path = await _save_upload_to_temp(file)
+    try:
+        from noosphere.core.importers import import_notion_export
+        return import_notion_export(corpus["id"], path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 # ── Entity extraction (Phase 0.5) ──
 
 

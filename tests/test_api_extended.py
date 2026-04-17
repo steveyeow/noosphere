@@ -599,6 +599,79 @@ def test_entity_detail_buckets_by_relationship(client, corpus):
     assert ent_b["mentioned_in"] == []
 
 
+def test_import_twitter_archive_marks_user_original(client, corpus, tmp_path):
+    """Twitter archive ingests tweets as source_kind=user_original + doc_type=tweet."""
+    import io
+    import json as _json
+    import zipfile
+
+    tweets = [
+        {"tweet": {"id_str": "1", "full_text": "First tweet about AI.", "created_at": "Wed Apr 16 10:00:00 +0000 2026", "retweet_count": 2, "favorite_count": 5}},
+        {"tweet": {"id_str": "2", "full_text": "Second post on PMF.", "created_at": "Thu Apr 17 11:30:00 +0000 2026", "retweet_count": 0, "favorite_count": 3}},
+        {"tweet": {"id_str": "3", "full_text": "   ", "created_at": "Fri Apr 18 10:00:00 +0000 2026"}},  # empty → skipped
+    ]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("data/tweets.js", "window.YTD.tweet.part0 = " + _json.dumps(tweets))
+    buf.seek(0)
+
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/import/twitter",
+        files=[("file", ("twitter-archive.zip", buf, "application/zip"))],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 3
+    assert body["imported"] == 2
+    assert body["skipped"] == 1
+    assert body["source_kind"] == "user_original"
+
+    r_docs = client.get(f"/api/v1/corpora/{corpus['id']}/documents")
+    docs = r_docs.json()
+    assert len(docs) == 2
+    for d in docs:
+        assert d["doc_type"] == "tweet"
+        assert d["source_kind"] == "user_original"
+
+
+def test_import_notion_export_strips_uuid_suffix(client, corpus):
+    """Notion export ingests pages as user_original; UUID suffix on filenames is stripped."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Export/Product Notes abc123def456abc123def456abc12345.md",
+                    "# Product Notes\n\nSome thinking about PMF.")
+        zf.writestr("Export/Hiring.md", "# Hiring\n\nWhat to look for.")
+        zf.writestr("Export/.DS_Store", "")  # hidden, skip
+        zf.writestr("__MACOSX/foo.md", "ignore")  # macOS junk, skip
+    buf.seek(0)
+
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/import/notion",
+        files=[("file", ("notion-export.zip", buf, "application/zip"))],
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["imported"] == 2
+    assert body["source_kind"] == "user_original"
+
+    r_docs = client.get(f"/api/v1/corpora/{corpus['id']}/documents")
+    titles = {d["title"] for d in r_docs.json()}
+    assert "Product Notes" in titles  # UUID stripped
+    assert "Hiring" in titles
+
+
+def test_import_twitter_requires_zip(client, corpus):
+    import io
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/import/twitter",
+        files=[("file", ("tweets.txt", io.BytesIO(b"not a zip"), "text/plain"))],
+    )
+    assert r.status_code == 400
+
+
 def test_compile_entity_writes_description(client, corpus, monkeypatch):
     from noosphere.core.entities import upsert_entity
     from noosphere.core.ingest import ingest_text

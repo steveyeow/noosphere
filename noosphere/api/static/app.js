@@ -817,7 +817,7 @@ function showCorpusAddDoc(corpusId){
   const container=document.getElementById('cv-docs');if(!container)return;
   if(document.getElementById('cv-add-panel'))return;
   const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
+  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="archive">Import Archive</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
   container.parentNode.insertBefore(panel,container);
 
   const body=panel.querySelector('#cv-add-body');
@@ -897,6 +897,25 @@ function showCorpusAddDoc(corpusId){
         if(!feedUrl){toast('Enter a feed URL');return}
         const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Fetching feed...';
         try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-feed`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feed_url:feedUrl,max_items:maxItems})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Fetched ${d.fetched||0} entries, ingested ${d.ingested||0}`,'success')}catch(e){toast('Feed ingest failed: '+e.message);btn.disabled=false;btn.textContent='Fetch Feed & Index';return}
+        panel.remove();renderCorpus(corpusId);
+      };
+    } else if(tab==='archive'){
+      body.innerHTML=`<div style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><label style="font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px"><input type="radio" name="arc-kind" value="twitter" checked /> Twitter / X data export</label><label style="font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px"><input type="radio" name="arc-kind" value="notion" /> Notion workspace export</label></div><input type="file" id="cv-arc-fi" accept=".zip" style="font-size:12px" /><div style="font-size:11px;color:var(--tx3);line-height:1.5">These are your own exports from services you own, so all items are tagged as <strong>your original content</strong>. Twitter: upload the ZIP you get from twitter.com/settings/download_your_data. Notion: Settings → Data export (Markdown &amp; CSV).</div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Import & Index</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div></div>`;
+      const fi=body.querySelector('#cv-arc-fi');
+      const goBtn=body.querySelector('#cv-add-go');
+      fi.onchange=()=>{goBtn.disabled=!fi.files.length};
+      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
+      goBtn.onclick=async()=>{
+        if(!fi.files.length)return;
+        const kind=(body.querySelector('input[name="arc-kind"]:checked')||{}).value||'twitter';
+        goBtn.disabled=true;goBtn.textContent='Importing...';
+        const fd=new FormData();fd.append('file',fi.files[0]);
+        try{
+          const r=await fetch(`${API}/corpora/${corpusId}/import/${kind}`,{method:'POST',body:fd});
+          if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
+          const d=await r.json();
+          toast(`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?', '+d.skipped+' skipped':''}`,'success');
+        }catch(e){toast('Import failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Import & Index';return}
         panel.remove();renderCorpus(corpusId);
       };
     } else if(tab==='compile'){
