@@ -53,5 +53,18 @@ if NOOSPHERE_REGISTRY.lower() == "none":
 # Enrichment scheduler — interval in minutes (0 = disabled)
 ENRICHMENT_INTERVAL_MINUTES = int(os.getenv("ENRICHMENT_INTERVAL_MINUTES", "60"))
 
+# Living concept notes — compounding via compiled-truth + timeline.
+# When a new source doc is ingested, it's auto-appended to the timeline of any
+# concept note whose existing chunks score above the threshold. Concepts are
+# marked "dirty" and recompiled in batch once pending_changes crosses the
+# recompile threshold (or on explicit user/CLI trigger).
+CONCEPT_TIMELINE_THRESHOLD = float(os.getenv("CONCEPT_TIMELINE_THRESHOLD", "0.60"))
+CONCEPT_TIMELINE_MAX_MATCHES = int(os.getenv("CONCEPT_TIMELINE_MAX_MATCHES", "3"))
+CONCEPT_RECOMPILE_THRESHOLD = int(os.getenv("CONCEPT_RECOMPILE_THRESHOLD", "3"))
+# Markdown heading used as the boundary between compiled truth and timeline.
+# Chosen over raw `---` (GBrain's marker) because compiled synthesis text may
+# contain `---` as a section separator.
+CONCEPT_TIMELINE_HEADING = "## Timeline"
+
 # Database URL for PostgreSQL (empty = SQLite)
 DATABASE_URL = os.getenv("DATABASE_URL", "")

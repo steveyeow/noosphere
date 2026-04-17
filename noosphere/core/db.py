@@ -272,6 +272,17 @@ CREATE TABLE IF NOT EXISTS registered_nodes (
     consecutive_failures INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS concept_versions (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id),
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    source_doc_ids TEXT NOT NULL DEFAULT '[]',
+    compiled_at TEXT NOT NULL,
+    UNIQUE(document_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_concept_versions_document ON concept_versions(document_id);
+
 CREATE TABLE IF NOT EXISTS registered_corpora (
     id TEXT PRIMARY KEY,
     node_endpoint TEXT NOT NULL REFERENCES registered_nodes(endpoint) ON DELETE CASCADE,

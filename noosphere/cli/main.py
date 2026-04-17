@@ -291,6 +291,32 @@ def compile_cmd(corpus, topic, top_k):
     click.echo(f"Created concept document: {doc['title']} ({doc['id']})")
 
 
+@cli.command("recompile-dirty-concepts")
+@click.option("--corpus", default="", help="Corpus ID or slug (omit to scan ALL corpora)")
+@click.option("--force", is_flag=True, help="Recompile every concept (ignore threshold)")
+def recompile_dirty_concepts_cmd(corpus, force):
+    """Re-synthesize living-concept notes whose timelines have accumulated new sources."""
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.knowledge_growth import recompile_dirty_concepts
+
+    corpus_id: str | None = None
+    if corpus:
+        c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+        if not c:
+            click.echo(f"Corpus not found: {corpus}", err=True)
+            raise SystemExit(1)
+        corpus_id = c["id"]
+
+    result = recompile_dirty_concepts(corpus_id, force=force)
+    click.echo(
+        f"Scanned {result['total']} concept docs · "
+        f"recompiled {len(result['recompiled'])}, skipped {len(result['skipped'])}, "
+        f"errors {len(result['errors'])}"
+    )
+    for err in result["errors"][:5]:
+        click.echo(f"  ! {err['concept_id']}: {err['error']}")
+
+
 @cli.command("health-knowledge")
 @click.option("--corpus", required=True, help="Corpus ID or slug")
 def health_knowledge_cmd(corpus):
