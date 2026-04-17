@@ -22,7 +22,7 @@ from noosphere.core.db import get_conn
 
 logger = logging.getLogger(__name__)
 
-VALID_KINDS = {"person", "company", "concept", "place"}
+VALID_KINDS = {"person", "concept", "work", "place"}
 _EXTRACTION_MAX_CHARS = 3000
 _MIN_WORDS_FOR_EXTRACTION = 20
 
@@ -315,12 +315,15 @@ def extract_entities_from_text(text: str) -> list[dict]:
 
     prompt_text = (
         "Extract named entities from the text. Respond with JSON only, no markdown fences:\n"
-        '{"entities": [{"name": "Full Name", "kind": "person|company|concept|place"}]}\n\n'
+        '{"entities": [{"name": "Full Name", "kind": "person|concept|work|place"}]}\n\n'
         "Rules:\n"
-        "- Only include entities that are NAMED (proper nouns) or well-defined concepts.\n"
-        "- Merge variants: use the canonical full name (e.g. 'Paul Graham' not 'pg').\n"
+        "- person: an individual (e.g. 'Paul Graham', 'Andrej Karpathy'). Group names go to concept.\n"
+        "- concept: a well-defined idea, theme, or recurring topic (e.g. 'product-market fit', 'living knowledge base').\n"
+        "- work: a named book, paper, newsletter, product, or project (e.g. 'The Lean Startup', 'Lenny's Newsletter').\n"
+        "- place: a geographic location only when clearly load-bearing to the content.\n"
+        "- Use canonical full names (e.g. 'Paul Graham' not 'pg').\n"
         "- Limit to the most important 8-12 entities.\n"
-        "- Omit generic terms, months, colors, numbers.\n\n"
+        "- Omit generic terms, months, colors, numbers, and passing mentions.\n\n"
         f"Text:\n{content}"
     )
     messages = [

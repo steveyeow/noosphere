@@ -813,8 +813,12 @@ async function drawGraphIn(container,corpora,existingCanvas){
 }
 
 /* ══════ INLINE ADD DOCUMENT ══════ */
-function showCorpusAddDoc(corpusId){
-  const container=document.getElementById('cv-docs');if(!container)return;
+function showCorpusAddDoc(corpusId,initialTab){
+  // Mount above the raw docs list by default (that's where new source material flows to);
+  // when invoked with 'compile', mount above wiki docs instead.
+  const anchorId=(initialTab==='compile'||initialTab==='write')?'cv-wiki-docs':'cv-raw-docs';
+  const container=document.getElementById(anchorId)||document.getElementById('cv-docs')||document.getElementById('cv-raw-docs');
+  if(!container)return;
   if(document.getElementById('cv-add-panel'))return;
   const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
   panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="archive">Import Archive</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
@@ -933,7 +937,7 @@ function showCorpusAddDoc(corpusId){
     }
   }
   tabs.forEach(t=>t.onclick=()=>setTab(t.dataset.tab));
-  setTab('upload');
+  setTab(initialTab||'upload');
 }
 
 /* ══════ CORPUS DETAIL + CHAT ══════ */
@@ -945,12 +949,20 @@ async function renderCorpus(id,sessionId){
   ct.classList.add('content--corpus');
   const al=c.access_level||'public';const tg=Array.isArray(c.tags)?c.tags:[];
   const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="cv-header-actions"><button class="cv-act-btn" id="cv-reindex" title="Re-index"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-index</button><button class="cv-act-btn" id="cv-export" title="Export"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button></div></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}<div class="cv-handles" id="cv-handles-area">${(Array.isArray(c.owned_handles)&&c.owned_handles.length)?`<span class="cv-handles-lbl">Your handles</span><span class="cv-handles-list">${c.owned_handles.map(h=>`<span class="cv-handle-tag">${esc(h)}</span>`).join('')}</span>`:`<span class="cv-handles-empty">Add your handles (twitter.com/you, yourblog.com) — URLs from these default to your original content</span>`}<button class="cv-handles-edit-btn" id="cv-handles-edit" title="Edit handles"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div></div><div class="cv-sec"><div class="cv-st">Documents (${docs.length}) <button class="btn-add" id="cv-add">+ Add</button></div><div id="cv-docs">${docs.length===0?'<div class="empty">No documents yet</div>':docs.map((d,i)=>{const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');return`<div class="doc-item${i===0?' expanded':''}" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''}</span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div>${i===0?'<div class="doc-bd" id="sb0">Loading...</div>':''}</div>`}).join('')}</div></div><div class="cv-sec" id="cv-entities-sec"><div class="cv-st">Entities <button class="btn-add" id="cv-enrich-btn" title="Extract entities with AI">⚡ Extract</button></div><div id="cv-entities-list"><div class="empty" style="font-size:12px">Loading...</div></div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div></div>`;
+  // Split docs: wiki = AI-synthesized (doc_type=concept), raw = substrate (everything else).
+  const wikiDocs=docs.filter(d=>d.doc_type==='concept');
+  const rawDocs=docs.filter(d=>d.doc_type!=='concept');
+  const docItemHTML=(d)=>{
+    const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');
+    const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
+    return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span></span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
+  };
+  const wikiEmpty='<div class="empty">No concept notes yet — ✨ Compile to synthesize from your sources.</div>';
+  const rawEmpty='<div class="empty">No sources yet — + Add to import URLs, upload files, or import an archive.</div>';
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">✨ Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div></div></div>`;
   showRP(c,an);
-  document.getElementById('cv-reindex').onclick=async()=>{const btn=document.getElementById('cv-reindex');btn.disabled=true;btn.textContent='Indexing...';try{await fetch(`${API}/corpora/${id}/index`,{method:'POST'})}catch(e){}renderCorpus(id)};
-  document.getElementById('cv-export').onclick=()=>{window.open(`${API}/corpora/${id}/export`,'_blank')};
   document.getElementById('cv-desc-edit').onclick=()=>{
-    const wrap=document.querySelector('.cv-desc-wrap');const descEl=document.getElementById('cv-desc');
+    const wrap=document.querySelector('.cv-desc-wrap');
     const cur=c.description||'';
     wrap.innerHTML=`<input type="text" class="cv-desc-input" id="cv-desc-inp" value="${esc(cur)}" placeholder="Add a description..." /><div class="cv-desc-inp-actions"><button class="btn-sm" id="cv-desc-sv">Save</button><button class="btn-sm-ghost" id="cv-desc-cc">Cancel</button></div>`;
     document.getElementById('cv-desc-inp').focus();
@@ -961,32 +973,8 @@ async function renderCorpus(id,sessionId){
       try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save description')}
     };
   };
-  document.getElementById('cv-handles-edit').onclick=()=>{
-    const area=document.getElementById('cv-handles-area');
-    const cur=(Array.isArray(c.owned_handles)?c.owned_handles:[]).join('\n');
-    area.innerHTML=`<textarea class="cv-handles-input" id="cv-handles-inp" rows="3" placeholder="One per line — e.g. twitter.com/steve, stevesayao.com">${esc(cur)}</textarea><div class="cv-handles-actions"><button class="btn-sm" id="cv-handles-sv">Save</button><button class="btn-sm-ghost" id="cv-handles-cc">Cancel</button></div>`;
-    document.getElementById('cv-handles-inp').focus();
-    document.getElementById('cv-handles-cc').onclick=()=>renderCorpus(id);
-    document.getElementById('cv-handles-sv').onclick=async()=>{
-      const list=document.getElementById('cv-handles-inp').value.split('\n').map(s=>s.trim()).filter(Boolean);
-      try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({owned_handles:list})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save handles')}
-    };
-  };
-  loadCorpusEntities(id);
-  const enrichBtn=document.getElementById('cv-enrich-btn');
-  if(enrichBtn)enrichBtn.onclick=async()=>{
-    enrichBtn.disabled=true;const orig=enrichBtn.textContent;enrichBtn.textContent='Extracting...';
-    try{
-      const r=await fetch(`${API}/corpora/${id}/extract-entities`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:50})});
-      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
-      const d=await r.json();
-      toast(`Enriched ${d.enriched||0} doc${d.enriched===1?'':'s'}${d.remaining?', '+d.remaining+' remaining':''}`,'success');
-      await loadCorpusEntities(id);
-    }catch(e){toast('Extraction failed: '+e.message,'error')}
-    enrichBtn.disabled=false;enrichBtn.textContent=orig;
-  };
-  if(docs.length>0){try{const r=await fetch(`${API}/corpora/${id}/documents/${docs[0].id}`);const d=await r.json();const b=document.getElementById('sb0');if(b)b.textContent=d.content||''}catch(e){}}
-  document.getElementById('cv-add').onclick=()=>showCorpusAddDoc(id);
+  document.getElementById('cv-compile-btn').onclick=()=>showCorpusAddDoc(id,'compile');
+  document.getElementById('cv-raw-add').onclick=()=>showCorpusAddDoc(id);
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
     if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;
@@ -1001,7 +989,7 @@ async function renderCorpus(id,sessionId){
   setupCorpusInteract(id,sessionId);
 }
 
-const ENTITY_KIND_ICON={person:'👤',company:'🏢',concept:'💡',place:'📍'};
+const ENTITY_KIND_ICON={person:'👤',concept:'💡',work:'📚',place:'📍'};
 async function loadCorpusEntities(corpusId){
   const list=document.getElementById('cv-entities-list');if(!list)return;
   try{
@@ -1013,12 +1001,30 @@ async function loadCorpusEntities(corpusId){
     // Group by kind
     const byKind={};
     for(const e of ents){(byKind[e.kind]=byKind[e.kind]||[]).push(e)}
-    const order=['person','company','concept','place'];
+    const order=['person','concept','work','place'];
     list.innerHTML=order.filter(k=>byKind[k]).map(k=>{
       const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count).slice(0,30);
       return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
     }).join('');
   }catch(e){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>'}
+}
+
+function showEntitiesModal(corpusId,entities){
+  const byKind={};
+  for(const e of entities){if(e.mention_count>0)(byKind[e.kind]=byKind[e.kind]||[]).push(e)}
+  const order=['person','concept','work','place'];
+  const sections=order.filter(k=>byKind[k]).map(k=>{
+    const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count);
+    return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}"><span>${esc(e.canonical_name)}</span><span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
+  }).join('');
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Entities in this corpus</div><div class="acm-sub">People, concepts, and works extracted from your documents</div><div style="max-height:60vh;overflow-y:auto">${sections||'<div class="empty">None with mentions yet.</div>'}</div><div class="acm-actions"><button class="btn-sm-ghost" id="acm-close">Close</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#acm-close').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+  // clicking a chip navigates away via href — close modal as side effect
+  wrap.querySelectorAll('.cv-ent-chip').forEach(a=>a.addEventListener('click',close));
 }
 
 async function renderEntity(corpusId,entityId){
@@ -1212,7 +1218,9 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     <div id="rp-tokens" class="rp-sec" style="display:${al==='token'?'block':'none'}"><div class="rp-lbl">Access Tokens</div><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate Token</button><div id="rp-tk-list"></div></div>
     <div id="rp-pricing" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Pricing</div><div id="rp-pricing-body"></div></div>
     <div id="rp-revenue" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Revenue</div><div id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading...</div></div>
-    <div class="rp-sec"><div class="rp-lbl">Details</div>${c.author_name?`<div class="rp-detail-row"><span class="rp-detail-label">Author</span><span>${esc(c.author_name)}</span></div>`:''}${c.embedding_model?`<div class="rp-detail-row"><span class="rp-detail-label">Model</span><span>${esc(c.embedding_model)}</span></div>`:''}<div class="rp-detail-row"><span class="rp-detail-label">Status</span><span>${esc(c.status)}</span></div></div>`;
+    <div class="rp-sec"><div class="rp-lbl">Details</div>${c.author_name?`<div class="rp-detail-row"><span class="rp-detail-label">Author</span><span>${esc(c.author_name)}</span></div>`:''}${c.embedding_model?`<div class="rp-detail-row"><span class="rp-detail-label">Model</span><span>${esc(c.embedding_model)}</span></div>`:''}<div class="rp-detail-row"><span class="rp-detail-label">Status</span><span>${esc(c.status)}</span></div><div class="rp-detail-row rp-handles-row" id="rp-handles-row"><span class="rp-detail-label">Handles</span><span id="rp-handles-view">${(Array.isArray(c.owned_handles)&&c.owned_handles.length)?c.owned_handles.map(h=>`<span class="cv-handle-tag">${esc(h)}</span>`).join(' '):'<span style="color:var(--tx3);font-style:italic">none set</span>'} <a href="#" class="rp-subtle-link" id="rp-handles-edit">edit</a></span></div></div>
+    <div class="rp-sec"><div class="rp-lbl">Entities</div><div class="rp-entities-row" id="rp-entities-row"><span style="font-size:12px;color:var(--tx3)">Loading…</span></div></div>
+    <div class="rp-sec rp-sec-maint"><div class="rp-lbl">Maintenance</div><div class="rp-maint-row"><a href="#" class="rp-subtle-link" id="rp-reindex">Re-index</a><a href="#" class="rp-subtle-link" id="rp-export">Export</a><a href="#" class="rp-subtle-link rp-danger" id="rp-delete">Delete corpus</a></div></div>`;
 
   document.getElementById('rp-acc').onchange=()=>{
     const v=document.getElementById('rp-acc').value;
@@ -1244,6 +1252,67 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
       if(!r.ok){const d=await r.json().catch(()=>({}));toast(d.detail||'Failed to update access','error');return}
       await loadC();renderCorpus(c.id);
     }catch(e){toast('Failed: '+e.message,'error')}
+  };
+
+  /* Handles edit (moved from main view) */
+  document.getElementById('rp-handles-edit').onclick=(e)=>{
+    e.preventDefault();
+    const view=document.getElementById('rp-handles-view');
+    const cur=(Array.isArray(c.owned_handles)?c.owned_handles:[]).join('\n');
+    view.innerHTML=`<textarea class="cv-handles-input" id="rp-handles-inp" rows="3" placeholder="One per line — e.g. twitter.com/steve, stevesayao.com">${esc(cur)}</textarea><div class="cv-handles-actions"><button class="btn-sm" id="rp-handles-sv">Save</button><button class="btn-sm-ghost" id="rp-handles-cc">Cancel</button></div>`;
+    document.getElementById('rp-handles-inp').focus();
+    document.getElementById('rp-handles-cc').onclick=()=>renderCorpus(c.id);
+    document.getElementById('rp-handles-sv').onclick=async()=>{
+      const list=document.getElementById('rp-handles-inp').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      try{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({owned_handles:list})});await loadC();renderCorpus(c.id)}catch(e){toast('Failed to save handles')}
+    };
+  };
+
+  /* Entities: count + extract / browse */
+  (async()=>{
+    const row=document.getElementById('rp-entities-row');if(!row)return;
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/entities`);
+      const d=await r.json();
+      const ents=(d.entities||[]);
+      const total=ents.length;
+      const shown=ents.filter(e=>e.mention_count>0).length;
+      if(total===0){
+        row.innerHTML=`<span style="font-size:12px;color:var(--tx3)">None yet</span> <a href="#" class="rp-subtle-link" id="rp-extract-btn">⚡ Extract with AI</a>`;
+      }else{
+        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> entities</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <a href="#" class="rp-subtle-link" id="rp-extract-btn">⚡ Re-extract</a>`;
+      }
+      const extractBtn=document.getElementById('rp-extract-btn');
+      if(extractBtn)extractBtn.onclick=async(ev)=>{
+        ev.preventDefault();extractBtn.textContent='Extracting…';
+        try{
+          const rr=await fetch(`${API}/corpora/${c.id}/extract-entities`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:50})});
+          if(!rr.ok)throw new Error((await rr.json().catch(()=>({}))).detail||'Failed');
+          const dd=await rr.json();
+          toast(`Enriched ${dd.enriched||0} doc${dd.enriched===1?'':'s'}${dd.remaining?', '+dd.remaining+' remaining':''}`,'success');
+          renderCorpus(c.id);
+        }catch(e){toast('Extract failed: '+e.message,'error');extractBtn.textContent='⚡ Extract with AI'}
+      };
+      const browseBtn=document.getElementById('rp-browse-ent');
+      if(browseBtn)browseBtn.onclick=(ev)=>{ev.preventDefault();showEntitiesModal(c.id,ents)};
+    }catch(e){row.innerHTML='<span style="font-size:12px;color:var(--tx3)">Failed to load</span>'}
+  })();
+
+  /* Maintenance row */
+  document.getElementById('rp-reindex').onclick=async(e)=>{
+    e.preventDefault();
+    const btn=document.getElementById('rp-reindex');const orig=btn.textContent;btn.textContent='Indexing…';
+    try{await fetch(`${API}/corpora/${c.id}/index`,{method:'POST'});renderCorpus(c.id)}
+    catch(err){toast('Re-index failed');btn.textContent=orig}
+  };
+  document.getElementById('rp-export').onclick=(e)=>{
+    e.preventDefault();window.open(`${API}/corpora/${c.id}/export`,'_blank');
+  };
+  document.getElementById('rp-delete').onclick=async(e)=>{
+    e.preventDefault();
+    if(!confirm(`Delete "${c.name}" and all its documents? This cannot be undone.`))return;
+    try{await fetch(`${API}/corpora/${c.id}`,{method:'DELETE'});await loadC();location.hash='#/corpora'}
+    catch(err){toast('Delete failed: '+err.message,'error')}
   };
 
   /* Token management */

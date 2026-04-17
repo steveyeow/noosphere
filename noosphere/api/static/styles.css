@@ -162,6 +162,30 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .ep-doc-sk.sk-external_public{background:var(--bgH);color:var(--tx3)}
 .ep-doc-sk.sk-external_subscription{background:color-mix(in srgb,#f87171 15%,transparent);color:#a14343}
 
+/* ── Corpus-page Wiki / Raw section headers ── */
+.cv-st-main{display:flex;align-items:baseline;gap:10px;flex:1}
+.cv-st-title{font-size:12px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.08em}
+.cv-st-sub{font-size:11px;color:var(--tx3);font-weight:400;letter-spacing:0;text-transform:none}
+.cv-sec-wiki .cv-st-title{color:var(--tx);font-family:'Libre Baskerville',Georgia,serif;font-size:15px;font-weight:700;text-transform:none;letter-spacing:0}
+.cv-sec-raw .cv-st-title{color:var(--tx);font-family:'Libre Baskerville',Georgia,serif;font-size:15px;font-weight:700;text-transform:none;letter-spacing:0}
+
+/* ── Source-kind inline badges (on doc list rows) ── */
+.doc-sk{display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;font-family:var(--mono);font-weight:500;letter-spacing:.02em}
+.doc-sk.sk-user_original{background:color-mix(in srgb,#4ade80 18%,transparent);color:#2a7a3e}
+.doc-sk.sk-user_capture{background:color-mix(in srgb,#60a5fa 18%,transparent);color:#2c5ca8}
+.doc-sk.sk-external_public{background:var(--bgH);color:var(--tx3)}
+.doc-sk.sk-external_subscription{background:color-mix(in srgb,#f87171 15%,transparent);color:#a14343}
+
+/* ── R-panel subtle links (entities / maintenance) ── */
+.rp-subtle-link{font-size:12px;color:var(--tx3);text-decoration:none;transition:color .12s}
+.rp-subtle-link:hover{color:var(--tx)}
+.rp-subtle-link.rp-danger{color:#ef4444}
+.rp-subtle-link.rp-danger:hover{color:#b91c1c}
+.rp-handles-row{flex-direction:column;align-items:flex-start}
+.rp-handles-row .rp-detail-label{margin-bottom:4px}
+.rp-entities-row{font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rp-maint-row{display:flex;gap:14px;flex-wrap:wrap;font-size:12px}
+
 /* ── Entity list (corpus detail page) ── */
 .cv-ent-group{margin-bottom:10px}
 .cv-ent-kind{font-size:11px;color:var(--tx3);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}

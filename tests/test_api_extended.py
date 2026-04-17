@@ -504,11 +504,11 @@ def test_list_entities_counts_mentions_across_fields(client, corpus):
 def test_list_entities_api(client, corpus):
     from noosphere.core.entities import upsert_entity
     upsert_entity(corpus["id"], "person", "Ada Lovelace")
-    upsert_entity(corpus["id"], "company", "Anthropic")
+    upsert_entity(corpus["id"], "work", "The Lean Startup")
     r = client.get(f"/api/v1/corpora/{corpus['id']}/entities")
     assert r.status_code == 200
     names = {e["canonical_name"] for e in r.json()["entities"]}
-    assert {"Ada Lovelace", "Anthropic"} <= names
+    assert {"Ada Lovelace", "The Lean Startup"} <= names
 
     r_p = client.get(f"/api/v1/corpora/{corpus['id']}/entities?kind=person")
     p_names = {e["canonical_name"] for e in r_p.json()["entities"]}
@@ -527,7 +527,7 @@ def test_extract_entities_endpoint_mock(client, corpus, monkeypatch):
         "noosphere.core.entities.extract_entities_from_text",
         lambda text: [
             {"kind": "person", "canonical_name": "Paul Graham"},
-            {"kind": "company", "canonical_name": "Y Combinator"},
+            {"kind": "work", "canonical_name": "Y Combinator"},
         ],
     )
     r = client.post(f"/api/v1/corpora/{corpus['id']}/documents/{doc['id']}/extract-entities")
