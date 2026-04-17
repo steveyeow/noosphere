@@ -634,6 +634,21 @@ async def api_list_entities(corpus_id: str, request: Request, kind: Optional[str
     return {"entities": list_entities(corpus["id"], kind=kind)}
 
 
+@router.get("/corpora/{corpus_id}/entities/{entity_id}")
+async def api_get_entity(corpus_id: str, entity_id: str, request: Request):
+    """Entity detail page: the entity + three buckets of related documents.
+
+    See entities.get_entity_with_related_docs for the bucket semantics.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    from noosphere.core.entities import get_entity_with_related_docs
+    ent = get_entity_with_related_docs(entity_id)
+    if not ent or ent.get("corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    return ent
+
+
 @router.post("/corpora/{corpus_id}/documents/{doc_id}/extract-entities")
 async def api_extract_document_entities(corpus_id: str, doc_id: str, request: Request):
     """Run entity extraction on a single document."""

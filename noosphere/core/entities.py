@@ -110,6 +110,67 @@ def get_entity(entity_id: str) -> dict | None:
     return _row_to_dict(row) if row else None
 
 
+def get_entity_with_related_docs(entity_id: str) -> dict | None:
+    """Entity detail + three buckets of related docs (one page per entity).
+
+    Buckets mirror the three linking patterns set during ingest/enrichment:
+      - authored_by: documents.author_entity_id == entity_id
+      - participated: entity_id appears in documents.participant_entity_ids
+      - mentioned_in: entity_id appears in metadata_json.mentioned_entity_ids
+
+    A doc that qualifies under multiple buckets only appears in the strongest
+    one (authored > participated > mentioned) to avoid duplicate rendering.
+    """
+    ent = get_entity(entity_id)
+    if not ent:
+        return None
+
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, title, doc_type, date, source_kind, author_entity_id, "
+        "participant_entity_ids, metadata_json, word_count, created_at "
+        "FROM documents WHERE corpus_id=? ORDER BY created_at DESC",
+        (ent["corpus_id"],),
+    ).fetchall()
+
+    authored: list[dict] = []
+    participated: list[dict] = []
+    mentioned: list[dict] = []
+
+    for r in rows:
+        doc_summary = {
+            "id": r["id"],
+            "title": r["title"],
+            "doc_type": r["doc_type"],
+            "date": r["date"],
+            "source_kind": r["source_kind"] or "user_original",
+            "word_count": r["word_count"] or 0,
+            "created_at": r["created_at"],
+        }
+        if r["author_entity_id"] == entity_id:
+            authored.append(doc_summary)
+            continue
+        try:
+            pids = json.loads(r["participant_entity_ids"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            pids = []
+        if entity_id in pids:
+            participated.append(doc_summary)
+            continue
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if entity_id in (meta.get("mentioned_entity_ids") or []):
+            mentioned.append(doc_summary)
+
+    ent["authored_by"] = authored
+    ent["participated"] = participated
+    ent["mentioned_in"] = mentioned
+    ent["doc_count"] = len(authored) + len(participated) + len(mentioned)
+    return ent
+
+
 def list_entities(corpus_id: str, *, kind: str | None = None) -> list[dict]:
     """List entities in a corpus, optionally filtered by kind.
 

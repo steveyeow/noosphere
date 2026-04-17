@@ -132,6 +132,30 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-upload-remove{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px;transition:color .12s}.term-upload-remove:hover{color:var(--tx)}
 .term-upload-size{color:var(--tx3);font-size:10px}
 .term-upload-actions{display:flex;gap:8px;margin-top:12px;margin-bottom:10px}
+/* ── Entity detail page (one page per entity) ── */
+.ep-wrap{max-width:760px;margin:0 auto;padding:24px 32px}
+.ep-header{padding:28px 0 20px;border-bottom:1px solid var(--brd);margin-bottom:24px}
+.ep-kind{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.ep-name{font-family:'Libre Baskerville',Georgia,serif;font-size:34px;font-weight:700;color:var(--tx);margin:0 0 10px;line-height:1.15}
+.ep-aliases{font-size:13px;color:var(--tx3);margin-bottom:10px}
+.ep-alias{font-family:var(--mono);font-size:12px;color:var(--tx2);padding:2px 7px;border-radius:8px;background:var(--bg2);border:1px solid var(--brd)}
+.ep-desc{font-size:15px;color:var(--tx2);line-height:1.6;margin:10px 0 12px}
+.ep-stats{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--tx3)}
+.ep-stats strong{color:var(--tx);font-weight:700}
+.ep-bucket{margin-bottom:28px}
+.ep-bucket-lbl{font-size:12px;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.ep-bucket-cnt{font-family:var(--mono);font-size:11px;color:var(--tx3);font-weight:400}
+.ep-doc-list{display:flex;flex-direction:column;gap:6px}
+.ep-doc{display:block;padding:12px 14px;border-radius:10px;background:var(--bg2);border:1px solid var(--brd);text-decoration:none;color:var(--tx);transition:background .12s,border-color .12s}
+.ep-doc:hover{background:var(--bgH);border-color:var(--tx3)}
+.ep-doc-title{font-size:14px;font-weight:500;color:var(--tx);margin-bottom:4px}
+.ep-doc-meta{font-family:var(--mono);font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ep-doc-sk{margin-left:auto;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:500;letter-spacing:.02em}
+.ep-doc-sk.sk-user_original{background:color-mix(in srgb,#4ade80 18%,transparent);color:#2a7a3e}
+.ep-doc-sk.sk-user_capture{background:color-mix(in srgb,#60a5fa 18%,transparent);color:#2c5ca8}
+.ep-doc-sk.sk-external_public{background:var(--bgH);color:var(--tx3)}
+.ep-doc-sk.sk-external_subscription{background:color-mix(in srgb,#f87171 15%,transparent);color:#a14343}
+
 /* ── Entity list (corpus detail page) ── */
 .cv-ent-group{margin-bottom:10px}
 .cv-ent-kind{font-size:11px;color:var(--tx3);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}

@@ -160,11 +160,18 @@ async function route(){const h=location.hash||'#/';stopAll();
   else if(h==='#/account')renderAccount();
   else if(h==='#/network'||h.startsWith('#/explore'))renderNet();
   else if(h.startsWith('#/corpus/')){
-    const parts=h.split('/')[2];
-    const [corpusId,query]=parts.split('?');
-    const params=new URLSearchParams(query||'');
-    const sessionId=params.get('session');
-    await renderCorpus(corpusId,sessionId);
+    // #/corpus/{cid} or #/corpus/{cid}/entity/{eid}[?query]
+    const afterPrefix=h.substring('#/corpus/'.length);
+    const [pathPart,queryPart]=afterPrefix.split('?');
+    const segs=pathPart.split('/');
+    const corpusId=segs[0];
+    if(segs[1]==='entity'&&segs[2]){
+      await renderEntity(corpusId,segs[2]);
+    }else{
+      const params=new URLSearchParams(queryPart||'');
+      const sessionId=params.get('session');
+      await renderCorpus(corpusId,sessionId);
+    }
   }
   else renderHome();
 }
@@ -990,9 +997,25 @@ async function loadCorpusEntities(corpusId){
     const order=['person','company','concept','place'];
     list.innerHTML=order.filter(k=>byKind[k]).map(k=>{
       const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count).slice(0,30);
-      return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<span class="cv-ent-chip" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></span>`).join('')}</div></div>`;
+      return `<div class="cv-ent-group"><div class="cv-ent-kind">${ENTITY_KIND_ICON[k]||'•'} ${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
     }).join('');
   }catch(e){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>'}
+}
+
+async function renderEntity(corpusId,entityId){
+  const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
+  hideRP();
+  let c=null;try{const r=await fetch(`${API}/corpora/${corpusId}`);if(r.ok)c=await r.json()}catch(e){}
+  let ent=null;try{const r=await fetch(`${API}/corpora/${corpusId}/entities/${entityId}`);if(!r.ok){ct.innerHTML=`<a class="cv-back" href="#/corpus/${corpusId}">&larr; Back</a><div class="empty" style="margin-top:40px">Entity not found</div>`;return}ent=await r.json()}catch(e){ct.innerHTML='<div class="empty">Failed to load</div>';return}
+  const kindIcon=ENTITY_KIND_ICON[ent.kind]||'•';
+  const aliases=Array.isArray(ent.aliases)?ent.aliases:[];
+  const buckets=[
+    {key:'authored_by',label:'Authored',docs:ent.authored_by||[]},
+    {key:'participated',label:'Participated in',docs:ent.participated||[]},
+    {key:'mentioned_in',label:'Mentioned in',docs:ent.mentioned_in||[]},
+  ].filter(b=>b.docs.length>0);
+  const bucketHTML=buckets.map(b=>`<div class="ep-bucket"><div class="ep-bucket-lbl">${esc(b.label)} <span class="ep-bucket-cnt">${b.docs.length}</span></div><div class="ep-doc-list">${b.docs.map(d=>`<a class="ep-doc" href="#/corpus/${corpusId}/doc/${d.id}" onclick="event.preventDefault();location.hash='#/corpus/${corpusId}';"><div class="ep-doc-title">${esc(d.title)}</div><div class="ep-doc-meta">${esc(d.doc_type||'')}${d.date?' · '+esc(d.date):''}${d.word_count?' · '+d.word_count+' words':''}<span class="ep-doc-sk sk-${d.source_kind}">${esc(d.source_kind)}</span></div></a>`).join('')}</div></div>`).join('');
+  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${kindIcon} ${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}${ent.description?`<p class="ep-desc">${esc(ent.description)}</p>`:''}<div class="ep-stats"><span><strong>${ent.doc_count||0}</strong> document${ent.doc_count===1?'':'s'}</span>${ent.authored_by?.length?`<span>${ent.authored_by.length} authored</span>`:''}${ent.participated?.length?`<span>${ent.participated.length} participated</span>`:''}${ent.mentioned_in?.length?`<span>${ent.mentioned_in.length} mentioned</span>`:''}</div></div>${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
 }
 
 function showDocInlineEdit(corpusId,item,doc){

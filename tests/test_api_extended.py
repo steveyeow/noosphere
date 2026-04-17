@@ -564,6 +564,51 @@ def test_batch_extract_skips_already_enriched(client, corpus, monkeypatch):
     assert calls["n"] == 2
 
 
+def test_entity_detail_buckets_by_relationship(client, corpus):
+    """Entity detail returns authored / participated / mentioned as disjoint buckets."""
+    from noosphere.core.entities import upsert_entity
+    from noosphere.core.ingest import ingest_text
+
+    alice = upsert_entity(corpus["id"], "person", "Alice")
+    bob = upsert_entity(corpus["id"], "person", "Bob")
+
+    # Alice authored this
+    d1 = ingest_text(corpus["id"], title="A-auth", content="one", author_entity_id=alice)
+    # Bob is a participant alongside Alice
+    d2 = ingest_text(corpus["id"], title="A-part", content="two", author_entity_id=alice, participant_entity_ids=[bob])
+    # Alice only mentioned (via metadata)
+    d3 = ingest_text(corpus["id"], title="A-ment", content="three", metadata={"mentioned_entity_ids": [alice]})
+
+    r = client.get(f"/api/v1/corpora/{corpus['id']}/entities/{alice}")
+    assert r.status_code == 200
+    ent = r.json()
+    authored_titles = {d["title"] for d in ent["authored_by"]}
+    part_titles = {d["title"] for d in ent["participated"]}
+    ment_titles = {d["title"] for d in ent["mentioned_in"]}
+
+    assert authored_titles == {"A-auth", "A-part"}  # both are authored by Alice
+    assert part_titles == set()                      # Alice is author on d2, not just participant
+    assert ment_titles == {"A-ment"}
+    assert ent["doc_count"] == 3
+
+    # Bob shows up only as a participant on d2
+    r = client.get(f"/api/v1/corpora/{corpus['id']}/entities/{bob}")
+    ent_b = r.json()
+    assert {d["title"] for d in ent_b["participated"]} == {"A-part"}
+    assert ent_b["authored_by"] == []
+    assert ent_b["mentioned_in"] == []
+
+
+def test_entity_detail_404_for_cross_corpus(client, corpus):
+    """An entity from another corpus should 404, not leak."""
+    from noosphere.core.entities import upsert_entity
+
+    other = client.post("/api/v1/corpora", json={"name": "Other", "access_level": "public"}).json()
+    eid = upsert_entity(other["id"], "person", "Somebody")
+    r = client.get(f"/api/v1/corpora/{corpus['id']}/entities/{eid}")
+    assert r.status_code == 404
+
+
 def test_ingest_url_sets_author_from_meta(client, corpus, monkeypatch):
     from noosphere.core.ingest import ingest_url
     import httpx
