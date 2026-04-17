@@ -391,6 +391,72 @@ def enrich_document(doc_id: str, *, use_llm: bool = True) -> dict | None:
     }
 
 
+def compile_entity_note(entity_id: str, *, max_docs: int = 20, max_chars_per_doc: int = 1500) -> dict | None:
+    """LLM-synthesize a 'compiled truth' summary about an entity from all its
+    related documents.
+
+    Writes the output to entities.description (overwrites prior compile).
+    Returns {entity_id, compiled_text, source_doc_count} or None if the entity
+    doesn't exist / has no related docs / LLM unavailable.
+    """
+    from noosphere.core.llm import call_llm
+
+    ent = get_entity_with_related_docs(entity_id)
+    if not ent:
+        return None
+
+    conn = get_conn()
+    # Assemble passages — prioritize authored, then participated, then mentioned.
+    related = [*ent.get("authored_by", []), *ent.get("participated", []), *ent.get("mentioned_in", [])]
+    if not related:
+        return None
+
+    parts: list[str] = []
+    source_ids: list[str] = []
+    for d in related[:max_docs]:
+        row = conn.execute("SELECT content FROM documents WHERE id=?", (d["id"],)).fetchone()
+        if not row or not row["content"]:
+            continue
+        body = row["content"].strip()[:max_chars_per_doc]
+        source_ids.append(d["id"])
+        parts.append(f"### [{d['title']}]\n{body}")
+
+    if not parts:
+        return None
+
+    context = "\n\n---\n\n".join(parts)
+    name = ent["canonical_name"]
+    kind = ent["kind"]
+    sys = (
+        f"You are writing a concise factual profile of a {kind} based on the provided excerpts from a personal knowledge base. "
+        "Use only information grounded in the excerpts. Include: who/what they are, what they do, "
+        "key relationships and themes, and anything distinctive or recurring. "
+        "Do not invent facts. Use the same language as the excerpts. Keep under 250 words."
+    )
+    user = f"Entity: {name} ({kind})\n\nExcerpts:\n\n{context}"
+    try:
+        text = call_llm([{"role": "system", "content": sys}, {"role": "user", "content": user}])
+    except Exception as e:
+        logger.warning("compile_entity_note LLM call failed for %s: %s", entity_id, e)
+        return None
+    if not text or text.startswith("No LLM provider"):
+        return None
+
+    compiled = text.strip()
+    try:
+        meta = json.loads((ent.get("metadata_json") or "{}") if isinstance(ent.get("metadata_json"), str) else json.dumps(ent.get("metadata") or {}))
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    meta["compiled_at"] = _now()
+    meta["compiled_from_doc_ids"] = source_ids
+    conn.execute(
+        "UPDATE entities SET description=?, metadata_json=?, updated_at=? WHERE id=?",
+        (compiled, json.dumps(meta), _now(), entity_id),
+    )
+    conn.commit()
+    return {"entity_id": entity_id, "compiled_text": compiled, "source_doc_count": len(source_ids)}
+
+
 def enrich_corpus(corpus_id: str, *, only_unenriched: bool = True, limit: int = 50) -> dict:
     """Run entity extraction across documents in a corpus.
 

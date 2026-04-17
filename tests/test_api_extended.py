@@ -599,6 +599,53 @@ def test_entity_detail_buckets_by_relationship(client, corpus):
     assert ent_b["mentioned_in"] == []
 
 
+def test_compile_entity_writes_description(client, corpus, monkeypatch):
+    from noosphere.core.entities import upsert_entity
+    from noosphere.core.ingest import ingest_text
+
+    lenny = upsert_entity(corpus["id"], "person", "Lenny Rachitsky")
+    ingest_text(
+        corpus["id"], title="Newsletter #1",
+        content="Lenny wrote about product-market fit, specifically how to evaluate demand signals.",
+        author_entity_id=lenny, source_kind="external_public",
+    )
+    ingest_text(
+        corpus["id"], title="Newsletter #2",
+        content="Another piece by Lenny about hiring, focusing on what to look for in PM candidates.",
+        author_entity_id=lenny, source_kind="external_public",
+    )
+
+    monkeypatch.setattr(
+        "noosphere.core.llm.call_llm",
+        lambda messages: "Lenny Rachitsky is a newsletter writer focused on PMF and hiring.",
+    )
+
+    r = client.post(f"/api/v1/corpora/{corpus['id']}/entities/{lenny}/compile")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source_doc_count"] == 2
+    assert "Lenny" in body["compiled_text"]
+
+    # Description is now set on the entity
+    r_ent = client.get(f"/api/v1/corpora/{corpus['id']}/entities/{lenny}")
+    assert r_ent.json()["description"].startswith("Lenny Rachitsky is")
+
+
+def test_compile_entity_404_cross_corpus(client, corpus, monkeypatch):
+    from noosphere.core.entities import upsert_entity
+    other = client.post("/api/v1/corpora", json={"name": "Other", "access_level": "public"}).json()
+    eid = upsert_entity(other["id"], "person", "Nobody")
+    r = client.post(f"/api/v1/corpora/{corpus['id']}/entities/{eid}/compile")
+    assert r.status_code == 404
+
+
+def test_compile_entity_fails_without_related_docs(client, corpus, monkeypatch):
+    from noosphere.core.entities import upsert_entity
+    eid = upsert_entity(corpus["id"], "person", "Orphan")
+    r = client.post(f"/api/v1/corpora/{corpus['id']}/entities/{eid}/compile")
+    assert r.status_code == 400
+
+
 def test_entity_detail_404_for_cross_corpus(client, corpus):
     """An entity from another corpus should 404, not leak."""
     from noosphere.core.entities import upsert_entity

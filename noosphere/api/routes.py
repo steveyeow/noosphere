@@ -634,6 +634,26 @@ async def api_list_entities(corpus_id: str, request: Request, kind: Optional[str
     return {"entities": list_entities(corpus["id"], kind=kind)}
 
 
+@router.post("/corpora/{corpus_id}/entities/{entity_id}/compile")
+async def api_compile_entity(corpus_id: str, entity_id: str, request: Request):
+    """LLM-compile a 'compiled truth' summary for an entity (one page per person/company)."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
+    from noosphere.core.entities import compile_entity_note, get_entity
+    ent = get_entity(entity_id)
+    if not ent or ent.get("corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    result = compile_entity_note(entity_id)
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="Compile failed — no related documents, or LLM unavailable.",
+        )
+    _track_usage(request, "compile")
+    return result
+
+
 @router.get("/corpora/{corpus_id}/entities/{entity_id}")
 async def api_get_entity(corpus_id: str, entity_id: str, request: Request):
     """Entity detail page: the entity + three buckets of related documents.
