@@ -812,16 +812,35 @@ async function drawGraphIn(container,corpora,existingCanvas){
   sim.on('tick',()=>{});_gAnim=requestAnimationFrame(draw);
 }
 
-/* ══════ INLINE ADD DOCUMENT ══════ */
-function showCorpusAddDoc(corpusId,initialTab){
-  // Mount above the raw docs list by default (that's where new source material flows to);
-  // when invoked with 'compile', mount above wiki docs instead.
-  const anchorId=(initialTab==='compile'||initialTab==='write')?'cv-wiki-docs':'cv-raw-docs';
-  const container=document.getElementById(anchorId)||document.getElementById('cv-docs')||document.getElementById('cv-raw-docs');
+/* ══════ INLINE COMPILE (Wiki generator, separate from + Add) ══════ */
+function showCorpusCompile(corpusId){
+  const container=document.getElementById('cv-wiki-docs');if(!container)return;
+  if(document.getElementById('cv-compile-panel'))return;
+  const panel=document.createElement('div');panel.id='cv-compile-panel';panel.className='cv-add-panel';
+  panel.innerHTML=`<div class="cv-add-body"><input type="text" class="fi" id="cc-topic" placeholder='Topic to compile, e.g. "pricing strategy"' style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cc-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">Retrieves top passages from your Sources and uses an LLM to synthesize a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cc-go">✨ Compile</button><button class="btn-sm-ghost" id="cc-cancel">Cancel</button></div></div>`;
+  container.parentNode.insertBefore(panel,container);
+  const topic=panel.querySelector('#cc-topic');topic.focus();
+  panel.querySelector('#cc-cancel').onclick=()=>panel.remove();
+  panel.querySelector('#cc-go').onclick=async()=>{
+    const t=topic.value.trim();const tk=parseInt(panel.querySelector('#cc-topk').value)||10;
+    if(!t){toast('Enter a topic');return}
+    const btn=panel.querySelector('#cc-go');btn.disabled=true;btn.textContent='Compiling...';
+    try{
+      const r=await fetch(`${API}/corpora/${corpusId}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:t,top_k:tk})});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
+      const d=await r.json();toast(`Compiled: ${d.title||t}`,'success');
+      panel.remove();renderCorpus(corpusId);
+    }catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='✨ Compile'}
+  };
+}
+
+/* ══════ INLINE ADD DOCUMENT (Raw ingestion only — tabs for Upload/Write/URL/Archive/RSS) ══════ */
+function showCorpusAddDoc(corpusId){
+  const container=document.getElementById('cv-raw-docs')||document.getElementById('cv-docs');
   if(!container)return;
   if(document.getElementById('cv-add-panel'))return;
   const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="archive">Import Archive</button><button class="cv-add-tab" data-tab="compile">Compile</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
+  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload Files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">RSS Feed</button><button class="cv-add-tab" data-tab="archive">Import Archive</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
   container.parentNode.insertBefore(panel,container);
 
   const body=panel.querySelector('#cv-add-body');
@@ -922,22 +941,10 @@ function showCorpusAddDoc(corpusId,initialTab){
         }catch(e){toast('Import failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Import & Index';return}
         panel.remove();renderCorpus(corpusId);
       };
-    } else if(tab==='compile'){
-      body.innerHTML=`<input type="text" class="fi" id="cv-add-topic" placeholder="Topic to compile, e.g. &quot;pricing strategy&quot;" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cv-add-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px">Retrieves top passages and uses an LLM to compile a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Compile</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-topic').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const topic=body.querySelector('#cv-add-topic').value.trim();
-        const topK=parseInt(body.querySelector('#cv-add-topk').value)||10;
-        if(!topic){toast('Enter a topic');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Compiling...';
-        try{const r=await fetch(`${API}/corpora/${corpusId}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,top_k:topK})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Compiled: ${d.title||topic}`,'success')}catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='Compile';return}
-        panel.remove();renderCorpus(corpusId);
-      };
     }
   }
   tabs.forEach(t=>t.onclick=()=>setTab(t.dataset.tab));
-  setTab(initialTab||'upload');
+  setTab('upload');
 }
 
 /* ══════ CORPUS DETAIL + CHAT ══════ */
@@ -973,7 +980,7 @@ async function renderCorpus(id,sessionId){
       try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save description')}
     };
   };
-  document.getElementById('cv-compile-btn').onclick=()=>showCorpusAddDoc(id,'compile');
+  document.getElementById('cv-compile-btn').onclick=()=>showCorpusCompile(id);
   document.getElementById('cv-raw-add').onclick=()=>showCorpusAddDoc(id);
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
