@@ -402,7 +402,6 @@ def _init_fts_sqlite(conn):
 
 def _init_fts_pg(conn):
     """Create tsvector column + GIN index; backfill from existing data."""
-    pg = _pg()
     raw_conn = conn._conn if isinstance(conn, _PgConnWrapper) else conn
     cur = raw_conn.cursor()
     # Add tsv column if not exists + create GIN index for chunks

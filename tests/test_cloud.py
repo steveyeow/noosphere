@@ -4,8 +4,6 @@ These tests verify the cloud modules work correctly without requiring
 Supabase or Stripe credentials. JWT and Stripe calls are mocked.
 """
 
-import json
-import time
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
@@ -27,7 +25,6 @@ from noosphere.cloud.quota import (
     check_corpus_limit,
     check_document_limit,
     QUOTA_LIMITS,
-    RESOURCE_LIMITS,
 )
 from noosphere.core.db import get_conn
 
@@ -228,7 +225,6 @@ def test_auth_middleware_public_paths():
     from noosphere.cloud.auth import auth_middleware
 
     async def run():
-        from starlette.testclient import TestClient
         from starlette.requests import Request
 
         called = False
