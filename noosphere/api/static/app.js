@@ -1086,6 +1086,30 @@ async function setupCorpusInteract(id,sessionId){
 }
 
 const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query or subscribe. Set pricing below.'};
+
+function showAccessConfirmModal(newLevel, summary){
+  // summary: { total, originals, by_source_kind, visibility: {owner, external} }
+  return new Promise(resolve=>{
+    const titles={public:'Enable public access',paid:'Enable paid access',token:'Enable token-gated access'};
+    const visibleTo={public:'everyone',paid:'paying subscribers',token:'token holders'};
+    const orig=summary.originals;
+    const extPub=summary.by_source_kind?.external_public||0;
+    const extSub=summary.by_source_kind?.external_subscription||0;
+    const cap=summary.by_source_kind?.user_capture||0;
+    const origBreakdown=[orig?`${orig} original${orig===1?'':'s'}`:null,cap?`(incl. ${cap} chat capture${cap===1?'':'s'})`:null].filter(Boolean).join(' ');
+    const extLines=[];
+    if(extPub>0)extLines.push(`<div class="acm-row acm-ext"><span class="acm-dot"></span><span class="acm-lbl">${extPub} external public reference${extPub===1?'':'s'}</span><span class="acm-note">hidden from ${visibleTo[newLevel]}</span></div>`);
+    if(extSub>0)extLines.push(`<div class="acm-row acm-ext"><span class="acm-dot"></span><span class="acm-lbl">${extSub} subscription content</span><span class="acm-note">owner-only</span></div>`);
+    const wrap=document.createElement('div');wrap.className='acm-overlay';
+    wrap.innerHTML=`<div class="acm-panel"><div class="acm-title">${titles[newLevel]||'Enable external access'}</div><div class="acm-sub">Your corpus contains:</div><div class="acm-list"><div class="acm-row acm-orig"><span class="acm-dot"></span><span class="acm-lbl">${origBreakdown}</span><span class="acm-note">visible to ${visibleTo[newLevel]}</span></div>${extLines.join('')}</div><div class="acm-expl">Only your originals are served to non-owners. External material stays private.</div><div class="acm-actions"><button class="btn-sm-ghost" id="acm-cc">Cancel</button><button class="btn-sm" id="acm-ok">${titles[newLevel]||'Confirm'}</button></div></div>`;
+    document.body.appendChild(wrap);
+    const close=r=>{wrap.remove();resolve(r)};
+    wrap.querySelector('#acm-cc').onclick=()=>close(false);
+    wrap.querySelector('#acm-ok').onclick=()=>close(true);
+    wrap.addEventListener('click',e=>{if(e.target===wrap)close(false)});
+  });
+}
+
 async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const al=c.access_level||'public';
   let regStatus='';
   try{const hr=await fetch(`${API}/health`);const h=await hr.json();regStatus=al!=='private'&&h.registry_connected?'<div class="rp-reg ok">Registered in the Noosphere</div>':'<div class="rp-reg local">Local only</div>'}catch(e){regStatus='<div class="rp-reg local">Local only</div>'}
@@ -1106,7 +1130,29 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     document.getElementById('rp-revenue').style.display=v==='paid'?'block':'none';
     if(v==='paid')loadPricingUI(c);
   };
-  document.getElementById('rp-sv').onclick=async()=>{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:document.getElementById('rp-acc').value})});await loadC();renderCorpus(c.id)};
+  document.getElementById('rp-sv').onclick=async()=>{
+    const newAl=document.getElementById('rp-acc').value;
+    const curAl=c.access_level||'public';
+    if(newAl===curAl){toast('No change');return}
+    const external=['public','paid','token'];
+    if(external.includes(newAl)){
+      let summary=null;
+      try{const r=await fetch(`${API}/corpora/${c.id}/access-summary`);if(r.ok)summary=await r.json()}catch(e){}
+      if(summary && summary.total>0){
+        if(!summary.can_enable_external_access){
+          toast('This corpus contains only external material — add at least one user-originated document first','error');
+          return;
+        }
+        const proceed=await showAccessConfirmModal(newAl,summary);
+        if(!proceed)return;
+      }
+    }
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:newAl})});
+      if(!r.ok){const d=await r.json().catch(()=>({}));toast(d.detail||'Failed to update access','error');return}
+      await loadC();renderCorpus(c.id);
+    }catch(e){toast('Failed: '+e.message,'error')}
+  };
 
   /* Token management */
   async function loadTokens(){

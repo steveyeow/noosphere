@@ -126,12 +126,14 @@ def handle_tool_call(
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
         token_id = _check_mcp_access(c, bearer_token)
+        # MCP consumers are external agents — always apply source_kind filter.
         result = search_corpus(
             c["id"], arguments["query"],
             top_k=arguments.get("top_k", 5),
             detail=arguments.get("detail", "medium"),
             agent_id=agent_id,
             token_id=token_id,
+            caller="external",
         )
         return result
 

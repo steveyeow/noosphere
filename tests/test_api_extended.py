@@ -343,6 +343,99 @@ def test_maintain_endpoint(client, corpus, monkeypatch):
     assert r.status_code == 200
 
 
+# ── Phase 1a: source_kind filter + publish guard ──
+
+
+def test_access_summary_counts_by_source_kind(client, corpus):
+    from noosphere.core.ingest import ingest_text
+    ingest_text(corpus["id"], title="Mine", content="my note body", source_kind="user_original")
+    ingest_text(corpus["id"], title="Feed", content="external blog body", source_kind="external_public")
+    ingest_text(corpus["id"], title="Book", content="ebook content body", source_kind="external_subscription")
+
+    r = client.get(f"/api/v1/corpora/{corpus['id']}/access-summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 3
+    assert data["originals"] == 1
+    assert data["by_source_kind"]["user_original"] == 1
+    assert data["by_source_kind"]["external_public"] == 1
+    assert data["by_source_kind"]["external_subscription"] == 1
+    assert data["can_enable_external_access"] is True
+    assert data["visibility"]["owner"] == 3
+    assert data["visibility"]["external"] == 1
+
+
+def test_access_summary_empty_corpus(client, corpus):
+    r = client.get(f"/api/v1/corpora/{corpus['id']}/access-summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 0
+    assert data["originals"] == 0
+    assert data["can_enable_external_access"] is False
+
+
+def test_pricing_blocked_when_only_external_content(client, corpus):
+    from noosphere.core.ingest import ingest_text
+    ingest_text(corpus["id"], title="Ext", content="external body", source_kind="external_public")
+
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/pricing",
+        json={"type": "per_query", "amount_cents": 500, "currency": "usd", "queries_per_payment": 10},
+    )
+    assert r.status_code == 400
+    assert "external" in r.json()["detail"].lower()
+
+
+def test_pricing_allowed_with_user_original(client, corpus):
+    from noosphere.core.ingest import ingest_text
+    ingest_text(corpus["id"], title="Ext", content="external body", source_kind="external_public")
+    ingest_text(corpus["id"], title="Mine", content="my body", source_kind="user_original")
+
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/pricing",
+        json={"type": "per_query", "amount_cents": 500, "currency": "usd", "queries_per_payment": 10},
+    )
+    assert r.status_code == 200
+
+
+def test_access_level_change_to_public_blocked_when_external_only(client, corpus):
+    # Corpus was created as access_level=public already; need to re-set by first
+    # moving to private, then trying to move back to public with only external content.
+    from noosphere.core.ingest import ingest_text
+    ingest_text(corpus["id"], title="Ext", content="external body", source_kind="external_public")
+    r = client.patch(f"/api/v1/corpora/{corpus['id']}", json={"access_level": "private"})
+    assert r.status_code == 200
+    r = client.patch(f"/api/v1/corpora/{corpus['id']}", json={"access_level": "public"})
+    assert r.status_code == 400
+
+
+def test_search_filters_external_for_external_caller(client, corpus):
+    # Arrange: one user_original doc, one external doc. Index, then search with owner vs external.
+    from noosphere.core.ingest import ingest_text
+    from noosphere.core.indexer import index_corpus
+    ingest_text(corpus["id"], title="My note", content="alpha beta gamma original thinking here", source_kind="user_original")
+    ingest_text(corpus["id"], title="External", content="alpha beta gamma external material here", source_kind="external_public")
+    index_corpus(corpus["id"])
+
+    # Owner caller (owner is detected via TestClient being localhost + no x-agent-id header)
+    r = client.post(f"/api/v1/corpora/{corpus['id']}/search", json={"query": "alpha beta"})
+    assert r.status_code == 200
+    owner_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
+    assert "My note" in owner_titles
+    assert "External" in owner_titles
+
+    # External caller (x-agent-id header forces non-owner detection)
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/search",
+        json={"query": "alpha beta"},
+        headers={"x-agent-id": "agent-1"},
+    )
+    assert r.status_code == 200
+    external_titles = {r_["citation"]["document_title"] for r_ in r.json().get("results", [])}
+    assert "My note" in external_titles
+    assert "External" not in external_titles
+
+
 def test_compile_endpoint_mock(client, corpus_with_doc, monkeypatch):
     monkeypatch.setattr(
         "noosphere.core.knowledge_growth.search_corpus",

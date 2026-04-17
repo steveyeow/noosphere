@@ -19,14 +19,17 @@ def chat_with_corpus(
     *,
     history: list[dict] | None = None,
     top_k: int = 5,
+    caller: str = "owner",
 ) -> dict:
     """Chat with a corpus using RAG.
 
     1. Retrieve relevant chunks from the corpus
     2. Send chunks + message to LLM
     3. Return the response with citations
+
+    caller gates source_kind filtering (see retrieval.search_corpus).
     """
-    retrieval = search_corpus(corpus_id, message, top_k=top_k)
+    retrieval = search_corpus(corpus_id, message, top_k=top_k, caller=caller)
     chunks = retrieval.get("results", [])
 
     context_parts = []
@@ -69,7 +72,11 @@ def chat_with_noosphere(
     history: list[dict] | None = None,
     top_k: int = 5,
 ) -> dict:
-    """Chat across ALL public corpora."""
+    """Chat across ALL public corpora.
+
+    Cross-corpus chat is always external w.r.t. each corpus — the caller is
+    not a specific corpus owner, so source_kind filter applies.
+    """
     from noosphere.core.corpus import list_corpora
 
     corpora = [c for c in list_corpora() if c.get("status") == "ready" and c.get("access_level") == "public"]
@@ -77,7 +84,7 @@ def chat_with_noosphere(
 
     for c in corpora:
         try:
-            result = search_corpus(c["id"], message, top_k=3)
+            result = search_corpus(c["id"], message, top_k=3, caller="external")
             for r in result.get("results", []):
                 r["corpus_name"] = c["name"]
             all_chunks.extend(result.get("results", []))

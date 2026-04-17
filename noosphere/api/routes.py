@@ -359,6 +359,66 @@ async def api_get_corpus(corpus_id: str, request: Request):
     return corpus
 
 
+def _corpus_source_kind_breakdown(corpus_id: str) -> dict[str, int]:
+    """Count documents per source_kind for a corpus."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT source_kind, COUNT(*) as n FROM documents WHERE corpus_id=? GROUP BY source_kind",
+        (corpus_id,),
+    ).fetchall()
+    return {r["source_kind"] or "user_original": r["n"] for r in rows}
+
+
+def _require_originals_for_public_access(corpus_id: str, new_access_level: str) -> None:
+    """Block publish / paid-access when the corpus has documents but zero originals.
+
+    Empty corpora are allowed through (user may be configuring before ingest).
+    Corpora with only external content are blocked — external callers would
+    receive nothing since imported external material is filtered out.
+    """
+    if new_access_level not in ("public", "paid", "token"):
+        return
+    counts = _corpus_source_kind_breakdown(corpus_id)
+    total = sum(counts.values())
+    if total == 0:
+        return
+    originals = counts.get("user_original", 0) + counts.get("user_capture", 0)
+    if originals == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot enable external access: this corpus contains only "
+                "external material. External callers would receive an empty "
+                "response since imported external content is filtered out. "
+                "Add at least one user-originated document first."
+            ),
+        )
+
+
+@router.get("/corpora/{corpus_id}/access-summary")
+async def api_access_summary(corpus_id: str, request: Request):
+    """Breakdown of documents by source_kind — used by publish/paid confirm flows.
+
+    Returns counts per source_kind plus what each class will look like to
+    different caller types (owner vs external).
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    counts = _corpus_source_kind_breakdown(corpus["id"])
+    total = sum(counts.values())
+    originals = counts.get("user_original", 0) + counts.get("user_capture", 0)
+    return {
+        "total": total,
+        "originals": originals,
+        "by_source_kind": counts,
+        "can_enable_external_access": originals > 0,
+        "visibility": {
+            "owner": total,
+            "external": originals,
+        },
+    }
+
+
 @router.patch("/corpora/{corpus_id}")
 async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
@@ -366,6 +426,9 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+    new_access_level = updates.get("access_level")
+    if new_access_level and new_access_level != corpus.get("access_level"):
+        _require_originals_for_public_access(corpus_id, new_access_level)
     result = update_corpus(corpus_id, **updates)
     return result
 
@@ -731,11 +794,13 @@ async def api_search(corpus_id: str, req: SearchRequest, request: Request):
     token_id = _check_corpus_access(corpus, request)
     _check_quota(request, "search")
     agent_id = request.headers.get("x-agent-id", "")
+    caller = "owner" if _is_owner_request(request) else "external"
     result = search_corpus(
         corpus["id"], req.query, top_k=req.top_k,
         include_context=req.include_context,
         detail=req.detail,
         agent_id=agent_id, token_id=token_id,
+        caller=caller,
     )
     _track_usage(request, "search")
     return result
@@ -926,7 +991,8 @@ async def api_global_search(req: SearchRequest):
     all_results = []
     for c in ready:
         try:
-            result = search_corpus(c["id"], req.query, top_k=req.top_k, include_context=req.include_context)
+            # Cross-corpus search is always external w.r.t. each corpus.
+            result = search_corpus(c["id"], req.query, top_k=req.top_k, include_context=req.include_context, caller="external")
             for r in result.get("results", []):
                 r["corpus_id"] = c["id"]
                 r["corpus_name"] = c["name"]
@@ -1069,8 +1135,9 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
     _check_quota(request, "chat")
+    caller = "owner" if _is_owner_request(request) else "external"
     from noosphere.core.chat import chat_with_corpus
-    result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k)
+    result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k, caller=caller)
 
     conn = get_conn()
     now = datetime.now(timezone.utc).isoformat()
@@ -1504,6 +1571,7 @@ async def api_set_pricing(corpus_id: str, req: PricingRequest, request: Request)
     """Set pricing config for a corpus. Also sets access_level to 'paid'."""
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _require_originals_for_public_access(corpus["id"], "paid")
 
     import json as _j
     pricing = {

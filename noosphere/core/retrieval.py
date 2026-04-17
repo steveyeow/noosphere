@@ -28,6 +28,12 @@ FRESHNESS_BOOST_PER_YEAR = 0.02
 FRESHNESS_BOOST_MAX = 0.10
 COMPILED_TRUTH_BOOST = 0.08  # Score boost for compiled concept notes (distilled knowledge)
 
+# Caller identity gates source_kind filtering (Phase 1a: external callers only see originals).
+# See project_noosphere_ingestion memory Principle 3.
+CALLER_OWNER = "owner"
+CALLER_EXTERNAL = "external"
+EXTERNAL_ALLOWED_SOURCE_KINDS = {"user_original", "user_capture"}
+
 
 # ── Abstract interface ──────────────────────────────────────────────
 
@@ -35,7 +41,7 @@ class RetrievalEngine(ABC):
     """Abstract retrieval interface — local or remote, same API."""
 
     @abstractmethod
-    def search(self, corpus_id: str, query: str, *, top_k: int = 5) -> dict:
+    def search(self, corpus_id: str, query: str, *, top_k: int = 5, caller: str = "owner") -> dict:
         ...
 
     @abstractmethod
@@ -55,8 +61,8 @@ class LocalRetrieval(RetrievalEngine):
     def __init__(self, provider: str = ""):
         self._provider = provider
 
-    def search(self, corpus_id: str, query: str, *, top_k: int = 5) -> dict:
-        return search_corpus(corpus_id, query, top_k=top_k, provider=self._provider)
+    def search(self, corpus_id: str, query: str, *, top_k: int = 5, caller: str = CALLER_OWNER) -> dict:
+        return search_corpus(corpus_id, query, top_k=top_k, provider=self._provider, caller=caller)
 
     def list_corpora(self) -> list[dict]:
         from noosphere.core.corpus import list_corpora
@@ -82,12 +88,17 @@ class RemoteRetrieval(RetrievalEngine):
             h["Authorization"] = f"Bearer {self._key}"
         return h
 
-    def search(self, corpus_id: str, query: str, *, top_k: int = 5) -> dict:
+    def search(self, corpus_id: str, query: str, *, top_k: int = 5, caller: str = "owner") -> dict:
         import httpx
+        body: dict = {"query": query, "top_k": top_k}
+        # Remote servers enforce caller server-side based on auth; the caller
+        # hint here is advisory only (present for RetrievalEngine parity).
+        if caller != "owner":
+            body["caller"] = caller
         resp = httpx.post(
             f"{self._base}/api/v1/corpora/{corpus_id}/search",
             headers=self._headers(),
-            json={"query": query, "top_k": top_k},
+            json=body,
             timeout=30,
         )
         resp.raise_for_status()
@@ -423,6 +434,7 @@ def search_corpus(
     token_id: str | None = None,
     expand: bool = True,
     detail: str = "medium",
+    caller: str = CALLER_OWNER,
 ) -> dict:
     """Hybrid search over a corpus: keyword + vector + RRF fusion + dedup + freshness.
 
@@ -430,6 +442,11 @@ def search_corpus(
       low    — keyword-only, no expansion, fast
       medium — hybrid keyword+vector, expansion if corpus is large (default)
       high   — hybrid + forced expansion + more results + full context
+
+    caller (Phase 1a source_kind filter):
+      owner    — full access to all source_kinds (default, backward-compat)
+      external — only user_original + user_capture chunks are returned;
+                 external_public and external_subscription are filtered out
     """
     start = time.time()
     conn = get_conn()
@@ -525,13 +542,20 @@ def search_corpus(
         did = r["document_id"]
         if did not in doc_cache:
             doc_row = conn.execute(
-                "SELECT title, doc_type, date FROM documents WHERE id=?", (did,)
+                "SELECT title, doc_type, date, source_kind FROM documents WHERE id=?", (did,)
             ).fetchone()
             doc_cache[did] = dict(doc_row) if doc_row else {}
         info = doc_cache[did]
         r["_doc_type"] = info.get("doc_type", "")
         r["_doc_date"] = info.get("date", "")
         r["_doc_title"] = info.get("title", "")
+        r["_source_kind"] = info.get("source_kind", "user_original")
+
+    # Caller-aware filter: external callers never see external_* content.
+    # Post-filter (after scoring) is simpler than JOINing in SQL; fetch_limit
+    # already over-fetches top_k * 3 so there's headroom for filtering.
+    if caller != CALLER_OWNER:
+        fused = [r for r in fused if r.get("_source_kind") in EXTERNAL_ALLOWED_SOURCE_KINDS]
 
     fused = _apply_freshness(fused, corpus_updated_at, stale_threshold)
 

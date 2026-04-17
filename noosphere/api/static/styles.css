@@ -132,6 +132,22 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-upload-remove{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px;transition:color .12s}.term-upload-remove:hover{color:var(--tx)}
 .term-upload-size{color:var(--tx3);font-size:10px}
 .term-upload-actions{display:flex;gap:8px;margin-top:12px;margin-bottom:10px}
+/* ── Access confirm modal ── */
+.acm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000;animation:termFadeIn .15s ease-out}
+.acm-panel{background:var(--bg);border:1px solid var(--brd);border-radius:14px;padding:24px;max-width:460px;width:92%;box-shadow:0 12px 36px rgba(0,0,0,.22)}
+.acm-title{font-family:'Libre Baskerville',Georgia,serif;font-size:17px;font-weight:700;color:var(--tx);margin-bottom:6px}
+.acm-sub{font-size:13px;color:var(--tx2);margin-bottom:12px}
+.acm-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.acm-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;background:var(--bg2);font-size:13px}
+.acm-row.acm-orig{background:color-mix(in srgb,var(--bgH) 55%,transparent);color:var(--tx)}
+.acm-row.acm-ext{color:var(--tx3)}
+.acm-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--tx3)}
+.acm-row.acm-orig .acm-dot{background:#4ade80}
+.acm-lbl{flex:1;font-family:var(--mono);font-size:12px}
+.acm-note{font-size:11px;font-style:italic;color:var(--tx3)}
+.acm-expl{font-size:12px;color:var(--tx3);margin-bottom:18px;line-height:1.5}
+.acm-actions{display:flex;gap:8px;justify-content:flex-end}
+
 .term-upload-origin{display:flex;align-items:center;gap:8px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--tx3)}
 .term-upload-origin label{flex-shrink:0}
 .term-upload-origin select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx2);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer;flex:1}
