@@ -340,7 +340,9 @@ let _termCtx={};
 
 function renderHome(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.classList.add('content--home');
-  const greetText=_firstName?`Back at it, ${_firstName}`:'Back at it';
+  const _h=new Date().getHours();
+  const _tod=_h<12?'Good morning':_h<18?'Good afternoon':'Good evening';
+  const greetText=_firstName?`${_tod}, ${_firstName}`:_tod;
 
   // Suggested prompts (Feynman-style concrete starters). Later these can be
   // dynamic based on user's corpora content.
@@ -353,7 +355,7 @@ function renderHome(){
 
   ct.innerHTML=`<div class="home" id="home">
     <div class="home-hero" id="home-hero">
-      <canvas class="home-hero-mark" id="dragon-cv" width="40" height="40"></canvas>
+      <canvas class="home-hero-mark" id="dragon-cv" width="64" height="64"></canvas>
       <h1 class="home-greet">${esc(greetText)}</h1>
     </div>
     <div class="home-output" id="term-output"></div>
