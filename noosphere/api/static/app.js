@@ -351,12 +351,13 @@ function renderHome(){
   ];
   const suggestHTML=suggestions.map(s=>`<button class="home-suggest" data-fill="${esc(s)}">${esc(s)}</button>`).join('');
 
-  ct.innerHTML=`<div class="home">
-    <div class="home-center" id="home-center">
-      <div class="home-hero" id="home-hero">
-        <canvas class="home-hero-mark" id="dragon-cv" width="40" height="40"></canvas>
-        <h1 class="home-greet">${esc(greetText)}</h1>
-      </div>
+  ct.innerHTML=`<div class="home" id="home">
+    <div class="home-hero" id="home-hero">
+      <canvas class="home-hero-mark" id="dragon-cv" width="40" height="40"></canvas>
+      <h1 class="home-greet">${esc(greetText)}</h1>
+    </div>
+    <div class="home-output" id="term-output"></div>
+    <div class="home-dock" id="home-dock">
       <div class="home-composer" id="home-composer">
         <textarea class="home-composer-input" id="term-input" placeholder="What's on your mind? Ask about your knowledge, or paste a URL" rows="2"></textarea>
         <div class="home-composer-foot">
@@ -369,9 +370,8 @@ function renderHome(){
           </span>
         </div>
       </div>
-      <div class="home-suggests" id="home-suggests">${suggestHTML}</div>
     </div>
-    <div class="home-output" id="term-output"></div>
+    <div class="home-suggests" id="home-suggests">${suggestHTML}</div>
   </div>`;
 
   (function drawDragon(){
@@ -437,10 +437,11 @@ function renderHome(){
   });
   input.addEventListener('blur',()=>hideCmdPicker());
 
-  // Hide hero + suggestions on first send, collapse into chat-only mode
+  // Move from centered empty-state to active chat mode: output fills above,
+  // composer sticks to bottom, hero + suggestions hide.
   function collapseToChat(){
-    const center=document.getElementById('home-center');
-    if(center)center.classList.add('home-center--collapsed');
+    const h=document.getElementById('home');
+    if(h)h.classList.add('home--active');
   }
 
   let _sending=false;
@@ -521,10 +522,18 @@ function addLine(container,type,text,id,line){
 
 /* ══════ TERMINAL UPLOAD ══════ */
 function showTermUpload(output,input,hints){
+  // On home, upload form REPLACES composer in the dock (not stacked above it).
+  const dock=document.getElementById('home-dock');
+  const isHome=!!dock;
+  const composer=document.getElementById('home-composer');
+  const suggests=document.getElementById('home-suggests');
+  if(isHome&&composer)composer.style.display='none';
+  if(isHome&&suggests)suggests.style.display='none';
+
   const wrap=document.createElement('div');wrap.className='term-upload-wrap';
   let _uFiles=[];
   wrap.innerHTML=`<div class="term-upload-dz" id="tu-dz"><input type="file" id="tu-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="term-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="term-upload-txt">Drop files here, or <span class="term-upload-browse">browse</span></div><div class="term-upload-formats">PDF, Markdown, DOCX, TXT, CSV, JSON</div></div><div class="term-upload-list" id="tu-list"></div><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="user_original" selected>My original content</option><option value="external_public">Public external reference</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Upload & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
-  output.appendChild(wrap);
+  if(isHome){dock.appendChild(wrap)}else{output.appendChild(wrap)}
   const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
 
   const dz=wrap.querySelector('#tu-dz'),fi=wrap.querySelector('#tu-fi'),list=wrap.querySelector('#tu-list');
@@ -543,7 +552,13 @@ function showTermUpload(output,input,hints){
   dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files)};
   fi.onchange=()=>{addFiles(fi.files);fi.value=''};
 
-  cancelBtn.onclick=()=>{wrap.remove();hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus()};
+  function restoreDock(){
+    if(isHome){
+      if(composer)composer.style.display='';
+      if(suggests&&!document.getElementById('home').classList.contains('home--active'))suggests.style.display='';
+    }
+  }
+  cancelBtn.onclick=()=>{wrap.remove();restoreDock();if(hints&&hints.style)hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus()};
 
   goBtn.onclick=async()=>{
     if(!_uFiles.length)return;
@@ -554,10 +569,10 @@ function showTermUpload(output,input,hints){
     await loadC();
     if(_corpora.length===1){cid=_corpora[0].id}
     else if(_corpora.length===0){
-      try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();input.focus();return}
+      try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();restoreDock();input.focus();return}
     }else{
       const picked=await pickCorpusInline(output);
-      if(!picked){wrap.remove();hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus();return}
+      if(!picked){wrap.remove();restoreDock();if(hints&&hints.style)hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus();return}
       cid=picked;
     }
 
@@ -568,9 +583,9 @@ function showTermUpload(output,input,hints){
     try{
       const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
       const d=await r.json();
-      wrap.remove();
+      wrap.remove();restoreDock();
       addLine(output,'resp',`Uploaded ${d.uploaded||_uFiles.length} file${_uFiles.length>1?'s':''}`);
-    }catch(e){wrap.remove();(document.getElementById('term-input-area')||{style:{}}).style.display='';addLine(output,'resp','Upload failed: '+e.message);input.focus();return}
+    }catch(e){wrap.remove();restoreDock();(document.getElementById('term-input-area')||{style:{}}).style.display='';addLine(output,'resp','Upload failed: '+e.message);input.focus();return}
 
     (document.getElementById('term-input-area')||{style:{}}).style.display='';
     addLine(output,'resp','Indexing...');
@@ -590,21 +605,29 @@ function showTermUpload(output,input,hints){
 
 /* ══════ TERMINAL INLINE WRITE ══════ */
 function showTermWrite(output,input,hints){
-  // Home-page context: hide hero + composer + suggestions so the write form
-  // isn't competing with the composer for attention. Restore on save/cancel.
-  const isHome=!!document.getElementById('home-composer');
-  const homeEls=isHome?[document.getElementById('home-hero'),document.getElementById('home-composer'),document.getElementById('home-suggests')]:[];
-  homeEls.forEach(el=>{if(el)el.style.display='none'});
+  // On home, the write form REPLACES the composer at the bottom dock —
+  // never both visible. On corpus pages, it still mounts inline.
+  const dock=document.getElementById('home-dock');
+  const isHome=!!dock;
+  const composer=document.getElementById('home-composer');
+  const suggests=document.getElementById('home-suggests');
+  if(isHome&&composer)composer.style.display='none';
+  if(isHome&&suggests)suggests.style.display='none';
 
   const wrap=document.createElement('div');wrap.className='term-write-wrap';
-  wrap.innerHTML='<textarea class="term-write-body" id="tw-body" placeholder="Jot down a quick note — first line becomes the title. Markdown supported." rows="8"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
-  output.appendChild(wrap);
+  wrap.innerHTML='<textarea class="term-write-body" id="tw-body" placeholder="Jot down a quick note — first line becomes the title. Markdown supported." rows="6"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
+  if(isHome){dock.appendChild(wrap)}else{output.appendChild(wrap)}
   const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
   wrap.querySelector('#tw-body').focus();
 
   function restoreInput(){
-    if(isHome){homeEls.forEach(el=>{if(el)el.style.display=''})}
-    else{(document.getElementById('term-input-area')||{style:{}}).style.display='';if(hints)hints.style.display=''}
+    if(isHome){
+      if(composer)composer.style.display='';
+      if(suggests&&!document.getElementById('home').classList.contains('home--active'))suggests.style.display='';
+    } else {
+      (document.getElementById('term-input-area')||{style:{}}).style.display='';
+      if(hints)hints.style.display='';
+    }
     if(input)input.focus();
   }
 
