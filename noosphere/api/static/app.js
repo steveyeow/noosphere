@@ -2,6 +2,10 @@
 const API='/api/v1';
 let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[],_ownerName='',_firstName='';
 let _cloudMode=false,_supabase=null,_authUser=null,_authSession=null;
+// Home composer's corpus scope — hoisted to module scope so loadRecentCompiles
+// and the Compile picker can see what the user has selected in the chip.
+// null = "Any" (across all corpora); otherwise a corpus id.
+let _homeScope=null;
 const isDark=()=>document.documentElement.classList.contains('dark')||(!document.documentElement.classList.contains('light')&&window.matchMedia('(prefers-color-scheme: dark)').matches);
 const PAL=['#e76f51','#2a9d8f','#264653','#e9c46a','#f4a261','#588157','#457b9d','#9b2226','#6d6875','#b56576','#355070','#6c757d','#e07a5f','#3d405b','#81b29a'];
 const cC=n=>{let h=0;for(let i=0;i<n.length;i++)h=((h<<5)-h+n.charCodeAt(i))|0;return PAL[Math.abs(h)%PAL.length]};
@@ -14,8 +18,9 @@ function toast(msg,type='error'){const t=document.createElement('div');t.classNa
 /* ── Cloud Auth (Supabase) ── */
 async function initAuth(){
   try{
-    const r=await fetch(`${API}/health`);const d=await r.json();
-    // Check if server is in cloud mode by trying the cloud/me endpoint
+    // Cloud mode is detected via /me. Do not depend on /health here — if
+    // that endpoint 500s, initAuth would throw on r.json() and leave
+    // _cloudMode=false, hiding the sign-in UI entirely.
     const mr=await fetch(`${API}/me`);const md=await mr.json();
     _cloudMode=!!md.cloud;
     if(!_cloudMode)return;
@@ -194,8 +199,7 @@ async function loadChatSessions(){
 /* ── Noos icon (landing page logo SVG) ── */
 const NOOS_ICON_SVG=`<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/><circle cx="18" cy="42" r="3" fill="currentColor" opacity="0.5"/><line x1="20" y1="24" x2="44" y2="20" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="20" y1="24" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="44" y1="20" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/><line x1="18" y1="42" x2="36" y2="42" stroke="currentColor" stroke-width="1.5" opacity="0.4"/></svg>`;
 const NOOS_DOT=`<span class="term-noos-dot">●</span>`;
-const PROMPT_CHEVRON=`<span class="term-user-chevron">❯</span>`;
-function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">Noos</span></div>`}
+function noosHd(){return `<div class="noos-hd"><span class="noos-av">${NOOS_ICON_SVG}</span><span class="noos-nm">Noos</span></div>`}
 
 /* ── Command picker ── */
 const TERM_CMDS=[
@@ -226,7 +230,7 @@ function renderSBChats(){
   if(!chats.length){el.innerHTML='';return}
   el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a>`).join('');
 }
-function setSBActive(h){document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network');const np=document.getElementById('nav-pricing');if(np)np.classList.toggle('active',h==='#/pricing');const na=document.getElementById('nav-account');if(na)na.classList.toggle('active',h==='#/account')}
+function setSBActive(h){document.getElementById('sb-new')?.classList.toggle('active',h==='#/main');document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network');const np=document.getElementById('nav-pricing');if(np)np.classList.toggle('active',h==='#/pricing');const na=document.getElementById('nav-account');if(na)na.classList.toggle('active',h==='#/account')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
@@ -344,14 +348,13 @@ function renderHome(){
   const _tod=_h<12?'Good morning':_h<18?'Good afternoon':'Good evening';
   const greetText=_firstName?`${_tod}, ${_firstName}`:_tod;
 
-  // Suggested prompts (Feynman-style concrete starters). Later these can be
-  // dynamic based on user's corpora content.
-  const suggestions=[
-    "What did I read about product-market fit?",
-    "Summarize my notes on agents",
-    "Compare my thinking on X and Y",
-  ];
-  const suggestHTML=suggestions.map(s=>`<button class="home-suggest" data-fill="${esc(s)}">${esc(s)}</button>`).join('');
+  // Below-composer shortcut row — three ingest actions that define Noosphere
+  // as an ingest → compile → use product (not a general chat). Compile lives
+  // in its own section below (has a different semantic layer).
+  const ICON_WRITE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+  const ICON_UPLOAD=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+  const ICON_FEED=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>`;
+  const shortcutHTML=`<button class="home-shortcut" id="shortcut-write" type="button">${ICON_WRITE}Write</button><button class="home-shortcut" id="shortcut-upload" type="button">${ICON_UPLOAD}Upload</button><button class="home-shortcut" id="shortcut-subscribe" type="button">${ICON_FEED}Subscribe</button>`;
 
   ct.innerHTML=`<div class="home" id="home">
     <div class="home-hero" id="home-hero">
@@ -363,17 +366,30 @@ function renderHome(){
       <div class="home-composer" id="home-composer">
         <textarea class="home-composer-input" id="term-input" placeholder="What's on your mind? Ask about your knowledge, or paste a URL" rows="2"></textarea>
         <div class="home-composer-foot">
-          <span class="home-composer-left">Type <kbd>/</kbd> for commands</span>
+          <span class="home-composer-left">
+            <span class="home-composer-hint" id="home-composer-hint">Type <kbd>/</kbd> for commands</span>
+            <button class="home-composer-cancel" id="home-cancel" type="button" style="display:none">Cancel</button>
+          </span>
           <span class="home-composer-right">
-            <span class="home-composer-model">Noos</span>
+            <span class="home-composer-model" id="home-composer-model">Noos</span>
             <button class="home-composer-send" id="home-send" title="Send" aria-label="Send">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             </button>
           </span>
         </div>
+        <div class="home-composer-conn">
+          <button class="home-chip" id="chip-corpus" type="button" aria-haspopup="menu"><span class="home-chip-label" id="chip-corpus-label">Corpus: Any</span><span class="home-chip-caret">▾</span></button>
+        </div>
       </div>
     </div>
-    <div class="home-suggests" id="home-suggests">${suggestHTML}</div>
+    <div class="home-shortcuts" id="home-shortcuts">${shortcutHTML}</div>
+    <div class="home-compiles" id="home-compiles">
+      <div class="home-compiles-hd">
+        <span class="home-compiles-ttl">Recently compiled</span>
+        <button class="home-compiles-cta" id="home-compile-now" type="button" disabled>Compile now →</button>
+      </div>
+      <div class="home-compiles-list" id="home-compiles-list"></div>
+    </div>
   </div>`;
 
   (function drawDragon(){
@@ -427,17 +443,44 @@ function renderHome(){
   const input=document.getElementById('term-input');
   const output=document.getElementById('term-output');
   const sendBtn=document.getElementById('home-send');
+  const composer=document.getElementById('home-composer');
+  const cancelBtn=document.getElementById('home-cancel');
+  const modelLbl=document.getElementById('home-composer-model');
+  const hintLbl=document.getElementById('home-composer-hint');
+  const chipBtn=document.getElementById('chip-corpus');
+  const chipLbl=document.getElementById('chip-corpus-label');
   _termCtx={};
+  // Composer mode state. 'ask' (default, talk to your knowledge) vs.
+  // 'write' (the composer becomes a note body; Send becomes Save).
+  let _mode='ask';
+  // Scoped corpus: null means "Any" (default). Persists across sends.
+  // Hoisted to module-level _homeScope so the Recently compiled section and
+  // the Compile picker can read the same selection.
+  _homeScope=null;
 
   // Auto-resize textarea as user types
-  function autosize(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,200)+'px'}
+  function autosize(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,_mode==='write'?360:200)+'px'}
   input.addEventListener('input',()=>{
     autosize();
     const v=input.value;
-    if(v.startsWith('/')){const q=v.toLowerCase();showCmdPicker(input,TERM_CMDS.filter(c=>c.cmd.startsWith(q)))}
+    // Slash commands are only meaningful in ask mode — in write mode a leading
+    // "/" is just markdown content, not a command.
+    if(_mode==='ask'&&v.startsWith('/')){const q=v.toLowerCase();showCmdPicker(input,TERM_CMDS.filter(c=>c.cmd.startsWith(q)))}
     else hideCmdPicker();
   });
   input.addEventListener('blur',()=>hideCmdPicker());
+  // Keyboard: Esc exits write mode. Enter sends in ask mode; in write mode
+  // plain Enter inserts a newline (matches Notion/Obsidian expectations for
+  // prose) and ⌘/Ctrl+Enter saves.
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&_mode==='write'){e.preventDefault();exitToAsk();return}
+    if(e.key!=='Enter')return;
+    if(_mode==='write'){
+      if(e.metaKey||e.ctrlKey){e.preventDefault();sendInput()}
+    } else if(!e.shiftKey){
+      e.preventDefault();sendInput();
+    }
+  });
 
   // Move from centered empty-state to active chat mode: output fills above,
   // composer sticks to bottom, hero + suggestions hide.
@@ -445,14 +488,143 @@ function renderHome(){
     const h=document.getElementById('home');
     if(h)h.classList.add('home--active');
   }
+  // Return to centered empty state when there is nothing to show — otherwise
+  // leaving a fresh /write + Cancel would strand the user in empty chat mode.
+  function maybeUncollapse(){
+    if(!output||output.children.length===0){
+      const h=document.getElementById('home');if(h)h.classList.remove('home--active');
+      const sg=document.getElementById('home-shortcuts');if(sg)sg.style.display='';
+    }
+  }
+
+  function updateChip(){
+    const c=_homeScope&&_corpora.find(x=>x.id===_homeScope);
+    const name=c?c.name:'Any';
+    const prefix=_mode==='write'?'Save to: ':'Corpus: ';
+    chipLbl.textContent=prefix+name;
+  }
+  function enterWrite(){
+    _mode='write';
+    composer.classList.add('home-composer-note');
+    const h=document.getElementById('home');if(h)h.classList.add('home--writing');
+    input.placeholder='Jot down a note — first line becomes the title. Markdown supported.';
+    input.rows=6;autosize();
+    sendBtn.title='Save note';sendBtn.setAttribute('aria-label','Save note');
+    if(modelLbl)modelLbl.textContent='Note';
+    if(hintLbl)hintLbl.style.display='none';
+    if(cancelBtn)cancelBtn.style.display='';
+    updateChip();
+    input.focus();
+  }
+  function exitToAsk(){
+    _mode='ask';
+    composer.classList.remove('home-composer-note');
+    const h=document.getElementById('home');if(h)h.classList.remove('home--writing');
+    input.placeholder="What's on your mind? Ask about your knowledge, or paste a URL";
+    input.rows=2;autosize();
+    sendBtn.title='Send';sendBtn.setAttribute('aria-label','Send');
+    if(modelLbl)modelLbl.textContent='Noos';
+    if(hintLbl)hintLbl.style.display='';
+    if(cancelBtn)cancelBtn.style.display='none';
+    updateChip();
+    maybeUncollapse();
+    input.focus();
+  }
+  if(cancelBtn)cancelBtn.onclick=exitToAsk;
+
+  // Corpus chip menu — click to pick a corpus scope (or create new inline).
+  let _menuOpen=false;
+  function closeChipMenu(){const m=document.getElementById('chip-corpus-menu');if(m)m.remove();_menuOpen=false}
+  function openChipMenu(){
+    if(_menuOpen){closeChipMenu();return}
+    const menu=document.createElement('div');menu.id='chip-corpus-menu';menu.className='home-chip-menu open';
+    const isWrite=_mode==='write';
+    const rows=[];
+    if(!isWrite){rows.push(`<div class="home-chip-menu-item${_homeScope===null?' active':''}" data-id=""><span>Any</span><span class="home-chip-menu-hint">search all</span></div>`)}
+    rows.push(..._corpora.map(c=>`<div class="home-chip-menu-item${_homeScope===c.id?' active':''}" data-id="${c.id}"><span>${esc(c.name)}</span><span class="home-chip-menu-hint">${c.document_count||0} docs</span></div>`));
+    if(_corpora.length||!isWrite)rows.push('<div class="home-chip-menu-divider"></div>');
+    rows.push('<div class="home-chip-menu-new"><input type="text" id="chip-new-name" placeholder="New corpus name" /><button id="chip-new-go">Create</button></div>');
+    menu.innerHTML=rows.join('');
+    composer.appendChild(menu);
+    // Direction-aware positioning: drop DOWN when composer is centered (empty
+    // state has room below); drop UP when composer is stuck to viewport bottom
+    // in chat mode (downward would overflow).
+    const cr=chipBtn.getBoundingClientRect();const mr=composer.getBoundingClientRect();
+    const chatMode=document.getElementById('home')?.classList.contains('home--active');
+    menu.style.left=(cr.left-mr.left)+'px';
+    if(chatMode){
+      menu.style.bottom=(mr.bottom-cr.top+6)+'px';
+      menu.style.top='auto';
+    }else{
+      menu.style.top=(cr.bottom-mr.top+6)+'px';
+      menu.style.bottom='auto';
+    }
+    _menuOpen=true;
+    menu.querySelectorAll('.home-chip-menu-item').forEach(el=>{
+      el.onclick=()=>{_homeScope=el.dataset.id||null;updateChip();closeChipMenu();input.focus()};
+    });
+    const nameEl=menu.querySelector('#chip-new-name'),goEl=menu.querySelector('#chip-new-go');
+    const createNew=async()=>{
+      const nm=nameEl.value.trim();if(!nm){nameEl.focus();return}
+      goEl.disabled=true;goEl.textContent='…';
+      try{
+        const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,access_level:'public'})});
+        const c=await r.json();await loadC();_homeScope=c.id;updateChip();closeChipMenu();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
+      }catch(e){toast('Failed to create corpus');goEl.disabled=false;goEl.textContent='Create'}
+    };
+    goEl.onclick=createNew;
+    nameEl.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();createNew()}else if(e.key==='Escape'){closeChipMenu()}};
+    // Click outside to dismiss.
+    setTimeout(()=>document.addEventListener('mousedown',outsideClose,{once:true}),0);
+  }
+  function outsideClose(e){
+    const m=document.getElementById('chip-corpus-menu');
+    if(!m)return;
+    if(chipBtn.contains(e.target)||m.contains(e.target)){document.addEventListener('mousedown',outsideClose,{once:true});return}
+    closeChipMenu();
+  }
+  chipBtn.onclick=openChipMenu;
 
   let _sending=false;
+  async function saveNote(body){
+    // Derive title from the first non-empty line (strip markdown headers).
+    const firstLine=(body.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+    const title=firstLine.slice(0,80)||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    sendBtn.disabled=true;
+    await loadC();
+    let cid=_homeScope;
+    if(!cid){
+      if(_corpora.length===0){
+        try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}
+        catch(e){toast('Failed to create corpus');sendBtn.disabled=false;return}
+      } else if(_corpora.length===1){
+        cid=_corpora[0].id;
+      } else {
+        toast('Pick a corpus first');sendBtn.disabled=false;openChipMenu();return;
+      }
+    }
+    const fd=new FormData();
+    fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
+    try{await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}
+    catch(e){toast('Save failed: '+e.message);sendBtn.disabled=false;return}
+    try{await fetch(`${API}/corpora/${cid}/index`,{method:'POST'})}catch(e){}
+    input.value='';autosize();sendBtn.disabled=false;
+    collapseToChat();
+    const corpus=_corpora.find(c=>c.id===cid);
+    addLine(output,'resp','Saved: "'+title+'"');
+    addLine(output,'card',null,null,{type:'card',label:'Note saved',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
+    exitToAsk();
+    await loadC();
+  }
   async function sendInput(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
+    // Write-mode: Send button acts as Save (short-circuits slash commands so
+    // users can freely include "/" in their notes).
+    if(_mode==='write'){await saveNote(val);return}
     // Client-side slash handlers that short-circuit /terminal
-    if(val.toLowerCase()==='/upload'){input.value='';autosize();collapseToChat();showTermUpload(output,input,{style:{}});return}
-    if(val.toLowerCase()==='/write'){input.value='';autosize();collapseToChat();showTermWrite(output,input,{style:{}});return}
+    if(val.toLowerCase()==='/upload'){input.value='';autosize();collapseToChat();showTermUpload(output,input,_homeScope);return}
+    if(val.toLowerCase()==='/write'){input.value='';autosize();enterWrite();return}
     if(val.toLowerCase()==='/history'){
       input.value='';autosize();collapseToChat();
       await loadChatSessions();
@@ -480,37 +652,269 @@ function renderHome(){
     collapseToChat();
     addLine(output,'prompt',val);
     const loadId='ld-'+Date.now();
-    addLine(output,'resp','Thinking...',loadId);
+    addLine(output,'thinking','Thinking…',loadId);
     try{
       const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
       const d=await r.json();
       document.getElementById(loadId)?.remove();
       _termCtx=d.context||{};
       for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
-      if(d.context?.action==='open_write'){showTermWrite(output,input,{style:{}})}
-      if(d.context?.action==='open_upload'){showTermUpload(output,input,{style:{}})}
+      if(d.context?.action==='open_write'){enterWrite()}
+      if(d.context?.action==='open_upload'){showTermUpload(output,input,_homeScope)}
     }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+err.message)}
     input.disabled=false;input.focus();
     _sending=false;
   }
-  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendInput()}});
   sendBtn.onclick=sendInput;
 
-  // Suggested prompts — click to fill composer (Feynman-style concrete starters)
-  document.querySelectorAll('.home-suggest').forEach(btn=>{btn.onclick=()=>{
-    input.value=btn.dataset.fill;autosize();input.focus();
-  }});
+  // Shortcut row — 3 ingest actions define Noosphere's product identity.
+  // Write is inline (switches composer mode); Upload/Subscribe open inline
+  // cards in the chat stream (chat collapses so the card is visible).
+  document.getElementById('shortcut-write')?.addEventListener('click',enterWrite);
+  document.getElementById('shortcut-upload')?.addEventListener('click',()=>{collapseToChat();showTermUpload(output,input,_homeScope)});
+  document.getElementById('shortcut-subscribe')?.addEventListener('click',()=>{collapseToChat();showTermConnectRSS(output,input,_homeScope)});
+
+  // Recently compiled — synthesis layer, lives in its own section below the
+  // ingest shortcuts. Populated async from the user's corpora entities.
+  loadRecentCompiles();
+
+  // Message-level "Save to corpus" — delegated at the output container so
+  // every current and future assistant reply picks it up. The chosen corpus
+  // chip drives the destination; otherwise we fall through the same
+  // auto-create / single / pick logic as saveNote.
+  output.addEventListener('click',async e=>{
+    const btn=e.target.closest('.term-save');
+    if(!btn||btn.classList.contains('saved')||btn.disabled)return;
+    const content=(btn.dataset.content||'').trim();
+    if(!content)return;
+    btn.disabled=true;const orig=btn.innerHTML;btn.innerHTML='Saving…';
+    const firstLine=(content.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+    const title=firstLine.slice(0,80)||('Captured '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    let cid=_homeScope;
+    if(!cid){
+      await loadC();
+      if(_corpora.length===1){cid=_corpora[0].id}
+      else if(_corpora.length===0){
+        try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});cid=(await r.json()).id;await loadC()}
+        catch(e){toast('Failed to create corpus');btn.innerHTML=orig;btn.disabled=false;return}
+      } else {
+        const picked=await pickCorpusInline(output);
+        if(!picked){btn.innerHTML=orig;btn.disabled=false;return}
+        cid=picked;
+      }
+    }
+    const fd=new FormData();
+    fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+content],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
+    fd.append('source_kind','user_original');
+    try{
+      await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
+      fetch(`${API}/corpora/${cid}/index`,{method:'POST'}).catch(()=>{});
+      btn.classList.add('saved');btn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Saved`;
+      await loadC();
+    }catch(e){
+      toast('Save failed: '+e.message);btn.innerHTML=orig;btn.disabled=false;
+    }
+  });
 
   input.focus();autosize();
+}
+
+/* ══════ RECENTLY COMPILED ══════
+   Synthesis surface on the home page. Two kinds of compiled artifacts, always
+   aggregated across ALL the user's corpora (this is a "recent activity" feed,
+   not a scoped view — the Compile picker has its own scope selector):
+     - Entity truths  → entities with `description` set (per-entity compile)
+     - Concept wikis  → documents with doc_type='concept' (per-topic compile)
+
+   Intentionally decoupled from the composer's Corpus chip — that chip scopes
+   chat/save; Compile has its own scope picker inside the panel. Keeping them
+   visibly separate avoids the "did my chip change what will be compiled?"
+   confusion. */
+async function loadRecentCompiles(){
+  const wrap=document.getElementById('home-compiles');
+  if(!wrap)return;
+  await loadC();
+  const listEl=document.getElementById('home-compiles-list');
+  const btnEl=document.getElementById('home-compile-now');
+  if(!_corpora.length){
+    listEl.innerHTML=`<div class="home-compiles-empty">Compile synthesizes concept pages from your sources — an entity truth, or a wiki on a topic. Add sources to get started.</div>`;
+    btnEl.disabled=true;btnEl.title='No sources yet';btnEl.onclick=null;
+    return;
+  }
+  // Fan out: entities + concept docs across ALL corpora in parallel.
+  const packs=await Promise.all(_corpora.map(async c=>{
+    const [ents,docs]=await Promise.all([
+      fetch(`${API}/corpora/${c.id}/entities`).then(r=>r.ok?r.json():{entities:[]}).catch(()=>({entities:[]})),
+      fetch(`${API}/corpora/${c.id}/documents`).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    ]);
+    const entities=(ents.entities||[]).map(e=>({...e,_corpus:c}));
+    const concepts=(Array.isArray(docs)?docs:[]).filter(d=>d.doc_type==='concept').map(d=>({...d,_corpus:c}));
+    return {entities,concepts};
+  }));
+  const entities=packs.flatMap(p=>p.entities);
+  const concepts=packs.flatMap(p=>p.concepts);
+  const pending=entities.filter(e=>!e.description&&(e.mention_count||0)>0);
+  const compiled=[
+    ...entities.filter(e=>e.description&&e.description.trim()).map(e=>({
+      href:`#/corpus/${e._corpus.id}/entity/${e.id}`,
+      title:e.canonical_name||'Untitled',
+      meta:[e.mention_count?`${e.mention_count} source${e.mention_count===1?'':'s'}`:'',e._corpus.name].filter(Boolean).join(' · '),
+      updated:e.updated_at||'',kind:'Entity',
+    })),
+    ...concepts.map(d=>({
+      href:`#/corpus/${d._corpus.id}`,
+      title:(d.title||'').replace(/^Concept:\s*/,'')||'Untitled',
+      meta:[d.word_count?`${d.word_count} words`:'',d._corpus.name].filter(Boolean).join(' · '),
+      updated:d.updated_at||d.created_at||'',kind:'Wiki',
+    })),
+  ].sort((a,b)=>(b.updated||'').localeCompare(a.updated||''));
+
+  if(compiled.length===0&&pending.length===0){
+    listEl.innerHTML=`<div class="home-compiles-empty">Nothing compiled yet. Start with Compile now.</div>`;
+    btnEl.disabled=false;btnEl.title='Compile a topic wiki';btnEl.onclick=()=>openCompilePicker(pending);
+    return;
+  }
+  if(compiled.length===0){
+    listEl.innerHTML=`<div class="home-compiles-empty">${pending.length} ${pending.length===1?'entity':'entities'} ready to compile.</div>`;
+  }else{
+    listEl.innerHTML=compiled.slice(0,3).map(it=>{
+      const when=_fmtRel(it.updated);
+      const metaBits=[when,it.meta,it.kind].filter(Boolean);
+      return `<a class="home-compiles-item" href="${it.href}"><span class="home-compiles-item-ttl">${esc(it.title)}</span><span class="home-compiles-item-meta">${metaBits.join(' · ')}</span></a>`;
+    }).join('');
+  }
+  btnEl.disabled=false;
+  btnEl.title=pending.length?`${pending.length} ${pending.length===1?'entity':'entities'} ready`:'Compile a topic wiki';
+  btnEl.onclick=()=>openCompilePicker(pending);
+}
+
+/* Inline picker for Compile now. Self-contained: the picker has its OWN
+   corpus dropdown (not tied to the composer's Corpus chip). This avoids a
+   hidden coupling that confused users — "did the chip up top change what I'm
+   compiling?". Here scope is picked explicitly right where the action is.
+
+   Picker state:
+     - cpScope: corpus id chosen in the picker (default = first corpus)
+     - target:  a radio-picked pending entity OR a typed topic (mutually exclusive)
+
+   Entity truth list re-renders when cpScope changes; Topic wiki is always
+   actionable (scope is always specific — no "All" option in the dropdown). */
+function openCompilePicker(allPending){
+  const listEl=document.getElementById('home-compiles-list');
+  const hdEl=document.querySelector('.home-compiles-hd');
+  const existing=document.getElementById('home-compile-picker');
+  if(existing){existing.remove();listEl.style.display='';return}
+  if(!_corpora.length){toast('Add a corpus first');return}
+  listEl.style.display='none';
+  let cpScope=_corpora[0].id;
+  const corpusOptions=_corpora.map(c=>`<option value="${c.id}">${esc(c.name)}${c.document_count?` (${c.document_count} docs)`:''}</option>`).join('');
+  const picker=document.createElement('div');picker.id='home-compile-picker';picker.className='home-compile-picker';
+  picker.innerHTML=`<div class="home-compile-picker-hd"><label for="cp-scope">Compile in</label><select id="cp-scope" class="home-compile-scope-select">${corpusOptions}</select></div>
+    <div class="home-compile-picker-body">
+      <section class="home-compile-section" id="cp-sec-entity">
+        <div class="home-compile-legend">Entity truth <span class="home-compile-legend-sub">summarize what your sources say about a person, company, or concept</span></div>
+        <div class="home-compile-choices" id="cp-entity-list"></div>
+      </section>
+      <section class="home-compile-section">
+        <div class="home-compile-legend">Topic wiki <span class="home-compile-legend-sub">synthesize a wiki page on a topic from top passages</span></div>
+        <input type="text" id="cp-topic" class="home-compile-topic" placeholder="Topic — e.g. pricing strategy, power law" />
+      </section>
+    </div>
+    <div class="home-compile-picker-actions">
+      <button class="btn-sm" id="cp-go">Compile</button>
+      <button class="btn-sm-ghost" id="cp-cancel">Cancel</button>
+    </div>`;
+  hdEl.parentNode.insertBefore(picker,listEl);
+  const scopeSel=picker.querySelector('#cp-scope');
+  const entListEl=picker.querySelector('#cp-entity-list');
+  const secEntity=picker.querySelector('#cp-sec-entity');
+  const topicInp=picker.querySelector('#cp-topic');
+  const goBtn=picker.querySelector('#cp-go');
+  const cancelBtn=picker.querySelector('#cp-cancel');
+  function renderEntities(){
+    const scoped=allPending.filter(e=>e._corpus.id===cpScope).sort((a,b)=>(b.mention_count||0)-(a.mention_count||0));
+    if(!scoped.length){
+      secEntity.dataset.disabled='true';
+      entListEl.outerHTML=`<div class="home-compile-empty-mini" id="cp-entity-list">No pending entities in this corpus.</div>`;
+      return;
+    }
+    delete secEntity.dataset.disabled;
+    const rows=scoped.slice(0,12).map(e=>
+      `<label class="home-compile-choice"><input type="radio" name="cp-target" value="${e.id}" /><span class="home-compile-choice-main"><span class="home-compile-choice-ttl">${esc(e.canonical_name||'Untitled')}</span><span class="home-compile-choice-sub">${e.mention_count} source${e.mention_count===1?'':'s'}</span></span></label>`
+    ).join('');
+    // replace via innerHTML (id survives because we re-create on re-render)
+    const fresh=document.getElementById('cp-entity-list')||entListEl;
+    if(fresh.tagName!=='DIV'||!fresh.classList.contains('home-compile-choices')){
+      // element was swapped to empty-mini — recreate as choices div
+      const div=document.createElement('div');div.id='cp-entity-list';div.className='home-compile-choices';div.innerHTML=rows;
+      fresh.replaceWith(div);
+    }else{
+      fresh.innerHTML=rows;
+    }
+    // Re-wire radio listeners (fresh DOM nodes)
+    document.getElementById('cp-entity-list').querySelectorAll('input[name="cp-target"]').forEach(r=>r.addEventListener('change',()=>{if(topicInp)topicInp.value=''}));
+  }
+  scopeSel.onchange=()=>{cpScope=scopeSel.value;renderEntities()};
+  topicInp.addEventListener('input',()=>{picker.querySelectorAll('input[name="cp-target"]:checked').forEach(r=>r.checked=false)});
+  cancelBtn.onclick=()=>{picker.remove();listEl.style.display=''};
+  goBtn.onclick=async()=>{
+    const ent=picker.querySelector('input[name="cp-target"]:checked');
+    const topic=topicInp.value.trim();
+    if(ent){
+      const target=allPending.find(e=>e.id===ent.value&&e._corpus.id===cpScope);
+      if(!target){toast('Entity not found');return}
+      goBtn.disabled=true;goBtn.textContent='Compiling…';
+      try{
+        const r=await fetch(`${API}/corpora/${cpScope}/entities/${target.id}/compile`,{method:'POST'});
+        if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'error')}
+        toast(`Compiled: ${target.canonical_name}`,'success');
+        picker.remove();listEl.style.display='';loadRecentCompiles();
+      }catch(e){toast('Compile failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Compile'}
+      return;
+    }
+    if(topic){
+      goBtn.disabled=true;goBtn.textContent='Compiling…';
+      try{
+        const r=await fetch(`${API}/corpora/${cpScope}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,top_k:10})});
+        if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'error')}
+        const d=await r.json();
+        toast(`Compiled: ${d.title||topic}`,'success');
+        picker.remove();listEl.style.display='';loadRecentCompiles();
+      }catch(e){toast('Compile failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Compile'}
+      return;
+    }
+    toast('Pick an entity or type a topic');
+  };
+  renderEntities();
+}
+
+function _fmtRel(iso){
+  if(!iso)return'';
+  const t=new Date(iso).getTime();if(!t)return'';
+  const d=(Date.now()-t)/1000;
+  if(d<60)return'just now';
+  if(d<3600)return Math.floor(d/60)+'m ago';
+  if(d<86400)return Math.floor(d/3600)+'h ago';
+  if(d<86400*7)return Math.floor(d/86400)+'d ago';
+  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 }
 
 function addLine(container,type,text,id,line){
   const el=document.createElement('div');
   if(id)el.id=id;
   const ln=line||{};
-  if(type==='prompt'){el.className='term-line term-prompt';el.innerHTML=PROMPT_CHEVRON+'<span class="term-prompt-text">'+esc(text||ln.text||'')+'</span>'}
-  else if(type==='resp'){el.className='term-line term-resp';el.innerHTML=NOOS_DOT+'<span>'+esc(text||ln.text||'')+'</span>'}
-  else if(type==='hint'){el.className='term-line term-resp';el.style.opacity='.5';el.innerHTML=NOOS_DOT+'<span>'+esc(ln.text||'')+'</span>'}
+  if(type==='prompt'){el.className='term-line term-prompt';el.innerHTML='<span class="term-prompt-text">'+esc(text||ln.text||'')+'</span>'}
+  else if(type==='resp'){
+    el.className='term-line term-resp';
+    const content=text||ln.text||'';
+    // Save button appended to every Noos reply — saves the message as a
+    // user_original note, hydrating chat-generated knowledge into the corpus.
+    el.innerHTML=noosHd()+'<div class="term-resp-body"></div><div class="term-resp-actions"><button class="term-save" type="button" title="Save to corpus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save</button></div>';
+    el.querySelector('.term-resp-body').textContent=content;
+    el.querySelector('.term-save').dataset.content=content;
+  }
+  else if(type==='thinking'){el.className='term-line term-thinking';el.innerHTML='<span>'+esc(text||ln.text||'')+'</span>'}
+  else if(type==='hint'){el.className='term-line term-hint';el.innerHTML='<span>'+esc(ln.text||'')+'</span>'}
   else if(type==='option'){el.className='term-line term-option';el.textContent=ln.text||'';
     el.onclick=()=>{const input=document.getElementById('term-input');if(input&&ln.value){input.value=ln.value;input.focus();setTimeout(()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})),50)}}}
   else if(type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><span class="term-card-lbl">${esc(ln.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[ln.status]||'var(--tx3)'}">${esc(ln.status||'')}</span></div><div class="term-card-det">${esc(ln.detail||'')}</div>${ln.val?`<div class="term-card-val">${esc(ln.val)}</div>`:''}`;
@@ -522,139 +926,230 @@ function addLine(container,type,text,id,line){
   if(sc)sc.scrollTop=sc.scrollHeight;
 }
 
-/* ══════ TERMINAL UPLOAD ══════ */
-function showTermUpload(output,input,hints){
-  // On home, upload form REPLACES composer in the dock (not stacked above it).
-  const dock=document.getElementById('home-dock');
-  const isHome=!!dock;
-  const composer=document.getElementById('home-composer');
-  const suggests=document.getElementById('home-suggests');
-  if(isHome&&composer)composer.style.display='none';
-  if(isHome&&suggests)suggests.style.display='none';
-
+/* ══════ TERMINAL UPLOAD ══════
+   Unified "put external stuff in" door — Files / URL / Paste / Archive tabs.
+   Each tab resolves to its own ingest endpoint but the user sees one entry:
+     - Files   → POST /corpora/:id/upload (multipart, files)
+     - URL     → POST /corpora/:id/ingest-url
+     - Paste   → POST /corpora/:id/upload (multipart, synthesized .md)
+     - Archive → POST /corpora/:id/import/{twitter|notion}
+   Call sites pass `defaultCorpus` so the home page's chip selection carries. */
+function showTermUpload(output,input,defaultCorpus){
   const wrap=document.createElement('div');wrap.className='term-upload-wrap';
-  let _uFiles=[];
-  wrap.innerHTML=`<div class="term-upload-dz" id="tu-dz"><input type="file" id="tu-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="term-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="term-upload-txt">Drop files here, or <span class="term-upload-browse">browse</span></div><div class="term-upload-formats">PDF, Markdown, DOCX, TXT, CSV, JSON</div></div><div class="term-upload-list" id="tu-list"></div><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="user_original" selected>My original content</option><option value="external_public">Public external reference</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Upload & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
-  if(isHome){dock.appendChild(wrap)}else{output.appendChild(wrap)}
-  const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
+  let _uFiles=[];let _tab='files';
+  wrap.innerHTML=`<div class="term-upload-tabs"><button class="term-upload-tab active" data-tab="files" type="button">Files</button><button class="term-upload-tab" data-tab="url" type="button">URL</button><button class="term-upload-tab" data-tab="paste" type="button">Paste</button><button class="term-upload-tab" data-tab="archive" type="button">Archive</button></div><div class="term-upload-body" id="tu-body"></div>`;
+  output.appendChild(wrap);
+  const sc=document.getElementById('term-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
+  const body=wrap.querySelector('#tu-body');
+  const tabsEl=wrap.querySelectorAll('.term-upload-tab');
 
-  const dz=wrap.querySelector('#tu-dz'),fi=wrap.querySelector('#tu-fi'),list=wrap.querySelector('#tu-list');
-  const goBtn=wrap.querySelector('#tu-go'),cancelBtn=wrap.querySelector('#tu-cancel');
-
-  function refreshList(){
-    list.innerHTML=_uFiles.map((f,i)=>`<div class="term-upload-file"><span>${esc(f.name)}</span><span style="display:flex;align-items:center;gap:8px"><span class="term-upload-size">${(f.size/1024).toFixed(1)}KB</span><button class="term-upload-remove" data-idx="${i}" title="Remove">&times;</button></span></div>`).join('');
-    list.querySelectorAll('.term-upload-remove').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();_uFiles.splice(parseInt(btn.dataset.idx),1);refreshList()}});
-    goBtn.disabled=!_uFiles.length;
-  }
-  function addFiles(fl){for(const f of fl)_uFiles.push(f);refreshList()}
-
-  dz.onclick=()=>fi.click();
-  dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
-  dz.ondragleave=()=>dz.classList.remove('drag-over');
-  dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files)};
-  fi.onchange=()=>{addFiles(fi.files);fi.value=''};
-
-  function restoreDock(){
-    if(isHome){
-      if(composer)composer.style.display='';
-      if(suggests&&!document.getElementById('home').classList.contains('home--active'))suggests.style.display='';
-    }
-  }
-  cancelBtn.onclick=()=>{wrap.remove();restoreDock();if(hints&&hints.style)hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus()};
-
-  goBtn.onclick=async()=>{
-    if(!_uFiles.length)return;
-    goBtn.disabled=true;goBtn.textContent='Uploading...';
-    cancelBtn.style.display='none';
-
-    let cid;
+  // Shared: resolve a corpus id (passed default → single corpus → auto-create → picker).
+  async function resolveCorpus(){
+    let cid=defaultCorpus||null;
+    if(cid)return cid;
     await loadC();
-    if(_corpora.length===1){cid=_corpora[0].id}
-    else if(_corpora.length===0){
-      try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();restoreDock();input.focus();return}
-    }else{
-      const picked=await pickCorpusInline(output);
-      if(!picked){wrap.remove();restoreDock();if(hints&&hints.style)hints.style.display='';(document.getElementById('term-input-area')||{style:{}}).style.display='';input.focus();return}
-      cid=picked;
+    if(_corpora.length===1)return _corpora[0].id;
+    if(_corpora.length===0){
+      try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();await loadC();return c.id}
+      catch(e){return null}
     }
-
-    const fd=new FormData();
-    for(const f of _uFiles)fd.append('files',f);
-    const _sk=wrap.querySelector('#tu-sk')?.value||'user_original';
-    fd.append('source_kind',_sk);
-    try{
-      const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
-      const d=await r.json();
-      wrap.remove();restoreDock();
-      addLine(output,'resp',`Uploaded ${d.uploaded||_uFiles.length} file${_uFiles.length>1?'s':''}`);
-    }catch(e){wrap.remove();restoreDock();(document.getElementById('term-input-area')||{style:{}}).style.display='';addLine(output,'resp','Upload failed: '+e.message);input.focus();return}
-
-    (document.getElementById('term-input-area')||{style:{}}).style.display='';
-    addLine(output,'resp','Indexing...');
-    try{
-      const r=await fetch(`${API}/corpora/${cid}/index`,{method:'POST'});
-      const d=await r.json();
-      if(!r.ok){addLine(output,'resp','Indexing failed: '+(d.detail||r.statusText));input.focus();return}
-      addLine(output,'resp',`Indexed: ${d.chunk_count||'?'} chunks`);
-      const corpus=_corpora.find(c=>c.id===cid);
-      addLine(output,'card',null,null,{type:'card',label:'Files Added',status:'READY',detail:`${corpus?corpus.name:'My Knowledge'}`,val:`${_uFiles.length} file${_uFiles.length>1?'s':''} uploaded & indexed`,corpus_id:cid});
-      addLine(output,'resp','Agents can now cite this content.');
-      await loadC();
-    }catch(e){addLine(output,'resp','Indexing failed: '+e.message)}
-    input.focus();
-  };
-}
-
-/* ══════ TERMINAL INLINE WRITE ══════ */
-function showTermWrite(output,input,hints){
-  // On home, the write form REPLACES the composer at the bottom dock —
-  // never both visible. On corpus pages, it still mounts inline.
-  const dock=document.getElementById('home-dock');
-  const isHome=!!dock;
-  const composer=document.getElementById('home-composer');
-  const suggests=document.getElementById('home-suggests');
-  if(isHome&&composer)composer.style.display='none';
-  if(isHome&&suggests)suggests.style.display='none';
-
-  const wrap=document.createElement('div');wrap.className='term-write-wrap';
-  wrap.innerHTML='<textarea class="term-write-body" id="tw-body" placeholder="Jot down a quick note — first line becomes the title. Markdown supported." rows="6"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
-  if(isHome){dock.appendChild(wrap)}else{output.appendChild(wrap)}
-  const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
-  wrap.querySelector('#tw-body').focus();
-
-  function restoreInput(){
-    if(isHome){
-      if(composer)composer.style.display='';
-      if(suggests&&!document.getElementById('home').classList.contains('home--active'))suggests.style.display='';
-    } else {
-      (document.getElementById('term-input-area')||{style:{}}).style.display='';
-      if(hints)hints.style.display='';
-    }
+    return await pickCorpusInline(output);
+  }
+  function cancelAndReturn(){
+    wrap.remove();
+    const home=document.getElementById('home');
+    if(home&&!output.children.length)home.classList.remove('home--active');
     if(input)input.focus();
   }
+  function renderFiles(){
+    body.innerHTML=`<div class="term-upload-dz" id="tu-dz"><input type="file" id="tu-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div class="term-upload-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div><div class="term-upload-txt">Drop files here, or <span class="term-upload-browse">browse</span></div><div class="term-upload-formats">PDF · Markdown · DOCX · TXT · CSV · JSON</div></div><div class="term-upload-list" id="tu-list"></div><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="user_original" selected>My original content</option><option value="external_public">Public external reference</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Upload & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+    const dz=body.querySelector('#tu-dz'),fi=body.querySelector('#tu-fi'),list=body.querySelector('#tu-list');
+    const goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
+    function refreshList(){
+      list.innerHTML=_uFiles.map((f,i)=>`<div class="term-upload-file"><span>${esc(f.name)}</span><span style="display:flex;align-items:center;gap:8px"><span class="term-upload-size">${(f.size/1024).toFixed(1)}KB</span><button class="term-upload-remove" data-idx="${i}" title="Remove">&times;</button></span></div>`).join('');
+      list.querySelectorAll('.term-upload-remove').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();_uFiles.splice(parseInt(btn.dataset.idx),1);refreshList()}});
+      goBtn.disabled=!_uFiles.length;
+    }
+    function addFiles(fl){for(const f of fl)_uFiles.push(f);refreshList()}
+    refreshList();
+    dz.onclick=()=>fi.click();
+    dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
+    dz.ondragleave=()=>dz.classList.remove('drag-over');
+    dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');addFiles(e.dataTransfer.files)};
+    fi.onchange=()=>{addFiles(fi.files);fi.value=''};
+    cancelBtn.onclick=cancelAndReturn;
+    goBtn.onclick=async()=>{
+      if(!_uFiles.length)return;
+      goBtn.disabled=true;goBtn.textContent='Uploading...';cancelBtn.style.display='none';
+      const cid=await resolveCorpus();
+      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      const fd=new FormData();
+      for(const f of _uFiles)fd.append('files',f);
+      fd.append('source_kind',body.querySelector('#tu-sk')?.value||'user_original');
+      try{
+        const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
+        const d=await r.json();
+        wrap.remove();
+        addLine(output,'resp',`Uploaded ${d.uploaded||_uFiles.length} file${_uFiles.length>1?'s':''}`);
+      }catch(e){wrap.remove();addLine(output,'resp','Upload failed: '+e.message);if(input)input.focus();return}
+      addLine(output,'resp','Indexing...');
+      try{
+        const r=await fetch(`${API}/corpora/${cid}/index`,{method:'POST'});
+        const d=await r.json();
+        if(!r.ok){addLine(output,'resp','Indexing failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        addLine(output,'resp',`Indexed: ${d.chunk_count||'?'} chunks`);
+        const corpus=_corpora.find(c=>c.id===cid);
+        addLine(output,'card',null,null,{type:'card',label:'Files Added',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${_uFiles.length} file${_uFiles.length>1?'s':''} uploaded & indexed`,corpus_id:cid});
+        await loadC();
+      }catch(e){addLine(output,'resp','Indexing failed: '+e.message)}
+      if(input)input.focus();
+    };
+  }
+  function renderURL(){
+    body.innerHTML=`<div class="term-upload-txt-hint">Paste a web page URL — Noosphere will fetch and index it.</div><input type="url" id="tu-url" placeholder="https://example.com/article" class="term-upload-input" /><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="external_public" selected>Public external reference</option><option value="external_subscription">Subscription / paid external</option><option value="user_original">My original content</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Import & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+    const urlEl=body.querySelector('#tu-url'),goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
+    urlEl.focus();
+    urlEl.oninput=()=>{goBtn.disabled=!urlEl.value.trim()};
+    urlEl.onkeydown=e=>{if(e.key==='Enter'&&!goBtn.disabled){e.preventDefault();goBtn.click()}};
+    cancelBtn.onclick=cancelAndReturn;
+    goBtn.onclick=async()=>{
+      const url=urlEl.value.trim();if(!url)return;
+      goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
+      const cid=await resolveCorpus();
+      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      const sk=body.querySelector('#tu-sk')?.value||'external_public';
+      try{
+        const r=await fetch(`${API}/corpora/${cid}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,source_kind:sk})});
+        const d=await r.json();
+        wrap.remove();
+        if(!r.ok){addLine(output,'resp','Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        addLine(output,'resp',`Imported: "${d.title||d.name||url}"`);
+      }catch(e){wrap.remove();addLine(output,'resp','Import failed: '+e.message);if(input)input.focus();return}
+      try{
+        await fetch(`${API}/corpora/${cid}/index`,{method:'POST'});
+        const corpus=_corpora.find(c=>c.id===cid);
+        addLine(output,'card',null,null,{type:'card',label:'URL Imported',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:urlEl.value||'',corpus_id:cid});
+        await loadC();
+      }catch(e){}
+      if(input)input.focus();
+    };
+  }
+  function renderPaste(){
+    body.innerHTML=`<div class="term-upload-txt-hint">Paste any text — the first line becomes the title. Markdown is supported.</div><textarea id="tu-paste" class="term-upload-input term-upload-textarea" placeholder="Paste article, notes, transcript…" rows="7"></textarea><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="external_public" selected>Public external reference</option><option value="user_original">My original content</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Save & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+    const taEl=body.querySelector('#tu-paste'),goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
+    taEl.focus();
+    taEl.oninput=()=>{goBtn.disabled=!taEl.value.trim()};
+    cancelBtn.onclick=cancelAndReturn;
+    goBtn.onclick=async()=>{
+      const text=taEl.value.trim();if(!text)return;
+      goBtn.disabled=true;goBtn.textContent='Saving...';cancelBtn.style.display='none';
+      const cid=await resolveCorpus();
+      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      const firstLine=(text.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+      const title=firstLine.slice(0,80)||('Pasted '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+      const fd=new FormData();
+      fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+text],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-').slice(0,60)+'.md');
+      fd.append('source_kind',body.querySelector('#tu-sk')?.value||'external_public');
+      try{
+        const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
+        const d=await r.json();
+        wrap.remove();
+        if(!r.ok){addLine(output,'resp','Save failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        addLine(output,'resp',`Saved: "${title}"`);
+      }catch(e){wrap.remove();addLine(output,'resp','Save failed: '+e.message);if(input)input.focus();return}
+      try{
+        await fetch(`${API}/corpora/${cid}/index`,{method:'POST'});
+        const corpus=_corpora.find(c=>c.id===cid);
+        addLine(output,'card',null,null,{type:'card',label:'Text Saved',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:title,corpus_id:cid});
+        await loadC();
+      }catch(e){}
+      if(input)input.focus();
+    };
+  }
+  function renderArchive(){
+    body.innerHTML=`<div class="term-upload-txt-hint">Import a full archive export. Every item lands as your own content.</div><div class="term-upload-archive-picks"><label class="term-upload-archive-pick"><input type="radio" name="arc-kind" value="twitter" checked /><span>Twitter / X</span><span class="term-upload-archive-sub">ZIP from twitter.com/settings/download_your_data</span></label><label class="term-upload-archive-pick"><input type="radio" name="arc-kind" value="notion" /><span>Notion</span><span class="term-upload-archive-sub">ZIP from Settings → Data export (Markdown &amp; CSV)</span></label></div><input type="file" id="tu-fi" accept=".zip" class="term-upload-input" /><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Import & Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+    const fi=body.querySelector('#tu-fi'),goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
+    fi.onchange=()=>{goBtn.disabled=!fi.files.length};
+    cancelBtn.onclick=cancelAndReturn;
+    goBtn.onclick=async()=>{
+      if(!fi.files.length)return;
+      const kind=(body.querySelector('input[name="arc-kind"]:checked')||{}).value||'twitter';
+      const label=kind==='twitter'?'Twitter / X':'Notion';
+      goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
+      const cid=await resolveCorpus();
+      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      const fd=new FormData();fd.append('file',fi.files[0]);
+      try{
+        const r=await fetch(`${API}/corpora/${cid}/import/${kind}`,{method:'POST',body:fd});
+        const d=await r.json().catch(()=>({}));
+        wrap.remove();
+        if(!r.ok){addLine(output,'resp','Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        const corpus=_corpora.find(c=>c.id===cid);
+        addLine(output,'resp',`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?` (${d.skipped} skipped)`:''}.`);
+        addLine(output,'card',null,null,{type:'card',label:`${label} imported`,status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${d.imported||0} items`,corpus_id:cid});
+        await loadC();
+      }catch(e){wrap.remove();addLine(output,'resp','Import failed: '+e.message)}
+      if(input)input.focus();
+    };
+  }
+  function setTab(t){
+    _tab=t;
+    tabsEl.forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
+    if(t==='files')renderFiles();
+    else if(t==='url')renderURL();
+    else if(t==='paste')renderPaste();
+    else if(t==='archive')renderArchive();
+  }
+  tabsEl.forEach(el=>el.onclick=()=>setTab(el.dataset.tab));
+  setTab('files');
+}
 
-  wrap.querySelector('#tw-cancel').onclick=()=>{wrap.remove();restoreInput()};
-  wrap.querySelector('#tw-save').onclick=async()=>{
-    const body=wrap.querySelector('#tw-body').value.trim();
-    if(!body){toast('Note is empty');return}
-    // Derive a title from the first non-empty line (strip markdown headers);
-    // fall back to a date-based default for bare streams of thought.
-    const firstLine=(body.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
-    const title=(firstLine.slice(0,80))||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
-    const btn=wrap.querySelector('#tw-save');btn.disabled=true;btn.textContent='Saving...';
-    await loadC();let cid;
-    if(_corpora.length===0){try{const r=await fetch(API+'/corpora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});cid=(await r.json()).id;await loadC()}catch(e){toast('Failed to create corpus');btn.disabled=false;btn.textContent='Save';return}}
-    else if(_corpora.length===1){cid=_corpora[0].id}
-    else{const picked=await pickCorpusInline(output);if(!picked){btn.disabled=false;btn.textContent='Save';return}cid=picked}
-    const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
-    try{await fetch(API+'/corpora/'+cid+'/upload',{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save';return}
-    btn.textContent='Indexing...';
-    try{await fetch(API+'/corpora/'+cid+'/index',{method:'POST'})}catch(e){}
-    wrap.remove();restoreInput();
-    const corpus=_corpora.find(c=>c.id===cid);
-    addLine(output,'resp','Saved: "'+title+'"');
-    addLine(output,'card',null,null,{type:'card',label:'Note saved',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
-    await loadC();
+/* ══════ CONNECT RSS FEED ══════
+   Persistent source — the backend enrichment loop re-polls registered feeds,
+   so this is the one connector that actually keeps flowing. */
+function showTermConnectRSS(output,input,defaultCorpus){
+  const wrap=document.createElement('div');wrap.className='term-upload-wrap';
+  wrap.innerHTML=`<div style="font-family:var(--mono);font-size:12px;color:var(--tx2);margin-bottom:10px">Subscribe to an RSS or Atom feed. Noosphere fetches entries now and keeps pulling new ones.</div><input type="url" id="tu-url" placeholder="https://example.com/feed.xml" style="width:100%;padding:10px 12px;border:1px solid var(--brd);border-radius:8px;background:var(--bg);color:var(--tx);font-family:var(--mono);font-size:12px;outline:none" /><div style="display:flex;gap:8px;align-items:center;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--tx3)"><label for="tu-max">Max items</label><input type="number" id="tu-max" value="25" min="1" max="100" style="width:70px;padding:5px 8px;border:1px solid var(--brd);border-radius:6px;background:var(--bg);color:var(--tx);font-family:var(--mono);font-size:11px;outline:none" /></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Subscribe &amp; Index</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+  output.appendChild(wrap);
+  const sc=document.getElementById('term-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
+  const urlEl=wrap.querySelector('#tu-url'),maxEl=wrap.querySelector('#tu-max'),goBtn=wrap.querySelector('#tu-go'),cancelBtn=wrap.querySelector('#tu-cancel');
+  urlEl.focus();
+  urlEl.oninput=()=>{goBtn.disabled=!urlEl.value.trim()};
+  urlEl.onkeydown=e=>{if(e.key==='Enter'&&!goBtn.disabled){e.preventDefault();goBtn.click()}};
+  cancelBtn.onclick=()=>{
+    wrap.remove();
+    const home=document.getElementById('home');
+    if(home&&!output.children.length)home.classList.remove('home--active');
+    if(input)input.focus();
+  };
+  goBtn.onclick=async()=>{
+    const url=urlEl.value.trim();if(!url)return;
+    const maxItems=parseInt(maxEl.value)||25;
+    goBtn.disabled=true;goBtn.textContent='Fetching feed...';cancelBtn.style.display='none';
+    let cid=defaultCorpus||null;
+    if(!cid){
+      await loadC();
+      if(_corpora.length===1){cid=_corpora[0].id}
+      else if(_corpora.length===0){
+        try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}
+        catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();if(input)input.focus();return}
+      } else {
+        const picked=await pickCorpusInline(output);
+        if(!picked){wrap.remove();if(input)input.focus();return}
+        cid=picked;
+      }
+    }
+    try{
+      const r=await fetch(`${API}/corpora/${cid}/ingest-feed`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feed_url:url,max_items:maxItems})});
+      const d=await r.json();
+      wrap.remove();
+      if(!r.ok){addLine(output,'resp','Subscribe failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+      const corpus=_corpora.find(c=>c.id===cid);
+      addLine(output,'resp',`Subscribed — fetched ${d.fetched||0} entries, ingested ${d.ingested||0} new.`);
+      addLine(output,'card',null,null,{type:'card',label:'Feed subscribed',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:url,corpus_id:cid});
+      await loadC();
+    }catch(e){wrap.remove();addLine(output,'resp','Subscribe failed: '+e.message)}
+    if(input)input.focus();
   };
 }
 

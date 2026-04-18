@@ -46,9 +46,9 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .sb-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:18px;color:var(--tx);text-decoration:none}
 .sb-logo-icon{display:none;flex-shrink:0}
 .sb-btn{width:30px;height:30px;border-radius:8px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--tx3);transition:background .15s,color .15s}.sb-btn:hover{background:var(--bgH);color:var(--tx)}
-.sb-new{display:flex;align-items:center;gap:10px;width:auto;margin:2px 10px;padding:9px 16px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s;text-decoration:none}.sb-new:hover{background:var(--bgH);color:var(--tx)}
-.sb-nav{display:flex;align-items:center;gap:10px;padding:9px 16px;font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;color:var(--tx2);text-decoration:none;border-radius:9px;margin:2px 10px;transition:background .12s}
-.sb-nav:hover,.sb-nav.active{background:var(--bgH);color:var(--tx)}
+.sb-new{display:flex;align-items:center;gap:10px;width:auto;margin:2px 10px;padding:9px 16px;border-radius:9px;border:none;background:transparent;color:var(--tx2);font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;text-decoration:none}.sb-new:hover{background:var(--bgH);color:var(--tx)}.sb-new.active{color:var(--tx)}
+.sb-nav{display:flex;align-items:center;gap:10px;padding:9px 16px;font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;color:var(--tx2);text-decoration:none;border-radius:9px;margin:2px 10px;transition:background .12s,color .12s}
+.sb-nav:hover{background:var(--bgH);color:var(--tx)}.sb-nav.active{color:var(--tx)}
 .sb-nav svg,.sb-new svg{width:16px;height:16px;flex-shrink:0}
 .sb-chats{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px 0;scrollbar-width:none}
 .sb-chats::-webkit-scrollbar{display:none}
@@ -86,7 +86,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-scroll{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .term-scroll::-webkit-scrollbar{display:none}
 .term-input-area{padding:20px 32px 8px;position:relative}
-.term-cmd-picker{display:none;position:absolute;top:calc(100% + 4px);left:32px;right:32px;background:var(--bg2);border:1px solid var(--brd);border-radius:10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:100;max-height:280px;overflow-y:auto}
+.term-cmd-picker{display:none;position:absolute;top:calc(100% + 4px);left:32px;right:32px;background:var(--bg2);border:1px solid var(--brd);border-radius:10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:100;max-height:min(280px,40vh);overflow-y:auto}
 .term-cmd-item{display:flex;align-items:center;gap:16px;padding:8px 14px;cursor:pointer;transition:background .1s}
 .term-cmd-item:hover,.term-cmd-item.focused{background:var(--bgH)}
 .term-cmd-name{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx);min-width:96px;flex-shrink:0}
@@ -111,7 +111,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 /* Active state: output fills, composer sticks to bottom */
 .home--active{padding-top:24px;padding-bottom:24px}
 .home--active .home-hero{display:none}
-.home--active .home-suggests{display:none}
+.home--active .home-shortcuts{display:none}
+.home--active .home-compiles{display:none}
 .home--active .home-output{flex:1 1 auto;overflow-y:auto;min-height:0}
 .home--active .home-dock{flex:0 0 auto}
 
@@ -137,30 +138,155 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .home-composer-send:active{transform:scale(.95)}
 .home-composer-send:disabled{opacity:.3;cursor:default}
 
-/* Feynman-style suggested prompts */
-.home-suggests{display:flex;flex-direction:column;gap:8px;align-items:center;width:100%}
-.home-suggest{display:inline-flex;align-items:center;padding:8px 16px;border:1px solid var(--brd);border-radius:999px;background:var(--bg);color:var(--tx2);font-family:inherit;font-size:12.5px;font-weight:400;cursor:pointer;transition:all .12s;text-align:center;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home-suggest:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3)}
+/* Composer bottom strip — hosts the corpus scope chip. Visually an extension
+   of the composer (shares rounded-bottom corners and focus-within halo) so
+   the chip feels like a persistent scope indicator rather than a floating
+   control. Replaces the foot's left slot for corpus selection. */
+.home-composer-conn{display:flex;align-items:center;gap:10px;padding:7px 18px;margin:8px -18px -12px;border-top:1px solid var(--brd);border-radius:0 0 16px 16px;background:var(--bg)}
 
-/* Write / upload forms mounted inside .home-dock (replace composer) */
-.home-dock .term-write-wrap,
-.home-dock .term-upload-wrap{margin-left:0;margin-top:0;border-radius:16px;padding:16px 18px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 4px 16px rgba(0,0,0,.04);background:var(--bg)}
-.home-dock .term-write-wrap .term-write-body{font-size:15px;line-height:1.55;min-height:120px}
-.home-dock .term-write-wrap .term-write-actions{justify-content:flex-end}
+/* Product-manifesto shortcut row below composer — three ingest verbs
+   (Write · Upload · Subscribe) that define Noosphere vs general chat. */
+.home-shortcuts{display:flex;justify-content:center;align-items:center;gap:10px;width:100%;margin-top:2px;flex-wrap:wrap}
+.home-shortcut{display:inline-flex;align-items:center;gap:8px;padding:10px 22px;border:1px solid var(--brd);border-radius:999px;background:var(--bg2);color:var(--tx);font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}
+.home-shortcut:hover{background:var(--bgH);border-color:var(--tx3)}
+.home-shortcut:active{transform:translateY(0.5px)}
+.home-shortcut svg{width:14px;height:14px;flex-shrink:0;color:var(--tx2)}
+.home-shortcut:hover svg{color:var(--tx)}
 
-/* Slash picker anchored to home-composer */
+/* Recently compiled — synthesis layer, distinct section below the ingest
+   shortcuts. Low-key list of entity pages Noosphere has compiled, with a
+   single "Compile now" action enabled only when there's work to do. */
+.home-compiles{width:100%;max-width:560px;margin:0 auto;padding:14px 2px 0;border-top:1px solid var(--brd)}
+.home-compiles-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.home-compiles-ttl{font-family:var(--mono);font-size:11px;color:var(--tx3);letter-spacing:.02em;text-transform:uppercase}
+.home-compiles-cta{background:transparent;border:none;color:var(--tx2);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;transition:color .15s}
+.home-compiles-cta:not(:disabled):hover{color:var(--tx)}
+.home-compiles-cta:disabled{color:var(--tx3);opacity:.5;cursor:default}
+.home-compiles-list{display:flex;flex-direction:column}
+.home-compiles-item{display:flex;justify-content:space-between;align-items:baseline;padding:8px 2px;border-bottom:1px solid var(--brd);color:var(--tx);text-decoration:none;transition:background .12s,padding-left .12s}
+.home-compiles-item:last-child{border-bottom:none}
+.home-compiles-item:hover{padding-left:6px}
+.home-compiles-item-ttl{font-family:'Libre Baskerville',Georgia,serif;font-size:14px;color:var(--tx)}
+.home-compiles-item-meta{font-family:var(--mono);font-size:10px;color:var(--tx3);letter-spacing:.01em}
+.home-compiles-empty{font-family:var(--mono);font-size:11px;color:var(--tx3);padding:6px 2px;line-height:1.6}
+
+/* Compile picker — inline panel replacing the list when "Compile now" is
+   clicked. Two radio-grouped sections (Entity truth / Topic wiki); whichever
+   the user fills drives the submit. Scope follows the Corpus chip above. */
+.home-compile-picker{padding:12px 2px 4px;animation:termFadeIn .2s ease-out}
+.home-compile-picker-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-family:var(--mono);font-size:11px;color:var(--tx3);letter-spacing:.02em}
+.home-compile-picker-hd label{flex-shrink:0}
+.home-compile-scope-select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer;transition:border-color .15s}
+.home-compile-scope-select:focus{border-color:var(--tx3)}
+.home-compile-picker-body{display:flex;flex-direction:column;gap:14px}
+.home-compile-section{display:flex;flex-direction:column;gap:6px}
+.home-compile-section[data-disabled="true"]{opacity:.5}
+.home-compile-legend{font-family:'Libre Baskerville',Georgia,serif;font-size:13px;color:var(--tx)}
+.home-compile-legend-sub{font-family:var(--mono);font-size:10px;color:var(--tx3);margin-left:8px;font-weight:400}
+.home-compile-choices{display:flex;flex-direction:column;max-height:160px;overflow-y:auto;border:1px solid var(--brd);border-radius:8px;background:var(--bg2)}
+.home-compile-choice{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--brd);cursor:pointer;transition:background .1s}
+.home-compile-choice:last-child{border-bottom:none}
+.home-compile-choice:hover{background:var(--bgH)}
+.home-compile-choice input[type="radio"]{accent-color:var(--tx);flex-shrink:0;margin:0}
+.home-compile-choice-main{display:flex;flex-direction:column;gap:1px;min-width:0}
+.home-compile-choice-ttl{font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-compile-choice-sub{font-family:var(--mono);font-size:10px;color:var(--tx3)}
+.home-compile-topic{width:100%;padding:8px 10px;border:1px solid var(--brd);border-radius:8px;background:var(--bg2);color:var(--tx);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+.home-compile-topic:focus{border-color:var(--tx3)}
+.home-compile-empty-mini{font-family:var(--mono);font-size:11px;color:var(--tx3);padding:4px 0;line-height:1.5}
+.home-compile-picker-actions{display:flex;gap:8px;margin-top:12px}
+
+/* Slash picker anchored to home-composer — flips above composer in chat mode
+   (composer is sticky at viewport bottom, so a downward menu would overflow). */
 .home-composer .term-cmd-picker{left:0;right:0;top:calc(100% + 6px)}
+.home--active .home-composer .term-cmd-picker{top:auto;bottom:calc(100% + 6px)}
+
+/* ── Composer chips (corpus scope + mode affordance) ─────────────────── */
+.home-composer-left{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.home-composer-hint{color:var(--tx3);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--brd);background:transparent;color:var(--tx2);font-size:11px;font-family:inherit;line-height:1.3;cursor:pointer;transition:background .15s,border-color .15s,color .15s;max-width:220px;flex-shrink:0}
+.home-chip:hover{background:var(--bgH);border-color:var(--tx3);color:var(--tx)}
+.home-chip-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-chip-caret{font-size:9px;opacity:.55;flex-shrink:0}
+.home-composer-cancel{background:none;border:none;color:var(--tx3);font-size:11px;cursor:pointer;padding:4px 2px;font-family:inherit}
+.home-composer-cancel:hover{color:var(--tx)}
+
+/* Chip dropdown menu — positioned above chip (composer may be at bottom). */
+.home-chip-menu{position:absolute;background:var(--bg2);border:1px solid var(--brd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:110;min-width:240px;max-width:320px;max-height:min(300px,40vh);overflow-y:auto;padding:4px;display:none}
+.home-chip-menu.open{display:block}
+.home-chip-menu-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--tx2);transition:background .1s}
+.home-chip-menu-item:hover{background:var(--bgH)}
+.home-chip-menu-item.active{color:var(--tx);font-weight:500;background:var(--bgH)}
+.home-chip-menu-item .home-chip-menu-hint{color:var(--tx3);font-size:11px;margin-left:auto;flex-shrink:0}
+.home-chip-menu-divider{height:1px;background:var(--brd);margin:4px 0}
+.home-chip-menu-new{display:flex;gap:6px;align-items:center;padding:6px 8px}
+.home-chip-menu-new input{flex:1;border:1px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:12px;background:var(--bg);color:var(--tx);outline:none;font-family:inherit}
+.home-chip-menu-new input:focus{border-color:var(--tx3)}
+.home-chip-menu-new button{font-size:11px;padding:4px 10px;border-radius:6px;border:none;background:var(--tx);color:var(--bg);cursor:pointer}
+
+/* Note mode: composer grows and placeholder shifts. No separate form — the
+   same textarea becomes the note body; Send button acts as Save. */
+.home-composer-note .home-composer-input{min-height:120px}
+.home--writing .home-hero{display:none}
+.home--writing .home-shortcuts{display:none}
+.home--writing .home-compiles{display:none}
+
 .term-shortcut-hint{font-size:12px;color:var(--tx3);padding:4px 10px 10px;font-family:var(--mono)}
+
+/* ── Inline upload card (rendered inside chat output) ───────────────── */
+.term-upload-wrap{margin-left:28px;margin-top:8px;margin-bottom:8px;animation:termFadeIn .3s ease-out;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:16px 18px;max-width:560px}
+.term-upload-tabs{display:flex;gap:2px;border-bottom:1px solid var(--brd);margin:-4px -4px 12px;padding:0 4px}
+.term-upload-tab{background:transparent;border:none;padding:8px 14px;font-family:var(--mono);font-size:11px;color:var(--tx3);cursor:pointer;border-bottom:1.5px solid transparent;margin-bottom:-1px;transition:color .15s,border-color .15s;letter-spacing:.02em}
+.term-upload-tab:hover{color:var(--tx2)}
+.term-upload-tab.active{color:var(--tx);border-bottom-color:var(--tx)}
+.term-upload-body{display:flex;flex-direction:column}
+.term-upload-txt-hint{font-family:var(--mono);font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.5}
+.term-upload-input{width:100%;padding:10px 12px;border:1px solid var(--brd);border-radius:8px;background:var(--bg);color:var(--tx);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+.term-upload-input:focus{border-color:var(--tx3)}
+.term-upload-textarea{min-height:120px;resize:vertical;line-height:1.5}
+.term-upload-archive-picks{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.term-upload-archive-pick{display:grid;grid-template-columns:16px 1fr;grid-template-rows:auto auto;gap:2px 10px;padding:10px 12px;border:1px solid var(--brd);border-radius:8px;cursor:pointer;align-items:center;transition:border-color .15s,background .15s}
+.term-upload-archive-pick:hover{border-color:var(--tx3)}
+.term-upload-archive-pick input{grid-row:1/3;accent-color:var(--tx);margin:0}
+.term-upload-archive-pick span:nth-of-type(1){font-family:var(--mono);font-size:12px;color:var(--tx);grid-column:2;grid-row:1}
+.term-upload-archive-sub{grid-column:2;grid-row:2;font-family:var(--mono);font-size:10px;color:var(--tx3);line-height:1.3}
+.term-upload-dz{border:1.5px dashed var(--brd);border-radius:12px;padding:24px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px;background:var(--bg)}
+.term-upload-dz:hover,.term-upload-dz.drag-over{border-color:var(--tx3);background:var(--bgH)}
+.term-upload-icon{margin-bottom:8px;opacity:.5}
+.term-upload-txt{font-family:var(--mono);font-size:12px;color:var(--tx2)}
+.term-upload-browse{color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.term-upload-formats{font-family:var(--mono);font-size:10px;color:var(--tx3);margin-top:6px;opacity:.6}
+.term-upload-list{margin-top:8px;text-align:left}
+.term-upload-list:empty{display:none}
+.term-upload-file{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;font-family:var(--mono);font-size:11px;color:var(--tx);border-radius:6px;background:var(--bgH);margin-top:4px}
+.term-upload-remove{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px;transition:color .12s}.term-upload-remove:hover{color:var(--tx)}
+.term-upload-size{color:var(--tx3);font-size:10px}
+.term-upload-origin{display:flex;align-items:center;gap:8px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--tx3)}
+.term-upload-origin label{flex-shrink:0}
+.term-upload-origin select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer;flex:1}
+.term-upload-origin select:focus{border-color:var(--tx3)}
+.term-upload-actions{display:flex;gap:8px;margin-top:12px}
 .term-sg{font-family:var(--mono);font-size:12px;color:var(--tx3);padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .12s;display:flex;align-items:center;gap:8px}
 .term-sg:hover{background:var(--bgH);color:var(--tx2)}
 .term-sg .term-caret{font-size:12px;font-weight:400;color:var(--tx3)}
 .term-output{padding:0 32px;display:flex;flex-direction:column;gap:10px}
 .term-line{display:flex;align-items:flex-start;gap:10px;animation:termFadeIn .3s ease-out}
-.term-prompt{font-family:var(--mono);font-size:13px;color:var(--tx);line-height:1.5;display:flex;align-items:center;gap:10px}
-.term-prompt .term-user-chevron{color:var(--tx3)}
-.term-prompt-text{background:var(--bgH);padding:3px 10px;border-radius:6px}
-.term-resp{font-family:var(--mono);font-size:13px;color:var(--tx2);line-height:1.6;display:flex;align-items:flex-start;gap:10px}
-.term-resp .term-noos-dot{height:calc(13px * 1.6);padding-top:0;display:inline-flex;align-items:center}
+/* Chat-mode bubbles: user message right-aligned without CLI chevron, Noos
+   replies use an avatar+name header followed by body text indented beneath. */
+.term-prompt{display:flex;justify-content:flex-end;margin-top:14px}
+.term-prompt-text{font-family:var(--mono);font-size:13px;color:var(--tx);background:var(--bgH);padding:8px 14px;border-radius:14px;max-width:75%;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.term-resp{font-family:var(--mono);font-size:13px;color:var(--tx);line-height:1.65;display:flex;flex-direction:column;gap:4px;margin-top:10px;margin-bottom:4px}
+.term-resp-body{padding-left:28px;color:var(--tx)}
+.term-resp-actions{padding-left:28px;display:flex;gap:6px;margin-top:4px;opacity:0;transition:opacity .15s}
+.term-resp:hover .term-resp-actions,.term-resp-actions:focus-within{opacity:1}
+.term-save{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:6px;border:1px solid var(--brd);background:transparent;color:var(--tx3);cursor:pointer;font-size:11px;font-family:var(--mono);transition:background .12s,color .12s,border-color .12s}
+.term-save:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3)}
+.term-save svg{width:11px;height:11px;flex-shrink:0}
+.term-save.saved{color:var(--grn);border-color:var(--grn)}
+.term-save.saved:hover{background:transparent;color:var(--grn)}
+.term-save:disabled{cursor:default}
+.term-thinking{font-family:var(--mono);font-size:13px;color:var(--tx3);line-height:1.65;padding-left:28px;margin:6px 0}
+.term-hint{font-family:var(--mono);font-size:13px;color:var(--tx3);line-height:1.65;padding-left:28px;margin:2px 0;white-space:pre-wrap}
 .term-card{margin-left:24px;padding:12px 16px;border-radius:10px;border:1px solid var(--brd);background:var(--bg2);animation:termFadeIn .3s ease-out;margin-top:4px;margin-bottom:4px}
 .term-card-lbl{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx)}
 .term-card-det{font-family:var(--mono);font-size:12px;color:var(--tx3);margin-top:4px;line-height:1.4}
@@ -171,19 +297,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 @keyframes termFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes cursor-blink{0%,100%{opacity:.6}50%{opacity:0}}
 
-/* ── Terminal inline upload ── */
-.term-upload-wrap{margin-left:18px;margin-top:20px;animation:termFadeIn .3s ease-out;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:16px 18px}
-.term-upload-dz{border:1.5px dashed var(--brd);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px;background:var(--bg2)}
-.term-upload-dz:hover,.term-upload-dz.drag-over{border-color:var(--tx3);background:var(--bgH)}
-.term-upload-icon{margin-bottom:8px;opacity:.4}
-.term-upload-txt{font-family:var(--mono);font-size:12px;color:var(--tx3)}
-.term-upload-browse{color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-.term-upload-formats{font-family:var(--mono);font-size:10px;color:var(--tx3);margin-top:6px;opacity:.5}
-.term-upload-list{margin-top:8px;text-align:left}
-.term-upload-file{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;font-family:var(--mono);font-size:11px;color:var(--tx);border-radius:6px;background:var(--bgH);margin-top:4px}
-.term-upload-remove{background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px;transition:color .12s}.term-upload-remove:hover{color:var(--tx)}
-.term-upload-size{color:var(--tx3);font-size:10px}
-.term-upload-actions{display:flex;gap:8px;margin-top:12px;margin-bottom:10px}
 /* ── Entity detail page (one page per entity) ── */
 .ep-wrap{max-width:760px;margin:0 auto;padding:24px 32px}
 .ep-header{padding:28px 0 20px;border-bottom:1px solid var(--brd);margin-bottom:24px}
@@ -261,11 +374,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .acm-note{font-size:11px;font-style:italic;color:var(--tx3)}
 .acm-expl{font-size:12px;color:var(--tx3);margin-bottom:18px;line-height:1.5}
 .acm-actions{display:flex;gap:8px;justify-content:flex-end}
-
-.term-upload-origin{display:flex;align-items:center;gap:8px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--tx3)}
-.term-upload-origin label{flex-shrink:0}
-.term-upload-origin select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx2);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer;flex:1}
-.term-upload-origin select:focus{border-color:var(--tx3)}
 
 /* ── Terminal inline corpus picker ── */
 .term-pick-wrap{margin-left:18px;animation:termFadeIn .3s ease-out;margin-bottom:8px}
@@ -365,9 +473,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cv-st{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
 
 /* ── Noos (AI identity) ── */
-.noos-hd{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.noos-hd{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.noos-hd .noos-av{width:20px;height:20px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:var(--tx)}
+.noos-hd .noos-av svg{width:100%;height:100%}
 .noos-hd .term-noos-dot{padding-top:0}
-.noos-nm{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx2);margin-right:6px}
+.noos-nm{font-family:'Libre Baskerville',Georgia,serif;font-size:14px;font-weight:600;color:var(--tx)}
 .noos-msg{display:flex;align-items:center;gap:10px;padding-top:20px;animation:termFadeIn .4s ease-out}
 .noos-body{font-family:var(--mono);font-size:13px;color:var(--tx);line-height:1.6}
 .chat-msg.assistant .noos-hd .noos-nm{color:var(--tx2);font-weight:600}
@@ -375,7 +485,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 
 /* ── Unified terminal icons ── */
 .term-noos-dot{width:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--tx3);line-height:1;user-select:none}
-.term-user-chevron{width:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--tx3);line-height:1;user-select:none}
 
 /* ── Chat ── */
 .chat-area{min-height:min(160px,24vh);padding:20px 24px 20px}
