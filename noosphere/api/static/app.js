@@ -342,10 +342,19 @@ function renderHome(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.classList.add('content--home');
   const greetText=_firstName?`Back at it, ${_firstName}`:'Back at it';
 
+  // Suggested prompts (Feynman-style concrete starters). Later these can be
+  // dynamic based on user's corpora content.
+  const suggestions=[
+    "What did I read about product-market fit?",
+    "Summarize my notes on agents",
+    "Compare my thinking on X and Y",
+  ];
+  const suggestHTML=suggestions.map(s=>`<button class="home-suggest" data-fill="${esc(s)}">${esc(s)}</button>`).join('');
+
   ct.innerHTML=`<div class="home">
     <div class="home-center" id="home-center">
       <div class="home-hero" id="home-hero">
-        <canvas class="home-hero-mark" id="dragon-cv" width="48" height="48"></canvas>
+        <canvas class="home-hero-mark" id="dragon-cv" width="40" height="40"></canvas>
         <h1 class="home-greet">${esc(greetText)}</h1>
       </div>
       <div class="home-composer" id="home-composer">
@@ -360,13 +369,7 @@ function renderHome(){
           </span>
         </div>
       </div>
-      <div class="home-chips" id="home-chips">
-        <button class="home-chip" data-chip="ask"><span class="home-chip-label">Ask</span></button>
-        <button class="home-chip" data-chip="import"><span class="home-chip-label">Import</span></button>
-        <button class="home-chip" data-chip="write"><span class="home-chip-label">Write</span></button>
-        <button class="home-chip" data-chip="explore"><span class="home-chip-label">Explore</span></button>
-      </div>
-      <div class="home-chip-panel" id="home-chip-panel" hidden></div>
+      <div class="home-suggests" id="home-suggests">${suggestHTML}</div>
     </div>
     <div class="home-output" id="term-output"></div>
   </div>`;
@@ -422,7 +425,6 @@ function renderHome(){
   const input=document.getElementById('term-input');
   const output=document.getElementById('term-output');
   const sendBtn=document.getElementById('home-send');
-  const chipPanel=document.getElementById('home-chip-panel');
   _termCtx={};
 
   // Auto-resize textarea as user types
@@ -435,14 +437,10 @@ function renderHome(){
   });
   input.addEventListener('blur',()=>hideCmdPicker());
 
-  // Hide hero + chips on first send, collapse into chat-only mode
+  // Hide hero + suggestions on first send, collapse into chat-only mode
   function collapseToChat(){
     const center=document.getElementById('home-center');
     if(center)center.classList.add('home-center--collapsed');
-  }
-  function hideChipPanel(){
-    if(chipPanel){chipPanel.hidden=true;chipPanel.innerHTML=''}
-    document.querySelectorAll('.home-chip').forEach(b=>b.classList.remove('active'));
   }
 
   let _sending=false;
@@ -450,21 +448,22 @@ function renderHome(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
     // Client-side slash handlers that short-circuit /terminal
-    if(val.toLowerCase()==='/upload'){input.value='';autosize();hideChipPanel();collapseToChat();showTermUpload(output,input,{style:{}});return}
+    if(val.toLowerCase()==='/upload'){input.value='';autosize();collapseToChat();showTermUpload(output,input,{style:{}});return}
+    if(val.toLowerCase()==='/write'){input.value='';autosize();collapseToChat();showTermWrite(output,input,{style:{}});return}
     if(val.toLowerCase()==='/history'){
-      input.value='';autosize();hideChipPanel();collapseToChat();
+      input.value='';autosize();collapseToChat();
       await loadChatSessions();
       if(!_chatSessions.length){addLine(output,'resp','No chat history yet.')}
       else{addLine(output,'resp','Recent conversations:');_chatSessions.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpus_name||'')+'</span>'+esc(c.title||'Untitled')+'</span>';el.onclick=()=>{location.hash='#/corpus/'+c.corpus_id+'?session='+c.id};output.appendChild(el)})}
       input.focus();return;
     }
     if(val.toLowerCase()==='/help'){
-      input.value='';autosize();hideChipPanel();collapseToChat();
-      [['URL','Paste any URL to import a page'],['  /upload','Add a file to a corpus'],['  /write','Write a note'],['  /history','View recent conversations'],['  /new','Create a new corpus'],['  /status','Show your corpora stats']].forEach(([cmd,desc])=>addLine(output,'hint',cmd.padEnd(12)+desc));
+      input.value='';autosize();collapseToChat();
+      [['URL','Paste any URL to import a page'],['  /upload','Add a file to a corpus'],['  /write','Write a quick note'],['  /history','View recent conversations'],['  /new','Create a new corpus'],['  /status','Show your corpora stats']].forEach(([cmd,desc])=>addLine(output,'hint',cmd.padEnd(12)+desc));
       input.focus();return;
     }
     if(val.toLowerCase()==='/new'){
-      input.value='';autosize();hideChipPanel();collapseToChat();
+      input.value='';autosize();collapseToChat();
       addLine(output,'resp','Name for the new knowledge base:');
       const wrap=document.createElement('div');wrap.style.cssText='margin-left:18px;margin-top:8px;display:flex;gap:8px;align-items:center';
       wrap.innerHTML='<input type="text" id="new-corpus-input" placeholder="e.g. Research notes" style="flex:1;font-size:13px;border:1px solid var(--brd);border-radius:8px;padding:6px 10px;background:var(--bg2);color:var(--tx);outline:none" /><button class="btn-sm" id="new-corpus-btn">Create</button>';
@@ -475,7 +474,7 @@ function renderHome(){
       return;
     }
     _sending=true;input.value='';autosize();input.disabled=true;
-    hideChipPanel();collapseToChat();
+    collapseToChat();
     addLine(output,'prompt',val);
     const loadId='ld-'+Date.now();
     addLine(output,'resp','Thinking...',loadId);
@@ -494,43 +493,9 @@ function renderHome(){
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendInput()}});
   sendBtn.onclick=sendInput;
 
-  // Chip category expansions (Ask / Import / Write / Explore)
-  function renderChipPanel(items){
-    chipPanel.innerHTML=items.map(it=>`<a class="home-chip-item" data-act="${it.act||''}" data-val="${esc(it.val||'')}"><span class="home-chip-item-label">${esc(it.label)}</span>${it.hint?`<span class="home-chip-item-hint">${esc(it.hint)}</span>`:''}</a>`).join('');
-    chipPanel.hidden=false;
-    chipPanel.querySelectorAll('.home-chip-item').forEach(a=>a.onclick=()=>{
-      const act=a.dataset.act,val=a.dataset.val;
-      if(act==='fill'){input.value=val;autosize();input.focus();hideChipPanel()}
-      else if(act==='nav'){location.hash=val;hideChipPanel()}
-      else if(act==='upload'){hideChipPanel();collapseToChat();showTermUpload(output,input,{style:{}})}
-      else if(act==='write'){hideChipPanel();collapseToChat();showTermWrite(output,input,{style:{}})}
-      else if(act==='focus-url'){input.placeholder='Paste a URL and press Enter...';input.focus();hideChipPanel()}
-    });
-  }
-  document.querySelectorAll('.home-chip').forEach(btn=>{btn.onclick=()=>{
-    const kind=btn.dataset.chip;
-    const wasActive=btn.classList.contains('active');
-    hideChipPanel();
-    if(wasActive)return;
-    btn.classList.add('active');
-    if(kind==='ask'){
-      renderChipPanel([
-        {act:'fill',val:'what did I read about product-market fit?',label:'what did I read about product-market fit?'},
-        {act:'fill',val:"summarize Lenny's take on hiring",label:"summarize Lenny's take on hiring"},
-        {act:'fill',val:'what have I saved about agent architectures?',label:'what have I saved about agent architectures?'},
-      ]);
-    } else if(kind==='import'){
-      renderChipPanel([
-        {act:'focus-url',label:'Paste a URL',hint:'import a page'},
-        {act:'upload',label:'Upload a file',hint:'PDF, Markdown, DOCX, CSV'},
-        {act:'nav',val:'#/corpora',label:'Import a Twitter or Notion archive',hint:'pick a knowledge base first'},
-        {act:'nav',val:'#/corpora',label:'Subscribe to an RSS feed',hint:'pick a knowledge base first'},
-      ]);
-    } else if(kind==='write'){
-      hideChipPanel();collapseToChat();showTermWrite(output,input,{style:{}});return;
-    } else if(kind==='explore'){
-      location.hash='#/explore';return;
-    }
+  // Suggested prompts — click to fill composer (Feynman-style concrete starters)
+  document.querySelectorAll('.home-suggest').forEach(btn=>{btn.onclick=()=>{
+    input.value=btn.dataset.fill;autosize();input.focus();
   }});
 
   input.focus();autosize();
@@ -625,31 +590,45 @@ function showTermUpload(output,input,hints){
 
 /* ══════ TERMINAL INLINE WRITE ══════ */
 function showTermWrite(output,input,hints){
+  // Home-page context: hide hero + composer + suggestions so the write form
+  // isn't competing with the composer for attention. Restore on save/cancel.
+  const isHome=!!document.getElementById('home-composer');
+  const homeEls=isHome?[document.getElementById('home-hero'),document.getElementById('home-composer'),document.getElementById('home-suggests')]:[];
+  homeEls.forEach(el=>{if(el)el.style.display='none'});
+
   const wrap=document.createElement('div');wrap.className='term-write-wrap';
-  wrap.innerHTML='<input type="text" class="term-write-title" id="tw-title" placeholder="Title" /><textarea class="term-write-body" id="tw-body" placeholder="Write your knowledge here... (Markdown supported)" rows="6"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save & Index</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
+  wrap.innerHTML='<textarea class="term-write-body" id="tw-body" placeholder="Jot down a quick note — first line becomes the title. Markdown supported." rows="8"></textarea><div class="term-write-actions"><button class="btn-sm" id="tw-save">Save</button><button class="btn-sm-ghost" id="tw-cancel">Cancel</button></div>';
   output.appendChild(wrap);
   const _sc=document.getElementById('term-scroll');if(_sc)_sc.scrollTop=_sc.scrollHeight;
-  wrap.querySelector('#tw-title').focus();
+  wrap.querySelector('#tw-body').focus();
 
-  function restoreInput(){(document.getElementById('term-input-area')||{style:{}}).style.display='';if(hints)hints.style.display='';if(input)input.focus()}
+  function restoreInput(){
+    if(isHome){homeEls.forEach(el=>{if(el)el.style.display=''})}
+    else{(document.getElementById('term-input-area')||{style:{}}).style.display='';if(hints)hints.style.display=''}
+    if(input)input.focus();
+  }
 
   wrap.querySelector('#tw-cancel').onclick=()=>{wrap.remove();restoreInput()};
   wrap.querySelector('#tw-save').onclick=async()=>{
-    const title=wrap.querySelector('#tw-title').value.trim(),body=wrap.querySelector('#tw-body').value.trim();
-    if(!title||!body){toast('Title and content are required');return}
+    const body=wrap.querySelector('#tw-body').value.trim();
+    if(!body){toast('Note is empty');return}
+    // Derive a title from the first non-empty line (strip markdown headers);
+    // fall back to a date-based default for bare streams of thought.
+    const firstLine=(body.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+    const title=(firstLine.slice(0,80))||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
     const btn=wrap.querySelector('#tw-save');btn.disabled=true;btn.textContent='Saving...';
     await loadC();let cid;
-    if(_corpora.length===0){try{const r=await fetch(API+'/corpora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});cid=(await r.json()).id;await loadC()}catch(e){toast('Failed to create corpus');btn.disabled=false;btn.textContent='Save & Index';return}}
+    if(_corpora.length===0){try{const r=await fetch(API+'/corpora',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});cid=(await r.json()).id;await loadC()}catch(e){toast('Failed to create corpus');btn.disabled=false;btn.textContent='Save';return}}
     else if(_corpora.length===1){cid=_corpora[0].id}
-    else{const picked=await pickCorpusInline(output);if(!picked){btn.disabled=false;btn.textContent='Save & Index';return}cid=picked}
+    else{const picked=await pickCorpusInline(output);if(!picked){btn.disabled=false;btn.textContent='Save';return}cid=picked}
     const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
-    try{await fetch(API+'/corpora/'+cid+'/upload',{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save & Index';return}
+    try{await fetch(API+'/corpora/'+cid+'/upload',{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save';return}
     btn.textContent='Indexing...';
     try{await fetch(API+'/corpora/'+cid+'/index',{method:'POST'})}catch(e){}
     wrap.remove();restoreInput();
     const corpus=_corpora.find(c=>c.id===cid);
     addLine(output,'resp','Saved: "'+title+'"');
-    addLine(output,'card',null,null,{type:'card',label:'Source Added',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
+    addLine(output,'card',null,null,{type:'card',label:'Note saved',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
     await loadC();
   };
 }

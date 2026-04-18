@@ -100,46 +100,44 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .term-hints{padding:8px 32px 24px}
 
 /* ══════════════════════════════════════════════════════════════════ */
-/* ── HOME v2 — Claude-style centered hero + composer + chips ─────── */
+/* ── HOME — centered hero + composer + suggestion chips ──────────── */
 /* ══════════════════════════════════════════════════════════════════ */
 .content--home{overflow-y:auto}
-.home{display:flex;flex-direction:column;max-width:720px;width:100%;margin:0 auto;padding:20px 24px 80px;min-height:100%}
-.home-center{display:flex;flex-direction:column;align-items:center;gap:22px;justify-content:center;flex:1;min-height:calc(100vh - 120px);transition:min-height .3s ease}
-.home-center--collapsed{min-height:0;flex:0 0 auto;gap:12px;padding-top:0}
+.home{display:flex;flex-direction:column;max-width:680px;width:100%;margin:0 auto;padding:24px 28px 80px;min-height:100%}
+.home-center{display:flex;flex-direction:column;align-items:center;gap:26px;justify-content:center;flex:1;min-height:calc(100vh - 140px);transition:min-height .3s ease}
+.home-center--collapsed{min-height:0;flex:0 0 auto;gap:16px;padding-top:20px}
 .home-center--collapsed .home-hero{height:0;opacity:0;overflow:hidden;margin:0;pointer-events:none}
-.home-center--collapsed .home-chips{height:0;opacity:0;overflow:hidden;margin:0;pointer-events:none}
-.home-center--collapsed .home-chip-panel{display:none!important}
+.home-center--collapsed .home-suggests{height:0;opacity:0;overflow:hidden;margin:0;pointer-events:none}
 
-.home-hero{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;transition:all .3s ease}
-.home-hero-mark{display:block;opacity:.85}
-.home-greet{font-family:'Libre Baskerville',Georgia,serif;font-size:28px;font-weight:700;color:var(--tx);margin:0;letter-spacing:-.01em}
+.home-hero{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;transition:all .3s ease;margin-bottom:4px}
+.home-hero-mark{display:block;opacity:.9}
+.home-greet{font-family:'Libre Baskerville',Georgia,serif;font-size:34px;font-weight:700;color:var(--tx);margin:0;letter-spacing:-.015em;line-height:1.1}
 
-.home-composer{width:100%;background:var(--bg2);border:1px solid var(--brd);border-radius:14px;padding:14px 16px 10px;display:flex;flex-direction:column;gap:6px;transition:border-color .15s,background .15s;position:relative}
-.home-composer:focus-within{border-color:var(--tx3);background:var(--bg)}
-.home-composer-input{width:100%;border:none;background:transparent;color:var(--tx);font-family:inherit;font-size:15px;line-height:1.5;outline:none;resize:none;min-height:24px;max-height:200px;padding:0;margin:0}
+.home-composer{width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:16px;padding:16px 18px 12px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s,box-shadow .15s,transform .15s;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.03),0 4px 16px rgba(0,0,0,.04)}
+.home-composer:focus-within{border-color:var(--tx3);box-shadow:0 2px 4px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}
+.home-composer-input{width:100%;border:none;background:transparent;color:var(--tx);font-family:inherit;font-size:15px;line-height:1.55;outline:none;resize:none;min-height:26px;max-height:240px;padding:0;margin:0}
 .home-composer-input::placeholder{color:var(--tx3)}
-.home-composer-foot{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--tx3)}
-.home-composer-foot kbd{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--brd);background:var(--bg);color:var(--tx2)}
+.home-composer-foot{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--tx3);margin-top:2px}
+.home-composer-foot kbd{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx2)}
 .home-composer-right{display:flex;align-items:center;gap:10px}
 .home-composer-model{font-family:var(--mono);font-size:10px;color:var(--tx3);letter-spacing:.02em}
-.home-composer-send{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;border:none;background:var(--tx);color:var(--bg);cursor:pointer;transition:opacity .15s;padding:0}
-.home-composer-send:hover{opacity:.82}
+.home-composer-send{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;border:none;background:var(--tx);color:var(--bg);cursor:pointer;transition:opacity .15s,transform .1s;padding:0}
+.home-composer-send:hover{opacity:.85}
+.home-composer-send:active{transform:scale(.95)}
 .home-composer-send:disabled{opacity:.3;cursor:default}
 
-.home-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;transition:all .3s ease}
-.home-chip{display:inline-flex;align-items:center;padding:7px 16px;border:1px solid var(--brd);border-radius:999px;background:var(--bg2);color:var(--tx2);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;letter-spacing:.01em}
-.home-chip:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3)}
-.home-chip.active{background:var(--tx);color:var(--bg);border-color:var(--tx)}
-.home-chip-label{pointer-events:none}
-
-.home-chip-panel{width:100%;max-width:520px;display:flex;flex-direction:column;gap:2px;padding:6px 0;animation:termFadeIn .15s ease-out}
-.home-chip-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;cursor:pointer;transition:background .12s;gap:12px}
-.home-chip-item:hover{background:var(--bgH)}
-.home-chip-item-label{font-size:13px;color:var(--tx);flex:1}
-.home-chip-item-hint{font-size:11px;color:var(--tx3);font-style:italic;flex-shrink:0}
+/* Suggested prompts — Feynman-style concrete starter questions */
+.home-suggests{display:flex;flex-direction:column;gap:8px;align-items:center;width:100%;transition:all .3s ease}
+.home-suggest{display:inline-flex;align-items:center;padding:8px 16px;border:1px solid var(--brd);border-radius:999px;background:var(--bg);color:var(--tx2);font-family:inherit;font-size:12.5px;font-weight:400;cursor:pointer;transition:all .12s;text-align:center;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-suggest:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3)}
 
 .home-output{padding:28px 0;display:flex;flex-direction:column;gap:10px;animation:termFadeIn .3s}
 .home-output:empty{display:none}
+
+/* When write form opens on home, center it like the composer (no terminal margin) */
+.content--home .term-write-wrap{margin-left:0;margin-top:0;border-radius:16px;padding:16px 18px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 4px 16px rgba(0,0,0,.04);background:var(--bg)}
+.content--home .term-write-wrap .term-write-body{font-size:15px;line-height:1.55;min-height:140px}
+.content--home .term-write-wrap .term-write-actions{justify-content:flex-end}
 
 /* Slash picker: home-composer mount context (override bottom:/left:/right:) */
 .home-composer .term-cmd-picker{left:0;right:0;top:calc(100% + 6px)}
