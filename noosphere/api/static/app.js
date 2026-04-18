@@ -177,7 +177,13 @@ async function route(){const h=location.hash||'#/';stopAll();
 }
 function stopAll(){if(_lpAnim){cancelAnimationFrame(_lpAnim);_lpAnim=null}if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}if(_termAnim){cancelAnimationFrame(_termAnim);_termAnim=null}}
 async function loadC(){try{const r=await fetch(`${API}/corpora`);_corpora=await r.json()}catch(e){_corpora=[]}}
-async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.json();_ownerName=d.name||'';_firstName=_ownerName.includes(' ')?_ownerName.split(' ')[0]:(_ownerName.match(/^[A-Z][a-z]+/)||[_ownerName])[0]}catch(e){}}
+async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.json();_ownerName=d.name||'';
+  // Only extract a first name we're confident about: space-separated (e.g. "Steve Yao" → "Steve")
+  // or CamelCase boundary (e.g. "SteveYao" → "Steve"). Concatenated usernames like "steveyao" stay
+  // empty — better to show no name than the wrong one.
+  if(_ownerName.includes(' '))_firstName=_ownerName.split(' ')[0];
+  else{const m=_ownerName.match(/^[A-Z][a-z]+(?=[A-Z])/);_firstName=m?m[0]:''}
+}catch(e){}}
 
 /* ── Chat session persistence ── */
 let _chatSessions=[];
@@ -193,10 +199,11 @@ function noosHd(){return `<div class="noos-hd">${NOOS_DOT}<span class="noos-nm">
 
 /* ── Command picker ── */
 const TERM_CMDS=[
-  {cmd:'/new',desc:'Create a new corpus'},
-  {cmd:'/upload',desc:'Upload a file'},
+  {cmd:'/new',desc:'Create a new knowledge base'},
+  {cmd:'/upload',desc:'Upload a file to a knowledge base'},
+  {cmd:'/write',desc:'Write a note'},
   {cmd:'/history',desc:'Recent conversations'},
-  {cmd:'/status',desc:'Show your corpora stats'},
+  {cmd:'/status',desc:'Your knowledge bases at a glance'},
   {cmd:'/help',desc:'Show all commands'},
 ];
 function showCmdPicker(input,matches){
@@ -363,14 +370,22 @@ function renderHome(){
         <div class="term-input-wrap">
           <span class="term-user-chevron">❯</span>
           <span class="term-cursor">\u2588</span>
-          <input type="text" class="term-input" id="term-input" placeholder="Ask Noos anything, or paste a URL..." autofocus />
+          <input type="text" class="term-input" id="term-input" placeholder="Ask a question about your knowledge — or paste a URL" autofocus />
         </div>
       </div>
-      <div class="term-hints term-hints-foot" id="term-hints">
-        <div class="term-hint-col"><span class="term-hint-k">/</span> for commands</div>
-        <div class="term-hint-col"><span class="term-hint-k">URL</span> to import a page</div>
-        <div class="term-hint-col"><span class="term-hint-k">/upload</span> to add a file</div>
-        <div class="term-hint-col"><span class="term-hint-k">/new</span> to create a corpus</div>
+      <div class="term-help" id="term-help">
+        <div class="term-help-sec">
+          <div class="term-help-lbl">Ask about your knowledge</div>
+          <div class="term-help-ex">&ldquo;what did I read about product-market fit?&rdquo;</div>
+          <div class="term-help-ex">&ldquo;summarize Lenny on hiring&rdquo;</div>
+        </div>
+        <div class="term-help-sec">
+          <div class="term-help-lbl">Add something new</div>
+          <div class="term-help-ex"><span class="term-help-k">Paste a URL</span> to import a page</div>
+          <div class="term-help-ex"><span class="term-help-k">/upload</span> add a file</div>
+          <div class="term-help-ex"><span class="term-help-k">/new</span> create a new knowledge base</div>
+        </div>
+        <div class="term-help-foot">Type <span class="term-help-k">/</span> for all commands</div>
       </div>
     </div>
   </div>`;
@@ -429,9 +444,10 @@ function renderHome(){
   const cursorEl=document.querySelector('.term-cursor');
   _termCtx={};
 
-  // Noos greeting — chat-first: Noos is your assistant over the whole KB network
+  // Short proactive greeting — just "hi". The actual help (examples + shortcuts)
+  // lives below the input, not in the greeting itself.
   const greetEl=document.createElement('div');greetEl.className='noos-msg';
-  greetEl.innerHTML=`${NOOS_DOT}<span><span class="noos-nm">Noos</span><span class="noos-body">Hi${_firstName?', '+_firstName:''}. Ask me about anything you've saved, or drop in something new.</span></span>`;
+  greetEl.innerHTML=`${NOOS_DOT}<span class="noos-nm">Noos</span><span class="noos-body">Hi${_firstName?', '+_firstName:''}.</span>`;
   output.appendChild(greetEl);
 
   input.addEventListener('focus',()=>{if(cursorEl)cursorEl.style.display='none'});

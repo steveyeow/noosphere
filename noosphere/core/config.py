@@ -25,9 +25,29 @@ CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "50"))
 ENABLE_CLOUD = os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes")
 
 import getpass as _getpass
-_raw = os.getenv("OWNER_EMAIL", "") or os.getenv("OWNER_NAME", "")
-if _raw and "@" in _raw:
-    _raw = _raw.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ")
+import subprocess as _sp
+
+
+def _git_user_name() -> str:
+    """Try `git config user.name` — usually set to 'Steve Yao' (with space),
+    which gives us a reliable first-name extraction downstream.
+    """
+    try:
+        r = _sp.run(["git", "config", "user.name"], capture_output=True, text=True, timeout=2)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+_raw = os.getenv("OWNER_NAME", "")
+if not _raw:
+    # Prefer git config (often includes full name with space) over Unix
+    # username (often concatenated, e.g. "steveyao").
+    _raw = _git_user_name()
+if not _raw:
+    _email = os.getenv("OWNER_EMAIL", "")
+    if _email and "@" in _email:
+        _raw = _email.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ")
 OWNER_NAME = _raw.strip().title() if _raw.strip() else _getpass.getuser().title()
 
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
