@@ -161,6 +161,7 @@ async function route(){const h=location.hash||'#/';stopAll();
   await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
   if(h==='#/main')renderHome();
   else if(h==='#/corpora')renderMyCorpora();
+  else if(h==='#/chats')renderChats();
   else if(h==='#/pricing')renderPricing();
   else if(h==='#/account')renderAccount();
   else if(h==='#/network'||h.startsWith('#/explore'))renderNet();
@@ -224,13 +225,32 @@ function showCmdPicker(input,matches){
 }
 function hideCmdPicker(){const p=document.getElementById('term-cmd-picker');if(p)p.style.display='none'}
 
+function _currentSessionId(){
+  const h=location.hash;if(!h.startsWith('#/corpus/'))return null;
+  const q=h.split('?')[1]||'';return new URLSearchParams(q).get('session');
+}
 function renderSBChats(){
   const el=document.getElementById('sb-chats');if(!el)return;
-  const chats=_chatSessions.slice(0,8);
-  if(!chats.length){el.innerHTML='';return}
-  el.innerHTML='<div class="sb-chats-lbl">Recent</div>'+chats.map(c=>`<a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a>`).join('');
+  if(!_chatSessions.length){el.innerHTML='';return}
+  const activeSid=_currentSessionId();
+  el.innerHTML=_chatSessions.map(c=>{
+    const active=c.id===activeSid?' active':'';
+    return`<div class="sb-chat-wrap${active}" data-sid="${c.id}"><a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a><button class="sb-chat-del" data-sid="${c.id}" title="Delete chat" aria-label="Delete chat">×</button></div>`;
+  }).join('');
+  el.querySelectorAll('.sb-chat-del').forEach(btn=>{
+    btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await _deleteSession(btn.dataset.sid)};
+  });
 }
-function setSBActive(h){document.getElementById('sb-new')?.classList.toggle('active',h==='#/main');document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network');const np=document.getElementById('nav-pricing');if(np)np.classList.toggle('active',h==='#/pricing');const na=document.getElementById('nav-account');if(na)na.classList.toggle('active',h==='#/account')}
+async function _deleteSession(sid){
+  if(!confirm('Delete this chat?'))return;
+  try{await fetch(`${API}/chat-sessions/${sid}`,{method:'DELETE'})}catch(e){}
+  const wasCurrent=_currentSessionId()===sid;
+  _chatSessions=_chatSessions.filter(c=>c.id!==sid);
+  renderSBChats();
+  if(document.querySelector('.chats-list'))renderChats();
+  if(wasCurrent){const base=location.hash.split('?')[0];location.hash=base||'#/main'}
+}
+function setSBActive(h){document.getElementById('sb-new')?.classList.toggle('active',h==='#/main');document.getElementById('nav-corpora').classList.toggle('active',h==='#/corpora');document.getElementById('nav-explore').classList.toggle('active',h.startsWith('#/explore')||h==='#/network');document.getElementById('nav-chats')?.classList.toggle('active',h==='#/chats');const np=document.getElementById('nav-pricing');if(np)np.classList.toggle('active',h==='#/pricing');const na=document.getElementById('nav-account');if(na)na.classList.toggle('active',h==='#/account')}
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
@@ -1151,6 +1171,52 @@ function showTermConnectRSS(output,input,defaultCorpus){
     }catch(e){wrap.remove();addLine(output,'resp','Subscribe failed: '+e.message)}
     if(input)input.focus();
   };
+}
+
+/* ══════ CHATS PAGE ══════ */
+function renderChats(){
+  hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  ct.innerHTML=`<div class="mc-wrap">
+    <div class="mc-top"><h1 class="mc-title">Chats</h1></div>
+    <div class="mc-search-wrap">
+      <svg class="mc-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" class="mc-search" id="chats-search" placeholder="Search chats…" />
+    </div>
+    <div class="mc-sub"><span class="mc-sub-label">${_chatSessions.length} ${_chatSessions.length===1?'chat':'chats'}</span></div>
+    <div id="chats-list-content" style="flex:1;overflow:hidden"></div>
+  </div>`;
+  const list=document.getElementById('chats-list-content');
+  if(!_chatSessions.length){list.innerHTML='<div class="empty" style="margin-top:60px">No chats yet. Start one from any corpus.</div>';return}
+  list.className='chats-list';
+  list.innerHTML=_chatSessions.map(c=>{
+    const corpus=_corpora.find(x=>x.id===c.corpus_id);
+    const corpusName=corpus?esc(corpus.name):'';
+    const ago=_timeAgo(c.updated_at);
+    return`<div class="chats-row" data-id="${c.id}" data-cid="${c.corpus_id}">
+      <div class="chats-row-body">
+        <div class="chats-row-title">${esc(c.title||'Untitled')}</div>
+        <div class="chats-row-meta">${corpusName?'<span class="chats-row-meta-corpus">'+corpusName+'</span>':''}${ago?'<span>Last active '+ago+'</span>':''}</div>
+      </div>
+      <button class="chats-row-del" data-sid="${c.id}" title="Delete chat" aria-label="Delete chat"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.chats-row').forEach(row=>{
+    row.addEventListener('click',e=>{
+      if(e.target.closest('.chats-row-del'))return;
+      location.hash=`#/corpus/${row.dataset.cid}?session=${row.dataset.id}`;
+    });
+  });
+  list.querySelectorAll('.chats-row-del').forEach(btn=>{
+    btn.onclick=async e=>{e.stopPropagation();await _deleteSession(btn.dataset.sid)};
+  });
+  document.getElementById('chats-search').addEventListener('input',e=>{
+    const q=e.target.value.toLowerCase();
+    document.querySelectorAll('.chats-row').forEach(row=>{
+      const title=row.querySelector('.chats-row-title')?.textContent.toLowerCase()||'';
+      const corpus=row.querySelector('.chats-row-meta-corpus')?.textContent.toLowerCase()||'';
+      row.style.display=(title.includes(q)||corpus.includes(q))?'':'none';
+    });
+  });
 }
 
 /* ══════ MY CORPORA ══════ */
