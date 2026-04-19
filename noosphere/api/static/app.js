@@ -410,7 +410,7 @@ function renderHome(){
   const ICON_WRITE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
   const ICON_UPLOAD=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
   const ICON_FEED=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>`;
-  const shortcutHTML=`<button class="home-shortcut" id="shortcut-write" type="button">${ICON_WRITE}Write</button><button class="home-shortcut" id="shortcut-upload" type="button">${ICON_UPLOAD}Upload</button><button class="home-shortcut" id="shortcut-subscribe" type="button">${ICON_FEED}Subscribe</button>`;
+  const shortcutHTML=`<button class="home-shortcut" id="shortcut-write" type="button">${ICON_WRITE}Write</button><button class="home-shortcut" id="shortcut-upload" type="button">${ICON_UPLOAD}Upload</button><button class="home-shortcut" id="shortcut-subscribe" type="button">${ICON_FEED}Add RSS</button>`;
 
   ct.innerHTML=`<div class="home" id="home">
     <div class="home-hero" id="home-hero">
