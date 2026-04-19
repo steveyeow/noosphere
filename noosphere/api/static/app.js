@@ -13,7 +13,43 @@ const hR=hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
 const fmtN=n=>{if(n>=1e6)return(n/1e6).toFixed(1).replace(/\.0$/,'')+'M';if(n>=1e4)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';return n.toLocaleString()};
 const cp=(t,b)=>{navigator.clipboard.writeText(t).then(()=>{if(b){const o=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=o,1200)}})};
-function toast(msg,type='error'){const t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.classList.add('show'),10);setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},4000)}
+function toast(msg,type='error',action){
+  const t=document.createElement('div');t.className='toast toast-'+type;
+  if(action){
+    t.innerHTML='<span class="toast-msg"></span><button class="toast-act" type="button"></button>';
+    t.querySelector('.toast-msg').textContent=msg;
+    const b=t.querySelector('.toast-act');b.textContent=action.label;
+    b.onclick=()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);action.onclick&&action.onclick()};
+  }else{t.textContent=msg}
+  document.body.appendChild(t);
+  setTimeout(()=>t.classList.add('show'),10);
+  // Linger longer when there's an action — user needs time to react
+  const ttl=action?8000:4000;
+  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},ttl);
+}
+
+/* Handle a 429 quota_exceeded response. Returns true if handled (caller should
+   bail without throwing). Pass the parsed JSON body — we don't re-read it. */
+function handleQuotaError(res,body){
+  if(!res||res.status!==429)return false;
+  const det=body&&body.detail;
+  if(!det||typeof det!=='object')return false;
+  const quotaCodes=['quota_exceeded','corpus_limit_reached','document_limit_reached','monthly_query_limit'];
+  if(!quotaCodes.includes(det.code))return false;
+  toast(det.message||'Upgrade to Pro for higher limits.','error',
+    {label:'Upgrade →',onclick:()=>{location.hash='#/pricing'}});
+  return true;
+}
+
+/* Extract a readable error message from a parsed JSON body. Handles the case
+   where FastAPI's `detail` is an object (e.g. 429 quota_exceeded) rather than
+   a string — `new Error(object)` yields "[object Object]" which is broken UX. */
+function errMsg(body,fallback){
+  const d=body&&body.detail;
+  if(typeof d==='string')return d;
+  if(d&&typeof d==='object'&&typeof d.message==='string')return d.message;
+  return fallback||'Error';
+}
 
 /* ── Cloud Auth (Supabase) ── */
 async function initAuth(){
@@ -886,7 +922,11 @@ function openCompilePicker(allPending){
       goBtn.disabled=true;goBtn.textContent='Compiling…';
       try{
         const r=await fetch(`${API}/corpora/${cpScope}/entities/${target.id}/compile`,{method:'POST'});
-        if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'error')}
+        if(!r.ok){
+          const d=await r.json().catch(()=>({}));
+          if(handleQuotaError(r,d)){goBtn.disabled=false;goBtn.textContent='Compile';return}
+          throw new Error(errMsg(d,'Compile failed'));
+        }
         toast(`Compiled: ${target.canonical_name}`,'success');
         picker.remove();listEl.style.display='';loadRecentCompiles();
       }catch(e){toast('Compile failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Compile'}
@@ -896,7 +936,11 @@ function openCompilePicker(allPending){
       goBtn.disabled=true;goBtn.textContent='Compiling…';
       try{
         const r=await fetch(`${API}/corpora/${cpScope}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,top_k:10})});
-        if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'error')}
+        if(!r.ok){
+          const d=await r.json().catch(()=>({}));
+          if(handleQuotaError(r,d)){goBtn.disabled=false;goBtn.textContent='Compile';return}
+          throw new Error(errMsg(d,'Compile failed'));
+        }
         const d=await r.json();
         toast(`Compiled: ${d.title||topic}`,'success');
         picker.remove();listEl.style.display='';loadRecentCompiles();
@@ -1687,7 +1731,11 @@ async function renderEntity(corpusId,entityId){
     btn.disabled=true;const orig=btn.textContent;btn.textContent='Compiling...';
     try{
       const r=await fetch(`${API}/corpora/${corpusId}/entities/${entityId}/compile`,{method:'POST'});
-      if(!r.ok){const d=await r.json().catch(()=>({}));toast('Compile failed: '+(d.detail||'error'),'error');btn.disabled=false;btn.textContent=orig;return}
+      if(!r.ok){
+        const d=await r.json().catch(()=>({}));
+        if(!handleQuotaError(r,d))toast('Compile failed: '+errMsg(d,'error'),'error');
+        btn.disabled=false;btn.textContent=orig;return;
+      }
       renderEntity(corpusId,entityId);
     }catch(e){toast('Compile failed: '+e.message,'error');btn.disabled=false;btn.textContent=orig}
   }

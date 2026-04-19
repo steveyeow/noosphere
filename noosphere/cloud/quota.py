@@ -25,7 +25,7 @@ QUOTA_LIMITS = {
         "search": 50,          # queries per day
         "ingest_url": 5,       # URL ingestions per day
         "ingest_feed": 1,      # feed ingestions per day
-        "compile": 2,          # concept compilations per day
+        "compile": 0,          # compile is Pro-only — synthesis is the paid surface
         "chat": 20,            # chat messages per day
     },
     "pro": {
@@ -71,6 +71,12 @@ def check_quota(request: Request, action: str) -> None:
 
     used = count_usage_today(user_id, action)
     if used >= limit:
+        # limit=0 means the action is Pro-only on this tier; message differently
+        # so the copy doesn't read "limit reached (0)" which is nonsensical.
+        if limit == 0:
+            msg = f"{action.replace('_', ' ').capitalize()} is a Pro feature. Upgrade to unlock."
+        else:
+            msg = f"Daily {action} limit reached ({limit}). Upgrade to Pro for higher limits."
         raise HTTPException(
             status_code=429,
             detail={
@@ -79,7 +85,7 @@ def check_quota(request: Request, action: str) -> None:
                 "limit": limit,
                 "used": used,
                 "tier": tier,
-                "message": f"Daily {action} limit reached ({limit}). Upgrade to Pro for higher limits.",
+                "message": msg,
             },
         )
 

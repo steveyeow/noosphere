@@ -631,6 +631,10 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .toast-error{background:rgba(239,68,68,.9);color:#fff}
 .toast-success{background:rgba(34,197,94,.9);color:#fff}
 .toast-info{background:var(--gl);color:var(--tx);border:1px solid var(--brd);box-shadow:var(--shM)}
+.toast:has(.toast-act){display:inline-flex;align-items:center;gap:14px;padding:8px 8px 8px 18px;pointer-events:auto}
+.toast-msg{line-height:1.3}
+.toast-act{appearance:none;border:none;padding:6px 14px;border-radius:14px;background:rgba(255,255,255,.22);color:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .12s;font-family:inherit}
+.toast-act:hover{background:rgba(255,255,255,.34)}
 
 /* ── Global search bar ── */
 .gs-wrap{margin-top:16px;position:relative}
