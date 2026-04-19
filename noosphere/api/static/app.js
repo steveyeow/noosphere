@@ -1193,20 +1193,41 @@ function _timeAgo(iso){
   return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:d.getFullYear()!==now.getFullYear()?'numeric':undefined});
 }
 
+// Owner-view badge: describes the corpus's access posture from the creator's
+// perspective. "Public" is the default and renders nothing (no signal to add).
+// Paid shows concrete pricing ($X.XX/query) when configured, falling back to
+// "Monetized" when access_level='paid' but pricing_json is missing/invalid.
+function _mcBadge(c){
+  const al=c.access_level||'public';
+  if(al==='private')return'<span class="mc-badge mc-badge-private">Private</span>';
+  if(al==='token')return'<span class="mc-badge mc-badge-token">Token-gated</span>';
+  if(al==='paid'){
+    let p=null;
+    if(c.pricing_json){try{p=typeof c.pricing_json==='string'?JSON.parse(c.pricing_json):c.pricing_json}catch(e){}}
+    if(p&&p.amount_cents){
+      const dollars=(p.amount_cents/100).toFixed(2);
+      const sym=(p.currency||'usd').toLowerCase()==='usd'?'$':((p.currency||'').toUpperCase()+' ');
+      const unit=p.type==='per_query'?'/query':' one-time';
+      return`<span class="mc-badge mc-badge-paid">${sym}${dollars}${unit}</span>`;
+    }
+    return'<span class="mc-badge mc-badge-paid">Monetized</span>';
+  }
+  return'';
+}
+
 function renderMCList(host){
   const el=document.getElementById('mc-content');
   if(!_corpora.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';return}
   el.className='mc-list';
   el.innerHTML=_corpora.map(c=>{
-    const al=c.access_level||'public';
     const tg=Array.isArray(c.tags)?c.tags:[];
     const desc=c.description||'';
     const updatedLabel=_timeAgo(c.updated_at);
     return`<div class="mc-card" data-id="${c.id}">
       <div class="mc-card-body">
-        <div class="mc-card-top"><a class="mc-card-name" href="#/corpus/${c.id}">${esc(c.name)}</a><span class="mc-badge mc-badge-${al}">${al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1)}</span></div>
+        <div class="mc-card-top"><a class="mc-card-name" href="#/corpus/${c.id}">${esc(c.name)}</a>${_mcBadge(c)}</div>
         ${desc?'<div class="mc-card-desc">'+esc(desc)+'</div>':''}
-        <div class="mc-card-meta">${c.document_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> '+c.document_count+'</span>':''}${c.word_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/><polyline points="14 2 14 8 20 8"/><line x1="2" y1="15" x2="12" y2="15"/></svg> '+(c.word_count).toLocaleString()+'</span>':''}${tg.length?'<span class="mc-meta-tags">'+tg.slice(0,3).map(t=>'<span class="mc-meta-tag">'+esc(t)+'</span>').join('')+'</span>':''}${updatedLabel?'<span class="mc-meta-item mc-meta-updated">Updated '+updatedLabel+'</span>':''}</div>
+        <div class="mc-card-meta">${c.document_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> '+c.document_count+' '+(c.document_count===1?'doc':'docs')+'</span>':'<span class="mc-meta-item mc-meta-empty">Empty</span>'}${c.word_count?'<span class="mc-meta-item"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/><polyline points="14 2 14 8 20 8"/><line x1="2" y1="15" x2="12" y2="15"/></svg> '+(c.word_count).toLocaleString()+' words</span>':''}${tg.length?'<span class="mc-meta-tags">'+tg.slice(0,3).map(t=>'<span class="mc-meta-tag">'+esc(t)+'</span>').join('')+'</span>':''}${updatedLabel?'<span class="mc-meta-item mc-meta-updated">Updated '+updatedLabel+'</span>':''}</div>
       </div>
       <div class="mc-card-actions"><button class="mc-card-more" data-id="${c.id}">···</button><div class="mc-menu hidden" data-for="${c.id}"><button class="mc-menu-item" data-action="rename" data-id="${c.id}">Rename</button><button class="mc-menu-item" data-action="export" data-id="${c.id}">Export</button><button class="mc-menu-item mc-menu-danger" data-action="delete" data-id="${c.id}">Delete</button></div></div>
     </div>`}).join('');
