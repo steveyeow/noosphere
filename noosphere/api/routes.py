@@ -291,11 +291,7 @@ async def api_list_corpora(request: Request):
     if _is_cloud():
         user_id = _get_user_id(request)
         if user_id:
-            # Return user's own corpora + public corpora from others
-            own = list_user_corpora(user_id)
-            own_ids = {c["id"] for c in own}
-            public = [c for c in list_corpora() if c["id"] not in own_ids]
-            return own + public
+            return list_user_corpora(user_id)
         return list_corpora()
     return list_corpora(include_private=_is_owner_request(request))
 
