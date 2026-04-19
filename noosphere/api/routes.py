@@ -113,10 +113,16 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
     """Enforce access control. Returns token_id if token auth was used.
 
     Owner requests from the web UI bypass access control (self-hosted
-    mode: the person running the server owns all corpora).
+    mode: the person running the server owns all corpora). In cloud
+    mode, the authenticated owner of a corpus also bypasses access
+    checks — otherwise a paid corpus would paywall its own creator.
     """
     if _is_owner_request(request):
         return None
+    if _is_cloud():
+        user_id = _get_user_id(request)
+        if user_id and corpus.get("owner_id") == user_id:
+            return None
     try:
         return check_access(corpus, _extract_bearer(request))
     except AccessDenied as e:

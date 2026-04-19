@@ -364,7 +364,7 @@ function renderHome(){
     <div class="home-output" id="term-output"></div>
     <div class="home-dock" id="home-dock">
       <div class="home-composer" id="home-composer">
-        <textarea class="home-composer-input" id="term-input" placeholder="What's on your mind? Ask about your knowledge, or paste a URL" rows="2"></textarea>
+        <textarea class="home-composer-input" id="term-input" placeholder="What's on your mind? Ask about your knowledge, or paste a URL" rows="1"></textarea>
         <div class="home-composer-foot">
           <span class="home-composer-left">
             <span class="home-composer-hint" id="home-composer-hint">Type <kbd>/</kbd> for commands</span>
@@ -1493,7 +1493,7 @@ function showCorpusAddDoc(corpusId){
 /* ══════ CORPUS DETAIL + CHAT ══════ */
 async function renderCorpus(id,sessionId){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
-  let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${r.status===401?'Access denied — this corpus requires authentication':r.status===403?e.detail||'Access denied':'Corpus not found'}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
+  let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
   let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
   let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);if(r.ok)an=await r.json()}catch(e){}
   ct.classList.add('content--corpus');
