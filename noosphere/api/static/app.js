@@ -737,7 +737,7 @@ async function loadRecentCompiles(){
   const listEl=document.getElementById('home-compiles-list');
   const btnEl=document.getElementById('home-compile-now');
   if(!_corpora.length){
-    listEl.innerHTML=`<div class="home-compiles-empty">Compile synthesizes concept pages from your sources — an entity truth, or a wiki on a topic. Add sources to get started.</div>`;
+    listEl.innerHTML=`<div class="home-compiles-empty">Compile builds a living wiki — Entity and Topic pages.<br/>Add sources to start.</div>`;
     btnEl.disabled=true;btnEl.title='No sources yet';btnEl.onclick=null;
     return;
   }
