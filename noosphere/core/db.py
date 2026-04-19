@@ -86,16 +86,45 @@ class _PgConnWrapper:
     def execute(self, sql: str, params=()) -> _PgCursorResult:
         pg = _pg()
         sql = sql.replace("?", "%s")
-        cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
-        cur.execute(sql, params)
-        return _PgCursorResult(cur)
+        try:
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.execute(sql, params)
+            return _PgCursorResult(cur)
+        except pg.errors.InFailedSqlTransaction:
+            # Connection poisoned by a prior failed statement (singleton connection
+            # shared across requests). Roll back and retry once so this caller isn't
+            # punished for someone else's error.
+            self._conn.rollback()
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.execute(sql, params)
+            return _PgCursorResult(cur)
+        except Exception:
+            # Any other failure aborts the transaction; roll back so the singleton
+            # connection is usable for the next request.
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            raise
 
     def executemany(self, sql: str, params_list) -> _PgCursorResult:
         pg = _pg()
         sql = sql.replace("?", "%s")
-        cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
-        cur.executemany(sql, params_list)
-        return _PgCursorResult(cur)
+        try:
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.executemany(sql, params_list)
+            return _PgCursorResult(cur)
+        except pg.errors.InFailedSqlTransaction:
+            self._conn.rollback()
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.executemany(sql, params_list)
+            return _PgCursorResult(cur)
+        except Exception:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            raise
 
     def executescript(self, sql: str):
         """Execute multiple statements separated by semicolons."""
