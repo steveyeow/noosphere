@@ -157,10 +157,11 @@ async def connect_onboard(request: Request):
 
         # Save the Connect account ID
         from noosphere.core.db import get_conn
+        from datetime import datetime, timezone
         conn = get_conn()
         conn.execute(
-            "UPDATE users SET stripe_customer_id=?, updated_at=datetime('now') WHERE id=?",
-            (account.id, user_id),
+            "UPDATE users SET stripe_customer_id=?, updated_at=? WHERE id=?",
+            (account.id, datetime.now(timezone.utc).isoformat(), user_id),
         )
         conn.commit()
 

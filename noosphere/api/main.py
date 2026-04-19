@@ -62,6 +62,7 @@ async def _enrichment_loop():
 
 async def _health_check_loop():
     """Background loop: ping registered nodes for health status."""
+    from datetime import datetime, timezone
     await asyncio.sleep(60)
     while True:
         try:
@@ -76,8 +77,8 @@ async def _health_check_loop():
                 except Exception:
                     status = "offline"
                 conn.execute(
-                    "UPDATE registered_nodes SET health_status=?, last_health_check=datetime('now') WHERE endpoint=?",
-                    (status, ep),
+                    "UPDATE registered_nodes SET health_status=?, last_health_at=? WHERE endpoint=?",
+                    (status, datetime.now(timezone.utc).isoformat(), ep),
                 )
             conn.commit()
         except Exception:
