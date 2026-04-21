@@ -474,6 +474,8 @@ def search_corpus(
         model = corpus_row["embedding_model"]
         if "gemini" in model:
             provider = "gemini"
+        elif model == "embedding-3" or "zhipu" in model or "glm" in model:
+            provider = "zhipu"
         elif "openai" in model or "text-embedding" in model:
             provider = "openai"
 

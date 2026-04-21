@@ -13,7 +13,15 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8420"))
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Gemini supports comma-separated keys for quota stacking across Google accounts.
+# Keys from the SAME Google Cloud project share a single quota pool — for real
+# capacity stacking, supply keys from DIFFERENT projects/accounts.
+# Example: GEMINI_API_KEY=AIzaSy...key1,AIzaSy...key2
+GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]
+# Back-compat alias — callers that just need "is gemini configured?" can keep
+# reading the singular form. Code that wants to rotate/fallback reads the list.
+GEMINI_API_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
 
 DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 DEFAULT_EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
@@ -50,8 +58,32 @@ if not _raw:
         _raw = _email.split("@")[0].replace(".", " ").replace("_", " ").replace("-", " ")
 OWNER_NAME = _raw.strip().title() if _raw.strip() else _getpass.getuser().title()
 
+GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta")
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
+GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+
+# Optional OpenAI-compatible providers (DeepSeek, Moonshot/Kimi).
+# Useful as fallbacks when Gemini is geo-blocked or OpenAI quota is exhausted.
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_CHAT_MODEL = os.getenv("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+
+KIMI_API_KEY = os.getenv("KIMI_API_KEY", "")
+KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1")
+KIMI_CHAT_MODEL = os.getenv("KIMI_CHAT_MODEL", "moonshot-v1-8k")
+
+# Zhipu AI (智谱) — provides BOTH chat (glm-*) and embeddings (embedding-3).
+# Fills the embedding gap DeepSeek/Kimi don't cover, works in China, very cheap.
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")
+ZHIPU_BASE_URL = os.getenv("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+ZHIPU_CHAT_MODEL = os.getenv("ZHIPU_CHAT_MODEL", "glm-4.5-flash")
+ZHIPU_EMBED_MODEL = os.getenv("ZHIPU_EMBED_MODEL", "embedding-3")
+ZHIPU_EMBED_DIM = int(os.getenv("ZHIPU_EMBED_DIM", "1024"))
+
+# Preferred embedding provider for NEW corpora ("zhipu", "gemini", "openai").
+# Leave empty to auto-pick based on which API keys are configured.
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "").lower()
 
 # App URL — used to build redirect URLs for Stripe, etc.
 APP_URL = os.getenv("APP_URL", f"http://localhost:{PORT}")

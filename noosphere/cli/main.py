@@ -114,6 +114,38 @@ def index(corpus, provider, force, chunk_strategy):
         click.echo(f"  Newly embedded: {result['embedded']}")
 
 
+@cli.command("reindex-all")
+@click.option("--provider", default="", help="Embedding provider (e.g. zhipu, openai, gemini). Empty = auto.")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
+def reindex_all_cmd(provider, yes):
+    """Force re-embed every corpus — use after switching embedding providers.
+
+    Embeddings from different providers have different dims, so the old
+    chunks can't be queried with the new embedder. This drops all chunk
+    vectors and re-embeds from the stored documents.
+    """
+    from noosphere.core.corpus import list_corpora
+    from noosphere.core.indexer import index_corpus
+
+    corpora = list_corpora(include_private=True)
+    if not corpora:
+        click.echo("No corpora found.")
+        return
+    click.echo(f"Will re-index {len(corpora)} corpora with provider='{provider or 'auto'}':")
+    for c in corpora:
+        click.echo(f"  - {c['name']} ({c['id']}) — currently {c.get('embedding_model') or 'unindexed'}")
+    if not yes and not click.confirm("Proceed?", default=False):
+        click.echo("Aborted.")
+        return
+    for c in corpora:
+        click.echo(f"\n→ {c['name']} ({c['id']})")
+        try:
+            result = index_corpus(c["id"], provider=provider, force=True)
+            click.echo(f"   {result['chunk_count']} chunks embedded")
+        except Exception as e:
+            click.echo(f"   FAILED: {e}", err=True)
+
+
 @cli.command()
 @click.option("--port", default=PORT, help="Server port")
 @click.option("--host", default=HOST, help="Server host")

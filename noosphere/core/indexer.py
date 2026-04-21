@@ -64,6 +64,9 @@ def index_corpus(
         update_corpus(corpus_id, status="ready", chunk_count=0)
         return {"chunk_count": 0, "skipped": 0}
 
+    # Indexing: probe for a working provider (primary Gemini → OpenAI → Zhipu).
+    # Retrieval passes an explicit provider (from corpus.embedding_model) so the
+    # probe is skipped there and dim compatibility is preserved.
     embedder = get_embedder(provider)
     now = _now()
 
