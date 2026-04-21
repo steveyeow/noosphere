@@ -460,6 +460,88 @@ def recompile_dirty_concepts(corpus_id: str | None = None, *, force: bool = Fals
     }
 
 
+def refine_concept_note(concept_doc_id: str, instruction: str) -> dict:
+    """Apply a natural-language edit instruction to a concept's compiled truth.
+
+    Timeline is preserved byte-for-byte; only the compiled-truth section is
+    rewritten. Snapshots prior version so refine history is diff-able.
+    """
+    from noosphere.core.ingest import get_document
+    from noosphere.core.llm import call_llm as _call_llm
+
+    instruction = (instruction or "").strip()
+    if not instruction:
+        raise ValueError("instruction is required")
+
+    doc = get_document(concept_doc_id)
+    if not doc:
+        raise ValueError(f"concept document not found: {concept_doc_id}")
+    if (doc.get("doc_type") or "") != "concept":
+        raise ValueError(f"not a concept document: {concept_doc_id}")
+
+    try:
+        meta = json.loads(doc.get("metadata_json") or "{}")
+    except json.JSONDecodeError:
+        meta = {}
+    current_version = int(meta.get("version", 1) or 1)
+
+    compiled, timeline_lines = _parse_concept_content(doc.get("content") or "")
+
+    _snapshot_concept_version(
+        concept_doc_id,
+        version=current_version,
+        content=doc.get("content") or "",
+        source_doc_ids=list(meta.get("source_document_ids") or []),
+    )
+
+    sys = (
+        "You revise the 'compiled truth' section of a living knowledge-base concept note. "
+        "Apply the user's revision instruction to the prior compiled truth. "
+        "Preserve factual accuracy; do not invent facts not present in the prior text. "
+        "Return ONLY the new compiled truth in Markdown — no '## Timeline' heading, no commentary. "
+        "Use the same language as the prior text."
+    )
+    user = (
+        f"Concept: {doc.get('title', '')}\n\n---\n\n"
+        f"Prior compiled truth:\n\n{compiled or '(empty)'}\n\n---\n\n"
+        f"Revision instruction:\n\n{instruction}\n\n---\n\n"
+        "Rewrite the compiled truth now."
+    )
+    new_compiled = _call_llm(
+        [{"role": "system", "content": sys}, {"role": "user", "content": user}]
+    )
+    if not new_compiled or new_compiled.startswith("No LLM provider"):
+        raise ValueError(new_compiled or "LLM returned empty output")
+    new_compiled = new_compiled.strip()
+
+    new_content = _assemble_concept_content(new_compiled, timeline_lines)
+    new_version = current_version + 1
+    meta["version"] = new_version
+    meta["last_compiled_at"] = datetime.now(timezone.utc).isoformat()
+    meta["last_refine_instruction"] = instruction[:500]
+
+    conn = get_conn()
+    conn.execute(
+        "UPDATE documents SET content=?, metadata_json=?, word_count=?, indexed_at=NULL "
+        "WHERE id=?",
+        (new_content, json.dumps(meta), len(new_content.split()), concept_doc_id),
+    )
+    conn.commit()
+
+    try:
+        index_corpus(doc.get("corpus_id") or "")
+    except Exception as e:
+        logger.warning("index after refine failed: %s", e)
+
+    return {
+        "status": "refined",
+        "concept_id": concept_doc_id,
+        "version": new_version,
+        "previous_version": current_version,
+        "compiled_truth": new_compiled,
+    }
+
+
 def _local_tag(tag: str) -> str:
     if tag.startswith("{"):
         return tag.split("}", 1)[1]

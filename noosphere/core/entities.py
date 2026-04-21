@@ -460,6 +460,64 @@ def compile_entity_note(entity_id: str, *, max_docs: int = 20, max_chars_per_doc
     return {"entity_id": entity_id, "compiled_text": compiled, "source_doc_count": len(source_ids)}
 
 
+def refine_entity_note(entity_id: str, instruction: str) -> dict | None:
+    """Apply a natural-language edit instruction to an entity's compiled description.
+
+    Unlike compile_entity_note, this does not re-read source documents — it
+    revises the existing profile text based on the instruction. Caller can
+    recompile separately if they want to refresh from sources.
+    """
+    from noosphere.core.llm import call_llm
+
+    instruction = (instruction or "").strip()
+    if not instruction:
+        raise ValueError("instruction is required")
+
+    ent = get_entity(entity_id)
+    if not ent:
+        return None
+    prior = (ent.get("description") or "").strip()
+    if not prior:
+        raise ValueError("entity has no compiled description yet — compile first")
+
+    name = ent["canonical_name"]
+    kind = ent["kind"]
+    sys = (
+        f"You revise an existing factual profile of a {kind} in a personal knowledge base. "
+        "Apply the user's revision instruction to the prior profile. Preserve factual accuracy; "
+        "do not invent facts not present in the prior text. Return ONLY the revised profile in Markdown, "
+        "no commentary. Use the same language as the prior text. Keep under 250 words."
+    )
+    user = (
+        f"Entity: {name} ({kind})\n\n---\n\n"
+        f"Prior profile:\n\n{prior}\n\n---\n\n"
+        f"Revision instruction:\n\n{instruction}\n\n---\n\n"
+        "Rewrite the profile now."
+    )
+    try:
+        text = call_llm([{"role": "system", "content": sys}, {"role": "user", "content": user}])
+    except Exception as e:
+        logger.warning("refine_entity_note LLM call failed for %s: %s", entity_id, e)
+        return None
+    if not text or text.startswith("No LLM provider"):
+        return None
+
+    revised = text.strip()
+    try:
+        meta = json.loads((ent.get("metadata_json") or "{}") if isinstance(ent.get("metadata_json"), str) else json.dumps(ent.get("metadata") or {}))
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    meta["compiled_at"] = _now()
+    meta["last_refine_instruction"] = instruction[:500]
+    conn = get_conn()
+    conn.execute(
+        "UPDATE entities SET description=?, metadata_json=?, updated_at=? WHERE id=?",
+        (revised, json.dumps(meta), _now(), entity_id),
+    )
+    conn.commit()
+    return {"entity_id": entity_id, "compiled_text": revised}
+
+
 def enrich_corpus(corpus_id: str, *, only_unenriched: bool = True, limit: int = 50) -> dict:
     """Run entity extraction across documents in a corpus.
 
