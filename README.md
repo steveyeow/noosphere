@@ -16,6 +16,63 @@ Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publi
 4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem.
 5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 
+## The design
+
+How the five value propositions above are actually built.
+
+### Creation paths
+
+Four ways to grow a knowledge base, mixed freely in the same corpus:
+- **Write / Note** — direct markdown, chat capture (`user_original` · `user_capture`)
+- **Import** — upload files, or pull your own content from elsewhere: Notion ZIP, Twitter archive, your own blog URLs (all `user_original`)
+- **Connect** — RSS feeds, external URLs, live connectors; recurring inflow that stays current (`external_public`)
+- **Compile / Distill** — LLM-driven secondary work: `compile` fuses retrieved passages into concept notes; `distill` (planned) extracts your judgment via structured conversation (`user_capture`)
+
+Provenance is tracked per document via `source_kind`. Manifests auto-maintain from corpus content so the KB's identity card stays current without manual upkeep.
+
+### Agent interface
+
+Every corpus exposes the same small toolbox:
+
+| Tool | What it does |
+|---|---|
+| `ask` | Synthesized answer with inline `[N]` citations + calibrated confidence |
+| `describe` | Machine-readable capability card (manifest) |
+| `preview_ask` | Truncated evaluation query — bypasses paid gating |
+| `route` | Recommend other KBs for out-of-scope questions |
+| `preview` | Static sample chunks |
+| `search` | Ranked raw chunks with citations |
+
+`ask` respects access level (paid / token / public); `preview_ask` does not, so agents can evaluate paid KBs before committing.
+
+### Discovery and trust
+
+Every corpus has a machine-readable **manifest** — its identity card: task types, sample Q&A, source composition, calibration policy, license terms. Agents read it to decide whether you're worth querying.
+
+Discovery is signal-based, not attention-based. Four tiers:
+- **Self-declared** — manifest fields; cheap, falsifiable
+- **Computed** — corpus size, provenance, uptime; costly to fake
+- **Accumulated** — `kb_reputation` rolls up citation-weighted PageRank + retention + calibration + satisfaction; grows with real usage
+- **Interactive** — `preview` content + `preview_ask` live evaluation
+
+### Autonomy and inter-KB learning
+
+Autonomy is layered, opt-in:
+- **L0 responsive** (default) — answers when queried
+- **L1 subscribing** — ingests live updates from other KBs
+- **L2 synthesizing** — compiles new skills from what it consumes (the "Cooking Stack" pattern)
+- **L3 proactive** — persona, outbound queries, initiative
+
+Inter-KB queries carry provenance (`X-Noosphere-Caller-Corpus`) and auto-record citations in a directed graph. Each edge is weighted by the citing KB's own reputation, so trust compounds recursively and feeds back into `kb_reputation`.
+
+### Monetization
+
+Four pricing shapes: **pay-per-query**, **subscription**, **corpus licensing** (bulk / training-data deals), **agent-to-agent payment** (autonomous transactions).
+
+**Only user-originated content is monetizable.** Documents you imported from third parties (RSS, external URLs) are filtered out for external callers — you can't re-sell other people's content. Creator sovereignty and anti-copyright-laundering in one rule.
+
+No sponsored placement, no brand injection, no lead-gen fees — pricing and ranking track value delivered, not exposure bought. Self-hosted: bring your own Stripe, keep 100%. Cloud: 10% commission on platform-facilitated payments only.
+
 ## Who it's for
 
 **Creators (supply side):** Build your own knowledge base — like [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [Garry Tan's GBrain](https://github.com/garrytan/gbrain), but without the engineering setup. Upload your files, paste your blog URLs, subscribe to RSS feeds. Your knowledge base grows over time. Share it free, or charge for access.
@@ -120,65 +177,7 @@ The registry is a directory, not a proxy. Cloud corpora return full results dire
 
 ### How agents find the right knowledge
 
-Discovery works through layered signals — no manual ratings needed:
-
-```
-Agent: "I need crypto derivatives pricing expertise"
-                    ↓
-         1. Network search (metadata)
-            Match on name, description, tags, author
-                    ↓
-         2. Quality signals (automatic)
-            document_count, source_composition, citations_in,
-            kb_reputation, freshness, uptime
-                    ↓
-         3. Preview (sample content) + describe (capability card)
-            GET /api/v1/corpora/{id}/preview
-            GET /api/v1/corpora/{id}/describe
-                    ↓
-         4. preview_ask (evaluation query) before paying
-            POST /api/v1/corpora/{id}/preview-ask
-            → truncated synthesized answer, bypasses access gating
-                    ↓
-         5. ask or search (committed use)
-            POST /api/v1/corpora/{id}/ask      → synthesized answer + citations
-            POST /api/v1/corpora/{id}/search   → ranked chunks + citations
-```
-
-Agents talk to every corpus through the same small toolbox:
-
-| Tool | What it returns | When to use |
-|------|-----------------|-------------|
-| `describe` | Machine-readable capability card (task types, sample Q&A, source mix, `kb_reputation`, license) | Step 2–3: decide if a KB looks right for your task |
-| `preview` | A few representative chunks + quality signals | Step 3: glance at the content |
-| `preview_ask` | Truncated synthesized answer to an evaluation question (bypasses paid gating) | Step 4: try before you pay |
-| `ask` | Full synthesized answer with inline `[N]` citations + calibrated confidence | Step 5: committed use |
-| `route` | Ranked list of other KBs that may answer better | Any step: hop to a better-fit KB |
-| `search` | Ranked raw chunks with citations | Step 5: when you want passages, not synthesis |
-
-`ask` respects access level (paid / token / public); `preview_ask` does not, so paid KBs can still be evaluated without pre-commitment. `route` and `describe` are always public.
-
-**Quality signals are automatic and layered across four tiers** — self-declared (manifest), computed (corpus metrics, provenance), accumulated (queries, citations, calibration), and interactive (preview, live evaluation). No user ratings required — signals emerge from the data and the network.
-
-| Signal | What it tells you | Source | Tier |
-|--------|-------------------|--------|------|
-| `document_count` | Knowledge base size | Registration metadata | Computed |
-| `word_count` | Content depth | Registration metadata | Computed |
-| `source_composition` | Mix of user-original vs curated vs external | Ingestion provenance | Computed |
-| `last_updated` | Active maintenance | Last registration heartbeat | Computed |
-| `query_count` | Demand / usefulness | Query log (opt-in) | Accumulated |
-| `query_diversity` | Breadth of questions answered | Query log | Accumulated |
-| `citations_in` | Incoming citations from other KBs (agent-era PageRank) | Citation graph | Accumulated |
-| `kb_reputation` | Rolled-up Tier 3 score (0–1); citation-weighted recursive trust | Citation graph + future retention/calibration/satisfaction | Accumulated |
-| `calibration` | Historical accuracy of self-reported confidence | Query outcome tracking | Accumulated |
-| `uptime` | Reliability | Health check history | Computed |
-| `access_level` | Free vs. paid | Corpus config | Self-declared |
-
-Signals are **axes, not a ranking function** — each consuming agent weights them for its own task. A medical query weights calibration + provenance heavily; a creative task weights style samples + author reputation. Tier 1 (self-declared) alone is suspect; Tier 2+ carries more weight. New KBs bootstrap from Tiers 1/2/4; Tier 3 accrues with usage.
-
-**KB reputation (`kb_reputation`).** Tier 3 signals roll up into a single 0.0–1.0 score per corpus, surfaced on the capability card. The v1 formula uses a citation-weighted PageRank term — each incoming citation is weighted by the citing KB's own `kb_reputation`, so trust compounds recursively. Future terms (query retention, calibration accuracy, satisfaction rate) plug in as those signals land. New KBs start at 0 and accumulate with use; a well-known author speeds cold-start via Tier 1 signals but earns `kb_reputation` the same way everyone else does.
-
-**Preview before commit.** Any knowledge base (including paid ones) exposes a preview — a few representative chunks so agents can assess relevance before purchasing access.
+Agents query `GET /api/v1/network/search?q=...` to find corpora across the network, then call the per-corpus tools (`describe`, `preview`, `preview_ask`, `ask`, `route`, `search`) to evaluate and use a KB. Signal tiers, `kb_reputation`, and the full agent toolbox are covered in §The design above.
 
 ### 4. Control access and get paid
 
