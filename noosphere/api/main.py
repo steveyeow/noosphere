@@ -23,8 +23,36 @@ STATIC_DIR = Path(__file__).parent / "static"
 _scheduler_task = None
 
 
+def _is_pro_user(owner_id: str) -> bool:
+    """Cloud-mode helper: is this owner on the Pro tier?
+
+    Self-hosted mode (no cloud DB) always returns True — self-hosted users get
+    every feature regardless of tier. In cloud mode, returns False for users
+    with no row, 'free' tier, or lookup failures.
+    """
+    if not os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
+        return True
+    if not owner_id:
+        return False
+    try:
+        from noosphere.cloud.db import get_user
+        user = get_user(owner_id)
+        return bool(user) and user.get("tier") == "pro"
+    except Exception:
+        return False
+
+
 async def _enrichment_loop():
-    """Background loop: run enrichment + health check on all corpora periodically."""
+    """Background loop: keep Pro users' knowledge alive.
+
+    For each Pro-owned corpus: re-fetch RSS feeds → auto-embed new docs →
+    recompile dirty concepts. This is the "Living knowledge" Pro benefit —
+    without it, Pro is just "higher quotas" and the pricing promise of
+    auto-evolving Wiki/Entity/Timeline is empty.
+
+    Skips Free-owned corpora in cloud mode. Self-hosted runs everything
+    (no tier concept).
+    """
     from noosphere.core.config import ENRICHMENT_INTERVAL_MINUTES
     if not ENRICHMENT_INTERVAL_MINUTES:
         return
@@ -33,9 +61,13 @@ async def _enrichment_loop():
     while True:
         try:
             from noosphere.core.corpus import list_corpora
-            from noosphere.core.knowledge_growth import ingest_rss_feed, run_corpus_maintain
+            from noosphere.core.knowledge_growth import (
+                ingest_rss_feed, run_corpus_maintain, recompile_dirty_concepts,
+            )
             conn = get_conn()
-            for c in list_corpora():
+            for c in list_corpora(include_private=True):
+                if not _is_pro_user(c.get("owner_id", "")):
+                    continue
                 feed_rows = conn.execute(
                     "SELECT DISTINCT json_extract(metadata_json, '$.source_feed') as feed "
                     "FROM documents WHERE corpus_id=? AND json_extract(metadata_json, '$.source_feed') IS NOT NULL",
@@ -54,6 +86,14 @@ async def _enrichment_loop():
                         run_corpus_maintain(c["id"], force_reindex=False)
                     except Exception:
                         pass
+                # Pro's headline value: auto-grow Wiki/Entity/Timeline.
+                # Run every cycle even if no new ingest — concepts can be marked
+                # dirty by other paths (manual edits, capture, etc.) and still
+                # need recompile.
+                try:
+                    recompile_dirty_concepts(c["id"], force=False)
+                except Exception as e:
+                    logger.warning("auto-recompile failed for corpus %s: %s", c["id"], e)
             logger.info("Enrichment cycle complete")
         except Exception:
             logger.warning("Enrichment cycle error", exc_info=True)
