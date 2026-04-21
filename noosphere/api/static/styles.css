@@ -939,3 +939,39 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cmp-chat-send:disabled{opacity:.3;cursor:default}
 
 @media(max-width:900px){.cmp{grid-template-columns:1fr}.cmp-canvas{padding:20px 20px 120px}.cmp-chat{border-left:none;border-top:1px solid var(--brd);height:auto;max-height:50vh}}
+
+/* Capability card — the KB's agent-media identity panel (below cv-header) */
+.cap-card{margin:12px 0 20px;padding:16px 20px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px}
+.cap-card__top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.cap-card__title{font-family:'Libre Baskerville',Georgia,serif;font-size:14px;font-weight:700;color:var(--tx)}
+.cap-card__subtitle{color:var(--tx3);font-size:12px}
+.cap-card__badges{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.cap-card__kbr{padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.cap-card__kbr--high{background:var(--grnBg,rgba(52,211,153,.15));color:#22a06b}
+.cap-card__kbr--mid{background:var(--orgBg,rgba(245,158,11,.15));color:#b5721a}
+.cap-card__kbr--low{background:var(--accBg,rgba(0,0,0,.05));color:var(--tx3)}
+.cap-card__autonomy{padding:3px 10px;border-radius:10px;background:var(--bg);color:var(--tx2);font-size:11px;font-weight:500;border:1px solid var(--brd)}
+.cap-card__body{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;align-items:baseline}
+.cap-card__label{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:500;white-space:nowrap}
+.cap-card__value{font-size:13px;line-height:1.5;color:var(--tx)}
+.cap-card__pill{display:inline-block;padding:2px 10px;margin:0 4px 4px 0;background:var(--bg);border:1px solid var(--brd);border-radius:12px;font-size:11px;color:var(--tx2);font-weight:500}
+.cap-card__comp-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg);margin:4px 0;max-width:260px}
+.cap-card__comp-seg{height:100%}
+.cap-card__comp-seg--orig{background:#4a90e2}
+.cap-card__comp-seg--cap{background:#8b62d9}
+.cap-card__comp-seg--ext{background:#b8b8bd}
+.cap-card__comp-leg{display:flex;gap:14px;font-size:11px;color:var(--tx3);margin-top:5px;flex-wrap:wrap}
+.cap-card__sample{padding:6px 0;border-top:1px dashed var(--brd);cursor:pointer}
+.cap-card__sample:first-child{border-top:none;padding-top:0}
+.cap-card__sample-q{font-size:12px;color:var(--tx2)}
+.cap-card__sample-q::before{content:'▸ ';color:var(--tx3);font-size:10px}
+.cap-card__sample.open .cap-card__sample-q::before{content:'▾ '}
+.cap-card__sample-a{font-size:12px;color:var(--tx3);margin-top:4px;padding-left:16px;display:none;line-height:1.5}
+.cap-card__sample.open .cap-card__sample-a{display:block}
+.cap-card__empty{color:var(--tx3);font-size:12px;font-style:italic}
+.cap-card__actions{margin-top:14px;display:flex;gap:8px}
+.cap-card__btn{padding:5px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--brd);color:var(--tx);font-size:12px;font-weight:500;cursor:pointer;transition:background .1s}
+.cap-card__btn:hover:not(:disabled){background:var(--bgH)}
+.cap-card__btn:disabled{opacity:.55;cursor:not-allowed}
+.cap-card__btn--ghost{background:transparent}
+@media(max-width:720px){.cap-card__body{grid-template-columns:1fr;gap:6px 0}.cap-card__label{margin-top:8px}}

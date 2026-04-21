@@ -2247,6 +2247,7 @@ async function renderCorpus(id,sessionId){
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
   let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
   let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);if(r.ok)an=await r.json()}catch(e){}
+  let cap=null;try{const r=await fetch(`${API}/corpora/${id}/describe`);if(r.ok)cap=await r.json()}catch(e){}
   ct.classList.add('content--corpus');
   const al=c.access_level||'public';const tg=Array.isArray(c.tags)?c.tags:[];
   const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
@@ -2260,7 +2261,7 @@ async function renderCorpus(id,sessionId){
   };
   const wikiEmpty='<div class="empty">No concept notes yet — Compile to synthesize from your sources.</div>';
   const rawEmpty='<div class="empty">No sources yet — + Add to import URLs, upload files, or import an archive.</div>';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div><div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-sliders" id="c-sliders" title="Sources" aria-label="Sources"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button><div class="composer-spacer"></div><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div><div class="chint" id="c-chint"></div></div></div>`;
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${renderCapCard(cap)}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-sliders" id="c-sliders" title="Sources" aria-label="Sources"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button><div class="composer-spacer"></div><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div><div class="chint" id="c-chint"></div></div></div>`;
   showRP(c,an);
   document.getElementById('cv-desc-edit').onclick=()=>{
     const wrap=document.querySelector('.cv-desc-wrap');
@@ -2292,7 +2293,101 @@ async function renderCorpus(id,sessionId){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{if(e.target.closest('.doc-actions')||item.classList.contains('editing'))return;if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='doc-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
+  wireCapCard(id);
   setupCorpusInteract(id,sessionId);
+}
+
+// ── Capability card (agent-media identity panel) ──
+const CAP_AUTONOMY_NAMES=['Responsive','Subscribing','Synthesizing','Proactive'];
+const CAP_TASK_TYPES=['synthesis','retrieval','advice','how-to','factual-lookup','comparison'];
+
+function renderCapCard(cap){
+  if(!cap)return '';
+  const kbr=Number(cap.kb_reputation||0);
+  const tier=kbr>=0.5?'high':kbr>=0.2?'mid':'low';
+  const lvl=Number(cap.autonomy_level||0);
+  const lvlName=CAP_AUTONOMY_NAMES[lvl]||'Responsive';
+  const tt=Array.isArray(cap.task_types)?cap.task_types:[];
+  const samples=Array.isArray(cap.samples)?cap.samples:[];
+  const sc=cap.source_composition||{};
+  const scEntries=Object.entries(sc).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const lic=cap.license_terms||null;
+  const licStr=lic&&typeof lic==='object'?Object.entries(lic).map(([k,v])=>`${k}: ${v}`).join(' · '):'not set';
+  const calib=cap.calibration_policy||null;
+  const calibStr=calib&&typeof calib==='object'?(calib.reports_confidence?`self-reported (${calib.confidence_source||'self'})`:'not reported'):'not set';
+  return `<div class="cap-card"><div class="cap-card__top"><span class="cap-card__title">Capability card</span><span class="cap-card__subtitle">what agents see</span><div class="cap-card__badges"><span class="cap-card__kbr cap-card__kbr--${tier}" title="KB reputation — rolled-up trust score (citations + retention + calibration + satisfaction)">KBR ${kbr.toFixed(2)}</span><span class="cap-card__autonomy" title="Autonomy level — what this KB is allowed to do">L${lvl} · ${lvlName}</span></div></div><div class="cap-card__body"><span class="cap-card__label">Answers</span><div class="cap-card__value">${tt.length?tt.map(t=>`<span class="cap-card__pill">${esc(t)}</span>`).join(''):'<span class="cap-card__empty">No task types yet — auto-fill runs on first ingest.</span>'}</div><span class="cap-card__label">Content mix</span><div class="cap-card__value">${scEntries.length?`<div class="cap-card__comp-bar">${scEntries.map(([k,v])=>{const cls=k==='user_original'?'orig':k==='user_capture'?'cap':'ext';return `<div class="cap-card__comp-seg cap-card__comp-seg--${cls}" style="width:${(v*100).toFixed(1)}%" title="${esc(k)}: ${(v*100).toFixed(0)}%"></div>`}).join('')}</div><div class="cap-card__comp-leg">${scEntries.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))} ${(v*100).toFixed(0)}%</span>`).join('')}</div>`:'<span class="cap-card__empty">No documents yet</span>'}</div><span class="cap-card__label">Samples</span><div class="cap-card__value">${samples.length?samples.map((s,i)=>`<div class="cap-card__sample" data-idx="${i}"><div class="cap-card__sample-q">${esc(s.question||'')}</div><div class="cap-card__sample-a">${esc(s.answer_preview||'')}</div></div>`).join(''):'<span class="cap-card__empty">No sample Q&amp;A yet</span>'}</div><span class="cap-card__label">Licensing</span><div class="cap-card__value">${esc(licStr)}</div><span class="cap-card__label">Confidence</span><div class="cap-card__value">${esc(calibStr)}</div></div><div class="cap-card__actions"><button class="cap-card__btn" id="cap-regen">Auto-regenerate</button><button class="cap-card__btn cap-card__btn--ghost" id="cap-edit">Edit manually</button></div></div>`;
+}
+
+function wireCapCard(corpusId){
+  const card=document.querySelector('.cap-card');if(!card)return;
+  card.querySelectorAll('.cap-card__sample').forEach(s=>{s.addEventListener('click',()=>s.classList.toggle('open'))});
+  const regen=document.getElementById('cap-regen');if(regen)regen.onclick=()=>capRegenerate(corpusId);
+  const edit=document.getElementById('cap-edit');if(edit)edit.onclick=()=>capEdit(corpusId);
+}
+
+async function capRegenerate(corpusId){
+  const btn=document.getElementById('cap-regen');if(btn){btn.disabled=true;btn.textContent='Proposing…'}
+  try{
+    const r=await fetch(`${API}/corpora/${corpusId}/manifest/suggest`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(!r.ok){const d=await r.json().catch(()=>({}));if(typeof handleQuotaError==='function'?!handleQuotaError(r,d):true)toast(d.detail||'Failed to regenerate','error');return}
+    const prop=await r.json();
+    showCapRegenModal(corpusId,prop);
+  }catch(e){toast('Failed to reach the LLM','error')}
+  finally{if(btn){btn.disabled=false;btn.textContent='Auto-regenerate'}}
+}
+
+function showCapRegenModal(corpusId,prop){
+  const tt=Array.isArray(prop.task_types)?prop.task_types:[];
+  const samples=Array.isArray(prop.samples)?prop.samples:[];
+  const desc=prop.description_suggestion||'';
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Proposed capability update</div><div class="acm-sub">Review what the LLM inferred from your corpus. Uncheck anything you don't want applied.</div><div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-tt" ${tt.length?'checked':''} ${tt.length?'':'disabled'}/><strong>Task types</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${tt.length?tt.map(t=>`<span class="cap-card__pill">${esc(t)}</span>`).join(''):'<em>none proposed</em>'}</div></div><div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-samples" ${samples.length?'checked':''} ${samples.length?'':'disabled'}/><strong>Sample Q&amp;A</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${samples.length?samples.map(s=>`<div style="margin-bottom:6px"><div>▸ ${esc(s.question||'')}</div><div style="color:var(--tx3);padding-left:12px">${esc(s.answer_preview||'')}</div></div>`).join(''):'<em>none proposed</em>'}</div></div>${desc?`<div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-desc"/><strong>Refresh description</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${esc(desc)}</div></div>`:''}<div class="acm-actions"><button class="btn-sm-ghost" id="cap-regen-cancel">Cancel</button><button class="btn-sm" id="cap-regen-apply">Apply</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#cap-regen-cancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+  wrap.querySelector('#cap-regen-apply').onclick=async()=>{
+    const applyTT=document.getElementById('cap-apply-tt')?.checked;
+    const applyS=document.getElementById('cap-apply-samples')?.checked;
+    const applyDesc=document.getElementById('cap-apply-desc')?.checked;
+    const body={};
+    if(applyTT)body.task_types=tt;
+    if(applyS)body.samples=samples;
+    if(applyDesc){body.description_suggestion=desc;body.refresh_description=true}
+    if(!Object.keys(body).length){close();return}
+    try{
+      const r=await fetch(`${API}/corpora/${corpusId}/manifest/apply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      if(!r.ok)throw new Error('apply failed');
+      close();toast('Capability card updated');
+      const hash=location.hash;location.hash='#/';setTimeout(()=>location.hash=hash,10);
+    }catch(e){toast('Failed to apply','error')}
+  };
+}
+
+async function capEdit(corpusId){
+  let cap=null;try{const r=await fetch(`${API}/corpora/${corpusId}/describe`);if(r.ok)cap=await r.json()}catch(e){}
+  if(!cap)return toast('Could not load capability card','error');
+  const tt=Array.isArray(cap.task_types)?cap.task_types.join(', '):'';
+  const samples=Array.isArray(cap.samples)?cap.samples:[];
+  const samplesText=samples.map(s=>`${s.question||''} | ${s.answer_preview||''}`).join('\n');
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Edit capability card</div><div class="acm-sub">Task types: comma-separated. Samples: one per line, format <code>question | answer preview</code>.</div><div style="margin:14px 0"><label style="display:block;font-size:12px;color:var(--tx2);margin-bottom:4px">Task types (valid: ${CAP_TASK_TYPES.join(', ')})</label><input type="text" id="cap-edit-tt" class="cv-desc-input" value="${esc(tt)}" placeholder="advice, synthesis"/></div><div style="margin:14px 0"><label style="display:block;font-size:12px;color:var(--tx2);margin-bottom:4px">Samples</label><textarea id="cap-edit-samples" class="cv-desc-input" rows="5" placeholder="How do I stir-fry? | Use high heat and peanut oil.">${esc(samplesText)}</textarea></div><div class="acm-actions"><button class="btn-sm-ghost" id="cap-edit-cancel">Cancel</button><button class="btn-sm" id="cap-edit-save">Save</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#cap-edit-cancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+  wrap.querySelector('#cap-edit-save').onclick=async()=>{
+    const ttRaw=document.getElementById('cap-edit-tt').value;
+    const ttArr=ttRaw.split(',').map(s=>s.trim().toLowerCase()).filter(s=>CAP_TASK_TYPES.includes(s)).slice(0,4);
+    const sLines=document.getElementById('cap-edit-samples').value.split('\n').map(l=>l.trim()).filter(Boolean);
+    const sArr=sLines.map(l=>{const idx=l.indexOf('|');if(idx<0)return null;return{question:l.slice(0,idx).trim(),answer_preview:l.slice(idx+1).trim()}}).filter(s=>s&&s.question&&s.answer_preview).slice(0,3);
+    try{
+      const r=await fetch(`${API}/corpora/${corpusId}/manifest/apply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_types:ttArr,samples:sArr})});
+      if(!r.ok)throw new Error('save failed');
+      close();toast('Capability card saved');
+      const hash=location.hash;location.hash='#/';setTimeout(()=>location.hash=hash,10);
+    }catch(e){toast('Failed to save','error')}
+  };
 }
 
 async function loadCorpusEntities(corpusId){
