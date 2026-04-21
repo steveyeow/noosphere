@@ -7,6 +7,7 @@ from noosphere.core.corpus import (
     get_corpus,
     get_corpus_by_slug,
     list_corpora,
+    source_composition,
     update_corpus,
 )
 from noosphere.core.ingest import get_document, ingest_text
@@ -258,6 +259,61 @@ def test_get_corpus_includes_core_columns(isolated_db):
         "word_count",
     ):
         assert key in row
+
+
+def test_capability_fields_defaults_and_round_trip(isolated_db):
+    c = create_corpus("Cap Defaults")
+    assert c["task_types"] == []
+    assert c["samples"] == []
+    assert c["autonomy_level"] == 0
+    assert c["calibration_policy"] is None
+    assert c["license_terms"] is None
+
+    u = update_corpus(
+        c["id"],
+        task_types=["synthesis", "advice"],
+        samples=[{"question": "Q?", "answer_preview": "A."}],
+        autonomy_level=1,
+        calibration_policy={"reports_confidence": True, "confidence_source": "self"},
+        license_terms={"query": "pay-per-query", "bulk": "negotiable"},
+    )
+    assert u["task_types"] == ["synthesis", "advice"]
+    assert u["samples"][0]["question"] == "Q?"
+    assert u["autonomy_level"] == 1
+    assert u["calibration_policy"]["reports_confidence"] is True
+    assert u["license_terms"]["query"] == "pay-per-query"
+
+    fetched = get_corpus(c["id"])
+    assert fetched["task_types"] == ["synthesis", "advice"]
+    assert fetched["autonomy_level"] == 1
+
+
+def test_source_composition_empty_corpus(isolated_db):
+    c = create_corpus("Empty Comp")
+    assert source_composition(c["id"]) == {}
+
+
+def test_source_composition_rollup(isolated_db):
+    import uuid
+    from datetime import datetime, timezone
+
+    from noosphere.core.db import get_conn
+
+    c = create_corpus("Comp")
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    for kind, n in [("user_original", 6), ("external_public", 3), ("user_capture", 1)]:
+        for _ in range(n):
+            conn.execute(
+                "INSERT INTO documents (id, corpus_id, title, content, source_kind, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (uuid.uuid4().hex[:12], c["id"], "t", "x", kind, now),
+            )
+    conn.commit()
+    comp = source_composition(c["id"])
+    assert comp["user_original"] == 0.6
+    assert comp["external_public"] == 0.3
+    assert comp["user_capture"] == 0.1
 
 
 def test_delete_corpus_removes_chunks(isolated_db):

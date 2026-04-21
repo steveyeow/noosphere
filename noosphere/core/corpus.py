@@ -108,15 +108,19 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
         "embedding_model", "embedding_dim",
         "chunk_strategy", "stale_threshold_days", "pricing_json",
         "owner_id", "owned_handles",
+        "task_types", "samples", "autonomy_level",
+        "calibration_policy", "license_terms",
     }
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return get_corpus(corpus_id)
 
-    if "tags" in updates and isinstance(updates["tags"], list):
-        updates["tags"] = json.dumps(updates["tags"])
-    if "owned_handles" in updates and isinstance(updates["owned_handles"], list):
-        updates["owned_handles"] = json.dumps(updates["owned_handles"])
+    for list_key in ("tags", "owned_handles", "task_types", "samples"):
+        if list_key in updates and isinstance(updates[list_key], list):
+            updates[list_key] = json.dumps(updates[list_key])
+    for dict_key in ("calibration_policy", "license_terms"):
+        if dict_key in updates and isinstance(updates[dict_key], dict):
+            updates[dict_key] = json.dumps(updates[dict_key])
 
     updates["updated_at"] = _now()
     set_clause = ", ".join(f"{k}=?" for k in updates)
@@ -145,10 +149,34 @@ def delete_corpus(corpus_id: str) -> bool:
 
 def _row_to_dict(row) -> dict:
     d = dict(row)
-    for key in ("tags", "owned_handles"):
+    for key in ("tags", "owned_handles", "task_types", "samples"):
         if key in d and isinstance(d[key], str):
             try:
                 d[key] = json.loads(d[key])
             except (json.JSONDecodeError, TypeError):
                 pass
+    for key in ("calibration_policy", "license_terms"):
+        if key in d and isinstance(d[key], str) and d[key]:
+            try:
+                d[key] = json.loads(d[key])
+            except (json.JSONDecodeError, TypeError):
+                pass
     return d
+
+
+def source_composition(corpus_id: str) -> dict[str, float]:
+    """Rollup of documents by source_kind. Returns ratios that sum to 1.0.
+
+    External-only documents (source_kind starting with 'external_') and
+    owner-authored documents are both counted — this is a provenance signal
+    about the corpus mix, not a visibility filter.
+    """
+    rows = get_conn().execute(
+        "SELECT source_kind, COUNT(*) AS n FROM documents "
+        "WHERE corpus_id=? GROUP BY source_kind",
+        (corpus_id,),
+    ).fetchall()
+    total = sum(r["n"] for r in rows) or 0
+    if total == 0:
+        return {}
+    return {r["source_kind"] or "unknown": round(r["n"] / total, 4) for r in rows}

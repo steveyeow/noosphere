@@ -28,7 +28,7 @@ QUOTA_LIMITS = {
         "compile": 0,            # compile is Pro-only — synthesis is the paid surface
         "chat": 20,              # chat messages per day
         "ask": 20,               # KB-as-agent synthesized answers — same LLM cost as chat
-        "probe": 100,            # free evaluation query; generous to support discovery
+        "preview_ask": 100,      # free evaluation query; generous to support discovery
         "extract_entities": 0,   # entity extraction is Pro-only (LLM-heavy, N calls per doc)
         "index": 3,              # ingest operations (chunk + embed); each covers many chunks
     },
@@ -39,7 +39,7 @@ QUOTA_LIMITS = {
         "compile": 50,
         "chat": 500,
         "ask": 500,
-        "probe": 2000,
+        "preview_ask": 2000,
         "extract_entities": 20,
         "index": 100,
     },

@@ -8,6 +8,7 @@ import json
 from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug
 from noosphere.core.ingest import get_documents, get_document
 from noosphere.core.retrieval import search_corpus
+from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
 from noosphere.core.access import check_access
 
 
@@ -98,6 +99,55 @@ TOOLS = [
             "required": ["corpus_id"],
         },
     },
+    {
+        "name": "ask",
+        "description": "Ask a question against a corpus and receive a synthesized answer with inline [N] citations grounded in the source material. The corpus acts as an L0 agent — it answers, cites, and reports calibrated confidence. Respects access level (paid/token/public) like search.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
+                "question": {"type": "string", "description": "The question to ask"},
+                "top_k": {"type": "integer", "description": "Number of source chunks to ground on (default 5)", "default": 5},
+            },
+            "required": ["corpus_id", "question"],
+        },
+    },
+    {
+        "name": "describe",
+        "description": "Get a corpus's machine-readable capability card — task types, sample Q&A, source composition, autonomy level, calibration policy, and license terms. Use this to evaluate whether a KB matches your task before querying. No authentication required.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
+            },
+            "required": ["corpus_id"],
+        },
+    },
+    {
+        "name": "preview_ask",
+        "description": "Evaluation version of `ask` — bypasses access gating (even on paid corpora) and returns a truncated synthesized answer plus citations so agents can assess KB answer quality before paying for full access. Use `preview_ask` to decide; use `ask` when you've committed to using this KB.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
+                "question": {"type": "string", "description": "Evaluation question"},
+            },
+            "required": ["corpus_id", "question"],
+        },
+    },
+    {
+        "name": "route",
+        "description": "Given a question this KB may not be the best fit for, recommend other KBs in the network that could answer it better. Returns a ranked list of candidate corpora (local + remote) with relevance, kb_reputation, and any explicit manifest endorsements from this KB.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug (the source KB)"},
+                "question": {"type": "string", "description": "The question to route"},
+                "limit": {"type": "integer", "description": "Max candidates to return (default 5)", "default": 5},
+            },
+            "required": ["corpus_id", "question"],
+        },
+    },
 ]
 
 
@@ -116,10 +166,16 @@ def handle_tool_call(
     *,
     bearer_token: str | None = None,
     agent_id: str = "",
+    caller_corpus_id: str = "",
 ) -> dict:
     """Execute an MCP tool call and return the result.
 
     Raises AccessDenied if the corpus requires authentication.
+
+    `caller_corpus_id` (from `X-Noosphere-Caller-Corpus` header) enables
+    inter-KB attribution: when set to a locally-known corpus, successful
+    `ask` calls record a `query`-kind citation so the network learns which
+    KBs get consulted by which.
     """
     if name == "search":
         c = _resolve(arguments["corpus_id"])
@@ -261,6 +317,62 @@ def handle_tool_call(
             },
             "samples": samples,
         }
+
+    elif name == "ask":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        token_id = _check_mcp_access(c, bearer_token)
+        result = kb_ask(
+            c["id"], arguments["question"],
+            top_k=arguments.get("top_k", 5),
+            caller="external",
+            agent_id=agent_id,
+            token_id=token_id,
+        )
+        if result is None:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        if caller_corpus_id:
+            resolved_caller = _resolve(caller_corpus_id)
+            if resolved_caller and resolved_caller["id"] != c["id"] and result.get("chunks_used", 0) > 0:
+                from noosphere.core.citations import record_inter_kb_query
+                try:
+                    record_inter_kb_query(
+                        resolved_caller["id"], c["id"],
+                        context=arguments["question"][:200],
+                    )
+                except Exception:
+                    pass
+        return result
+
+    elif name == "describe":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        # Describe is always available — capability cards are discoverable.
+        result = kb_describe(c["id"])
+        return result or {"error": f"Corpus not found: {arguments['corpus_id']}"}
+
+    elif name == "preview_ask":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        if c.get("access_level") == "private":
+            return {"error": "Private corpus — preview_ask not available"}
+        result = kb_preview_ask(c["id"], arguments["question"])
+        return result or {"error": f"Corpus not found: {arguments['corpus_id']}"}
+
+    elif name == "route":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        if c.get("access_level") == "private":
+            return {"error": "Private corpus — route not available"}
+        result = kb_route(
+            c["id"], arguments["question"],
+            limit=arguments.get("limit", 5),
+        )
+        return result or {"error": f"Corpus not found: {arguments['corpus_id']}"}
 
     return {"error": f"Unknown tool: {name}"}
 

@@ -40,7 +40,7 @@ def test_export_corpus_zip_structure_and_manifest(isolated_db):
         assert f"{prefix}meta/stats.json" in names
 
         manifest = json.loads(zf.read(f"{prefix}noosphere.json"))
-        assert manifest["schema_version"] == "1.0"
+        assert manifest["schema_version"] == "1.1"
         assert manifest["corpus_id"] == c["id"]
         assert manifest["name"] == "Export Me"
         assert manifest["description"] == "desc"
@@ -48,6 +48,10 @@ def test_export_corpus_zip_structure_and_manifest(isolated_db):
         assert set(manifest["tags"]) >= {"alpha", "beta"}
         assert manifest["access"]["level"] == "public"
         assert manifest["document_count"] == 1
+        assert manifest["task_types"] == []
+        assert manifest["samples"] == []
+        assert manifest["autonomy_level"] == 0
+        assert "source_composition" in manifest
 
         stats = json.loads(zf.read(f"{prefix}meta/stats.json"))
         assert stats["document_count"] == 1

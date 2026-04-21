@@ -80,6 +80,7 @@ def _handle_rpc(body: dict, request: Request) -> dict:
     auth = request.headers.get("authorization", "")
     bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else None
     agent_id = request.headers.get("x-agent-id", "")
+    caller_corpus = request.headers.get("x-noosphere-caller-corpus", "").strip()
 
     if method == "initialize":
         return _rpc_dict(req_id, {
@@ -100,6 +101,7 @@ def _handle_rpc(body: dict, request: Request) -> dict:
                 tool_name, arguments,
                 bearer_token=token,
                 agent_id=agent_id,
+                caller_corpus_id=caller_corpus,
             )
         except AccessDenied as e:
             return _err_dict(req_id, -32603, e.message)

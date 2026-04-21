@@ -42,6 +42,17 @@ Noosphere solves both problems. It is the infrastructure layer that:
 
 Karpathy's LLM Wiki and Garry Tan's GBrain sit in the upper-left: agent-native, but single-user and technically demanding. Noosphere occupies the upper-right: agent-native AND open to anyone, with a network that connects them all.
 
+### Information platforms evolve
+
+Information platforms change with how information is consumed:
+
+- **Portals** — curated directories for humans (Yahoo, MSN)
+- **Search** — ranked retrieval for humans (Google)
+- **Social media** — attention marketplaces for humans (Facebook, Twitter, TikTok)
+- **Agent media** — information platforms shaped for agent consumption
+
+Social media optimized for human attention, so popular content is often not the most valuable. Agents don't pay an attention tax — they select for informational value and verifiable provenance. A platform shaped for agent consumption looks different: machine-readable discovery, provenance as a first-class signal, pricing for information value rather than exposure. Noosphere is built for that shape.
+
 ## Connection to Feynman
 
 Noosphere is inspired by and connected to [Feynman](https://github.com/steveyeow/feynman), an open-source project that lets people chat with books and learn with an evolving network of agent-simulated great minds in a navigable knowledge space (the Noosphere).
@@ -71,12 +82,14 @@ Integration is optional. Feynman can import `noosphere` as a Python library (sam
 
 Personal AI knowledge bases are the future — but isolated knowledge bases are a transitional state. The real value comes when they're connected into a network, and when creators can control and monetize access.
 
-Four things define Noosphere:
+Six things define Noosphere:
 
 1. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts. The network makes every individual knowledge base more valuable — and creates a marketplace where knowledge finds the people (and agents) who need it.
 2. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution. Agents are the primary consumers. The web UI exists for creators to manage their knowledge.
 3. **Living knowledge.** Knowledge bases grow over time — from chat conversations, RSS feeds, URL imports, and LLM-powered compilation. They are compounding knowledge systems, not static file dumps.
 4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Lenny Rachitsky opened part of his newsletter to agents for free but kept the full archive behind a subscription. Domain experts, researchers, consultants — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need, without hiring consultants to train proprietary models.
+5. **Knowledge bases are agents.** A corpus is not just a document collection — it carries an interface that answers with citations, describes its own capabilities, routes questions outside its scope, and reports calibrated confidence. Autonomy is layered: L0 responsive by default; higher levels (subscribing, synthesizing, proactive) unlock as owners opt in.
+6. **A network of learning agents.** Knowledge bases consume from other knowledge bases — direct query, subscription to increments, skill/capsule import, or derivative corpora with attribution. Humans author first; agents compound on top. Provenance is tracked through the chain.
 
 We believe that:
 
@@ -98,6 +111,8 @@ We believe that:
 5. **Open core, commercial convenience.** The full product is open-source and self-hostable — including paid access control. The commercial layer adds hosting convenience, not exclusive features.
 
 6. **One network.** Self-hosted and cloud-hosted corpora are equal participants in the Noosphere. The registry connects them all. Content stays on the creator's infrastructure; only metadata is shared for discovery.
+
+7. **Information value, not exposure.** Ranking and pricing track informational value and verifiable provenance. No sponsored placement in results, no brand injection in answers, no lead-gen fees. Attention-based monetization reintroduces social media's failure mode; this is an anti-commitment, not a future option.
 
 ---
 
@@ -226,7 +241,7 @@ MCP and REST API share the same core logic. The CLI calls the same core function
 | `public` | Anyone can query. No authentication. Discoverable in the Noosphere registry. | Self-hosted + Cloud |
 | `private` | Only the owner can query. Not registered in the registry. | Self-hosted + Cloud |
 | `token` | Requires an access key. Creator generates keys and shares them with specific people or agents. Useful for granting access to collaborators, beta testers, or specific agent deployments without making the corpus fully public. | Self-hosted + Cloud |
-| `paid` | Pay-per-query or subscription. Requires Stripe integration. Self-hosted users configure their own Stripe keys; cloud users use Stripe Connect (platform takes 10%). | Self-hosted + Cloud |
+| `paid` | Pay-per-query, subscription, or corpus licensing (bulk/one-time access for training or enterprise use). Requires Stripe integration. Self-hosted users configure their own Stripe keys; cloud users use Stripe Connect (platform takes 10%). | Self-hosted + Cloud |
 
 ---
 
@@ -318,6 +333,8 @@ my-corpus/
 
 ### Manifest schema (`noosphere.json`)
 
+The manifest is the KB's **agent-media capability card** — it's how external agents decide whether this corpus is worth querying or paying for. It carries self-declared and computed signals together (Tier 1 + Tier 2 of the signal stack, see Discovery section).
+
 ```json
 {
   "schema_version": "1.0",
@@ -337,12 +354,41 @@ my-corpus/
   "embedding_dim": 3072,
   "language": "en",
   "tags": ["product", "growth", "startups"],
+  "task_types": ["retrieval", "synthesis", "advice"],
+  "source_composition": {
+    "user_original": 0.6,
+    "user_curated": 0.3,
+    "external_public": 0.1
+  },
+  "samples": [
+    {
+      "question": "How should a seed-stage startup price its first enterprise deal?",
+      "answer_preview": "Anchor on the buyer's budget, not your cost..."
+    }
+  ],
+  "autonomy_level": 0,
+  "calibration_policy": {
+    "reports_confidence": true,
+    "confidence_source": "self"
+  },
+  "license_terms": {
+    "query": "pay-per-query",
+    "bulk": "negotiable"
+  },
   "access": {
     "level": "public",
     "pricing": null
   }
 }
 ```
+
+**New fields (Phase 4):**
+- `task_types` — what kinds of questions the KB answers well (retrieval, synthesis, advice, how-to, factual-lookup, etc.)
+- `source_composition` — rollup of `source_kind` over documents; a KB that is 90% user_original has a different trust profile than one that is 90% external_public
+- `samples` — representative Q&A pairs for agents to evaluate relevance quickly
+- `autonomy_level` — L0 responsive (default), L1 subscribing, L2 synthesizing, L3 proactive
+- `calibration_policy` — whether and how the KB reports confidence
+- `license_terms` — accepted monetization shapes (query / subscription / bulk / licensing)
 
 ---
 
@@ -354,15 +400,23 @@ Noosphere exposes corpora via MCP. Any MCP-compatible client (Claude, Cursor, Co
 
 MCP tools:
 
-| Tool | Description |
-|------|-------------|
-| `search` | Semantic search across corpora. Returns ranked chunks with citations. |
-| `get_document` | Retrieve a full document by ID. |
-| `list_documents` | List all documents with metadata. |
-| `list_corpora` | List available corpora. |
-| `get_topics` | List extracted topics and themes. |
-| `get_stats` | Corpus statistics. |
-| `get_manifest` | Full corpus manifest. |
+| Tool | Description | Status |
+|------|-------------|--------|
+| `search` | Semantic search across corpora. Returns ranked chunks with citations. | Shipped |
+| `get_document` | Retrieve a full document by ID. | Shipped |
+| `list_documents` | List all documents with metadata. | Shipped |
+| `list_corpora` | List available corpora. | Shipped |
+| `get_topics` | List extracted topics and themes. | Shipped |
+| `get_stats` | Corpus statistics. | Shipped |
+| `get_manifest` | Full corpus manifest (including agent-media capability card). | Shipped |
+| `ask` | Synthesized answer with citations, grounded in retrieved passages. | Phase 4 |
+| `describe` | Structured self-description: task types, scope, confidence posture. | Phase 4 |
+| `route` | Given a query outside this KB's scope, suggest other KBs that may answer it. | Phase 4 |
+| `preview_ask` | Evaluation version of `ask` — truncated synthesized answer bypassing access gating, so agents can judge answer quality before paying. | Phase 4 |
+
+The Phase 4 tools move corpora from pure retrieval endpoints to **KB-as-agent interfaces**: `ask` gives agents a synthesized answer instead of raw chunks; `describe` + `preview_ask` support discovery/trust at query time; `route` enables inter-KB handoff.
+
+**Inter-KB attribution.** When an agent acts on behalf of a corpus, it should set `X-Noosphere-Caller-Corpus: {corpus_id}` on `ask` / `search` calls. Successful `ask` calls (where the source returned chunks) auto-record a `query`-kind citation from caller to target, deduped per pair within a 24-hour window. The target's `kb_reputation` refreshes on insert. Unknown / unresolvable caller IDs are silently ignored (can't poison the graph with fake attributions).
 
 Growth actions (**capture**, **compile**, **ingest-feed**, **ingest-urls**, **maintain**) are **REST/CLI-first** so agent consumers stay read/query-oriented; the corpus owner (or integrations with owner credentials) uses HTTP or CLI to grow the corpus.
 
@@ -562,32 +616,75 @@ Response includes for each result:
 - `quality`: objective quality signals (see below)
 - `preview_url`: direct link to the preview endpoint
 
-#### Step 2: Quality signals
+#### Step 2: Quality signals — the four-tier stack
 
-Quality signals are **objective, automatic metrics** — no user ratings or manual curation required. This is critical for a network that needs to work at launch with zero social proof.
+Agent media needs a PageRank equivalent that is based on **informational value and verifiable provenance**, not attention. Signals are organized in four tiers, from cheapest-and-most-gameable to most-expensive-and-most-trustworthy.
+
+**Tier 1 — Self-declared (cheap, manipulable)**
 
 | Signal | What it tells agents | Source |
 |--------|---------------------|--------|
-| `document_count` | Knowledge base size / breadth | Registration metadata |
-| `word_count` | Content depth | Registration metadata |
+| `manifest.description` | What the KB is about | Owner declares |
+| `manifest.tags` / `task_types` | Declared domain and question shapes | Owner declares |
+| `manifest.samples` | Representative Q&A for quick relevance check | Owner declares |
+| `manifest.license_terms` | Allowed monetization shapes | Owner declares |
+| `author.identity` | Who stands behind this KB | Owner declares (optionally verified) |
+
+**Tier 2 — Computed / verifiable**
+
+| Signal | What it tells agents | Source |
+|--------|---------------------|--------|
+| `document_count` | KB size / breadth | Ingestion |
+| `word_count` | Content depth | Ingestion |
+| `source_composition` | Mix of user_original / user_curated / external_public | Provenance rollup over documents |
 | `last_updated` | Active maintenance, freshness | Last registration heartbeat |
-| `query_count` | Popularity / proven usefulness | Query log (opt-in, local corpora only) |
+| `status` | Indexing state (`draft`, `indexing`, `ready`) | Pipeline |
 | `uptime` | Reliability for production use | Health check history |
-| `status` | Indexing state (`draft`, `indexing`, `ready`) | Registration metadata |
-| `access_level` | Free vs. paid | Corpus config |
+| `source_verification` | % of claimed sources resolving | Link check |
 
-**Design rationale:** User ratings don't work at network launch (chicken-and-egg). Objective signals are available from day one — a knowledge base with 500 documents, 200K words, and a "ready" status is clearly more substantial than one with 3 documents. As the network grows, `query_count` becomes a powerful popularity signal, similar to download counts on package registries.
+**Tier 3 — Accumulated via usage (adversarial-resistant, slow to bootstrap)**
 
-Agents can implement their own ranking on top of these signals. A simple heuristic:
+| Signal | What it tells agents | Source |
+|--------|---------------------|--------|
+| `query_count` | Demand / proven usefulness | Query log |
+| `query_diversity` | Breadth of questions answered (not just one popular query repeated) | Query log clustering |
+| `citations_in` | Incoming citations from other KBs, weighted by citing KB's reputation — agent-era PageRank | Citation graph |
+| `refund_rate` / `satisfaction` | Paying agents' reported value | Payment system |
+| `calibration` | Historical accuracy of self-reported confidence | Outcome tracking |
+| `entity_reputation` | Track record attached to the KB itself, independent of author | Computed from above |
+
+**Tier 4 — Interactive (consumer-invoked)**
+
+| Signal | What it tells agents | Source |
+|--------|---------------------|--------|
+| Static preview | Representative chunks, no auth | `GET /preview` (shipped) |
+| `preview_ask` (live query) | One free or low-cost query for evaluation | `POST /preview-ask` (Phase 4) |
+| Benchmark responses | Answers to standardized probes per declared domain | Standardized test set (later) |
+
+**Design principles:**
+
+1. **Signals are axes, not a ranking function.** The platform exposes values; each consuming agent weights them for its task. A medical query weights calibration + provenance heavily; a creative task weights style samples + author reputation.
+2. **Weight Tier 2+ heavily.** Tier 1 alone is suspect — self-declaration is free to fake.
+3. **Bootstrap path.** New KBs have no Tier 3 data, so Tier 1+2+4 carry more weight early. Tier 3 accrues with usage.
+4. **Author reputation ≠ entity reputation.** A KB inherits some authority from its author at launch, but the KB itself accumulates independent track record.
+5. **Adversarial resistance.** As the network grows, some actors will try to game signals. Keeping Tier 2 and Tier 3 costly-to-fake is core to the stack.
+
+Agents implement their own ranking on top of these signals. A simple heuristic for early-stage discovery:
 
 ```
-relevance_score = text_match_score
-quality_score = log(document_count + 1) * 0.3
-              + log(word_count + 1) * 0.2
-              + log(query_count + 1) * 0.3
-              + freshness_decay(last_updated) * 0.2
-final_score = relevance_score * 0.6 + quality_score * 0.4
+relevance_score   = text_match(query, manifest)
+tier2_score       = log(document_count + 1) * 0.25
+                  + log(word_count + 1) * 0.15
+                  + freshness_decay(last_updated) * 0.10
+                  + source_composition_user_original_weight * 0.10
+tier3_score       = log(query_count + 1) * 0.15
+                  + log(citations_in + 1) * 0.15
+                  + calibration_score * 0.10
+
+final_score = relevance_score * 0.5 + tier2_score * 0.3 + tier3_score * 0.2
 ```
+
+Consumers should treat this as a starting point, not a fixed ranking. Task context shifts the weights.
 
 #### Step 3: Preview
 
@@ -681,14 +778,16 @@ Health check results feed into quality signals:
 - Nodes that fail are flagged with `last_health_status: "down"`
 - After 24h of failures, the node's corpora are deprioritized in search results (but not removed)
 
-### Future: network effects
+### Network effects
 
-As the network grows, stronger discovery signals emerge naturally:
+As the network grows, Tier 3 signals get richer and ranking becomes more discriminating:
 
-1. **Query count as reputation.** The most-queried knowledge bases rise to the top — no manual curation needed.
-2. **Cross-corpus citation.** When a compiled note in corpus A cites content from corpus B, that's a signal of quality (analogous to academic citation graphs).
-3. **Agent feedback loops.** Agents that repeatedly query the same corpus signal sustained usefulness — a stronger signal than one-time popularity.
-4. **Category emergence.** As more knowledge bases register, natural clusters form (crypto, ML, legal, etc.) enabling category-based browsing alongside search.
+1. **Query count + diversity as demand proof.** Most-queried KBs rise, but weighted by whether they answer *diverse* questions well, not just one viral query.
+2. **Citation graph PageRank.** When a compiled note in corpus A cites corpus B, B accumulates incoming authority from A. Weighting is recursive — citations from high-reputation KBs count more. This is the agent-era PageRank and requires **Day-1 schema support** for citation edges.
+3. **Calibration track record.** KBs that report honest confidence (e.g. flagging "low confidence" on out-of-scope questions) accumulate higher trust than KBs that always answer with false certainty.
+4. **Entity reputation separate from author.** The KB as an object builds its own track record. A KB re-authored by a new contributor retains the track record; a new KB by a well-known author gets a boost but still has to earn its own Tier 3 signals.
+5. **Category emergence.** Natural clusters form (crypto, ML, legal, etc.) from tag + citation patterns, enabling category-based browsing alongside search.
+6. **Adversarial pressure.** As money flows, some actors will try to fake signals. The stack must keep Tier 2 and Tier 3 costly-to-fake — e.g. citations from gamed KBs get deweighted recursively; calibration requires held-out probe-based verification.
 
 ---
 
@@ -709,25 +808,49 @@ Creator's content = Creator's property. Our infrastructure = Our cost. Payment f
 
 ### Cloud tiers
 
-| Resource | Free Tier | Pro Tier ($9/month) |
-|----------|-----------|---------------------|
-| Corpora | 1 | Unlimited |
-| Documents per corpus | 100 | Unlimited |
-| Embedding tokens/month | 10K | Unlimited |
-| Storage | 100MB | 10GB+ |
-| Queries received/month | 1,000 | 100K |
-| Access levels | All | All |
-| Paid corpus support | Stripe Connect | Stripe Connect |
-| Audio transcription | Not available | Whisper API included |
+| Resource | Free | Pro ($20/mo) | Team ($49/seat/mo) |
+|----------|------|---------------|---------------------|
+| Corpora | 1 | Unlimited | Unlimited |
+| Seats | 1 | 1 | 3–50 |
+| Documents per corpus | 100 | Unlimited | Unlimited |
+| Embedding tokens/month | 10K | Unlimited | Unlimited |
+| Storage | 100MB | 10GB+ | Pooled |
+| Internal queries/month (members + their agents) | 1,000 | 100K | Pooled |
+| External paid queries | N/A | Supported | Supported |
+| Access levels | All | All | All |
+| Paid corpus support | Stripe Connect | Stripe Connect | Stripe Connect |
+| Audio transcription | Not available | Whisper API included | Whisper API included |
+
+**Team tier rationale.** The individual create → compile → share/monetize loop applies equally at org scale (see "Six things" in Core value, and the SimpleClosure asset-value case). Team is not a different product — it is the same loop with multiple contributors and pooled resources. We deliberately did not split out a "Business" tier: `access_level` is per-corpus, not tier-gated, so a Team user can already publish any corpus as public / paid / token. Enterprise-style features (SSO, audit retention, IP allowlist) are deferred until a real customer asks.
+
+**Query counting has three separate buckets:**
+- **Internal queries** (org members + their agents) — counted against tier limit
+- **External paid queries** (`access_level=paid`) — **not** counted against tier; platform takes 10% via Stripe Connect
+- **External public queries** (anonymous, `access_level=public`) — separate quota sized to prevent infra abuse without penalizing openness
 
 ### Transaction commission (cloud only)
 
-When a cloud-hosted paid corpus is queried and payment flows through our Stripe Connect:
+Three monetization shapes, all via Stripe Connect:
+- **Pay-per-query** — agent pays per request
+- **Subscription** — recurring access
+- **Corpus licensing** — bulk / one-time access for training or enterprise use
+
+Split:
 - Creator gets 90%
 - Platform gets 10%
 - Stripe fees are separate (~2.9% + $0.30)
 
 Self-hosted users who set up their own Stripe keep 100%.
+
+### Anti-patterns (explicitly out)
+
+We do not monetize visibility or placement. The following are **permanent design commitments**, not future options:
+
+- **No sponsored corpus / paid placement in results** — ranking tracks information value and provenance, not who paid.
+- **No brand injection in returned answers** — answers cite real sources; they do not embed sponsor references.
+- **No lead-gen commissions** — we do not take a cut when an answer drives a downstream conversion off-platform.
+
+Attention-based monetization reintroduces social media's failure mode (popular ≠ valuable). Agent media depends on trust tracking information value; breaking that contract would break the platform.
 
 ---
 
@@ -823,15 +946,47 @@ Goal: hosted version for creators who don't want to self-host.
 - [x] PostgreSQL database adapter (SQLite for self-hosted, PostgreSQL for cloud)
 - [ ] Cloud deployment (Vercel + Neon PostgreSQL — single service, cloud app IS the registry)
 
-### Phase 4: Automation + Ecosystem
+### Phase 4: Agent Media upgrades
 
-Goal: convenience features that make knowledge bases feel alive. These are valuable but not core — they improve the experience without changing the product's fundamental value.
+Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and build out the discovery/trust infrastructure that makes agent media work. This is the phase where Noosphere earns its positioning in §Core value #5 and #6.
 
-- [ ] Background feed scheduler: auto-poll RSS sources on interval (today: manual `ingest-feed` or cron)
+**4a. Capability surface — KB-as-agent interface (L0)**
+- [x] Expand manifest schema: `task_types`, `source_composition`, `samples`, `autonomy_level`, `calibration_policy`, `license_terms`
+- [x] MCP + REST `ask` — synthesized answer with inline citations, grounded in retrieved passages
+- [x] MCP + REST `describe` — structured self-description
+- [x] MCP + REST `route` — recommend other KBs for out-of-scope questions (uses citation graph + manifest match)
+- [x] MCP + REST `preview_ask` — truncated evaluation query that bypasses access gating so agents can judge answer quality before paying
+- [x] Shared L0 runtime (per-corpus prompt + retrieval on top of shared inference layer)
+
+**4b. Discovery and trust — four-tier signal stack**
+- [x] Source composition rollup (Tier 2)
+- [ ] Source verification (link-resolve check) (Tier 2)
+- [x] Citation edge schema + ingestion (Tier 3) — `corpus_citations` table, owner-declared manifest citations via REST, feeds `kb_reputation`
+- [ ] Query diversity metric (Tier 3)
+- [ ] Calibration tracking (Tier 3)
+- [ ] Entity reputation computation (Tier 3)
+- [ ] Adversarial-resistance pass: recursive citation deweighting, probe-based calibration verification
+
+**4c. Inter-KB learning mechanisms**
+- [x] Direct query with provenance — `X-Noosphere-Caller-Corpus` header attribution on `ask`; successful inter-KB calls auto-record `query`-kind citations (24h dedupe per pair) and refresh `kb_reputation` on the cited corpus
+- [ ] Corpus subscription (KB A subscribes to KB B increments) — shipping order 2
+- [ ] Skill / capsule import (Evolver-style portable capability units) — shipping order 3
+- [ ] Derivative corpus with attribution chain — shipping order 4
+
+**4d. Higher autonomy levels (opt-in)**
+- [ ] L1 — subscribing KBs: owner-approved auto-ingest from subscribed KBs
+- [ ] L2 — synthesizing KBs: periodic compile from consumed material; produces reusable artifacts
+- [ ] L3 — proactive KBs: persona + outbound outreach (farthest out)
+
+**4e. Monetization extensions**
+- [ ] Corpus licensing path (bulk / one-time, for training or enterprise use)
+- [ ] Agent-to-agent payment support (agent on KB A pays agent on KB B)
+
+**4f. Convenience features (previously Phase 4)**
+- [ ] Background feed scheduler: auto-poll RSS sources on interval
 - [ ] Scheduled enrichment: periodic compile + maintain runs (dream-cycle style)
 - [ ] Feynman integration: Noosphere corpora as source-grounded minds
 - [ ] Audio transcription (Whisper, cloud paid feature)
-- [ ] Agent-to-Agent payment support
 
 ---
 

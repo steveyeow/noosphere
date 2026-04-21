@@ -165,6 +165,12 @@ CREATE TABLE IF NOT EXISTS corpora (
     chunk_strategy TEXT DEFAULT 'paragraph',
     stale_threshold_days INTEGER DEFAULT 365,
     owned_handles TEXT DEFAULT '[]',
+    task_types TEXT DEFAULT '[]',
+    samples TEXT DEFAULT '[]',
+    autonomy_level INTEGER DEFAULT 0,
+    calibration_policy TEXT,
+    license_terms TEXT,
+    kb_reputation REAL DEFAULT 0.0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -333,12 +339,33 @@ CREATE TABLE IF NOT EXISTS registered_corpora (
     word_count INTEGER DEFAULT 0,
     access_level TEXT DEFAULT 'public',
     status TEXT DEFAULT 'draft',
+    task_types TEXT DEFAULT '[]',
+    autonomy_level INTEGER DEFAULT 0,
+    source_composition TEXT DEFAULT '{}',
+    kb_reputation REAL DEFAULT 0.0,
     registered_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(node_endpoint, corpus_id)
 );
 CREATE INDEX IF NOT EXISTS idx_rc_node ON registered_corpora(node_endpoint);
 CREATE INDEX IF NOT EXISTS idx_rc_access ON registered_corpora(access_level);
+
+CREATE TABLE IF NOT EXISTS corpus_citations (
+    id TEXT PRIMARY KEY,
+    citing_corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    cited_corpus_id TEXT NOT NULL,
+    cited_corpus_endpoint TEXT,
+    citing_doc_id TEXT,
+    cited_doc_id TEXT,
+    cited_chunk_id TEXT,
+    kind TEXT NOT NULL,
+    context TEXT,
+    weight REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citations_citing ON corpus_citations(citing_corpus_id);
+CREATE INDEX IF NOT EXISTS idx_citations_cited ON corpus_citations(cited_corpus_id);
+CREATE INDEX IF NOT EXISTS idx_citations_kind ON corpus_citations(kind);
 """
 
 # SQLite: FTS5 virtual table for full-text search
@@ -385,6 +412,16 @@ MIGRATION_SQL = [
     "ALTER TABLE documents ADD COLUMN author_entity_id TEXT",
     "ALTER TABLE documents ADD COLUMN participant_entity_ids TEXT DEFAULT '[]'",
     "ALTER TABLE corpora ADD COLUMN owned_handles TEXT DEFAULT '[]'",
+    "ALTER TABLE corpora ADD COLUMN task_types TEXT DEFAULT '[]'",
+    "ALTER TABLE corpora ADD COLUMN samples TEXT DEFAULT '[]'",
+    "ALTER TABLE corpora ADD COLUMN autonomy_level INTEGER DEFAULT 0",
+    "ALTER TABLE corpora ADD COLUMN calibration_policy TEXT",
+    "ALTER TABLE corpora ADD COLUMN license_terms TEXT",
+    "ALTER TABLE corpora ADD COLUMN kb_reputation REAL DEFAULT 0.0",
+    "ALTER TABLE registered_corpora ADD COLUMN task_types TEXT DEFAULT '[]'",
+    "ALTER TABLE registered_corpora ADD COLUMN autonomy_level INTEGER DEFAULT 0",
+    "ALTER TABLE registered_corpora ADD COLUMN source_composition TEXT DEFAULT '{}'",
+    "ALTER TABLE registered_corpora ADD COLUMN kb_reputation REAL DEFAULT 0.0",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations

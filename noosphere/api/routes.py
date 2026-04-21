@@ -12,11 +12,13 @@ from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, 
 from pydantic import BaseModel
 
 from noosphere import __version__
-from noosphere.core.corpus import list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus
+from noosphere.core.corpus import list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus, source_composition
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
+from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
 from noosphere.core.access import check_access, AccessDenied
 from noosphere.core.db import get_conn, is_pg
+from noosphere.core.llm import LLMError
 
 # Cloud quota helpers — no-ops when ENABLE_CLOUD is off or user is not authenticated
 def _check_quota(request: Request, action: str):
@@ -153,6 +155,26 @@ class SearchRequest(BaseModel):
     detail: str = "medium"  # low | medium | high
 
 
+class AskRequest(BaseModel):
+    question: str
+    top_k: int = 5
+
+
+class PreviewAskRequest(BaseModel):
+    question: str
+
+
+class RouteRequest(BaseModel):
+    question: str
+    limit: int = 5
+
+
+class CitationRequest(BaseModel):
+    cited_corpus_id: str
+    cited_corpus_endpoint: str = ""
+    context: str = ""
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[dict] = []
@@ -233,6 +255,11 @@ class RecompileDirtyRequest(BaseModel):
     force: bool = False
 
 
+class RefineRequest(BaseModel):
+    """Natural-language edit instruction for a compiled concept or entity."""
+    instruction: str
+
+
 class MaintainRequest(BaseModel):
     force: bool = False
 
@@ -292,14 +319,38 @@ async def api_me(request: Request):
 
 # ── Corpus CRUD ──
 
+def _annotate_compile_state(corpora: list[dict]) -> list[dict]:
+    """Attach concept_count + entity_count per corpus for list-view cards.
+
+    Concept docs (doc_type='concept') are the synthesis output of /compile;
+    entities are the enrichment output. Together they signal compile state
+    without a schema change. Runs two batched aggregate queries, not N+1.
+    """
+    if not corpora:
+        return corpora
+    conn = get_conn()
+    concept_rows = conn.execute(
+        "SELECT corpus_id, COUNT(*) AS n FROM documents WHERE doc_type='concept' GROUP BY corpus_id"
+    ).fetchall()
+    entity_rows = conn.execute(
+        "SELECT corpus_id, COUNT(*) AS n FROM entities GROUP BY corpus_id"
+    ).fetchall()
+    concepts = {r["corpus_id"]: r["n"] for r in concept_rows}
+    entities = {r["corpus_id"]: r["n"] for r in entity_rows}
+    for c in corpora:
+        c["concept_count"] = concepts.get(c["id"], 0)
+        c["entity_count"] = entities.get(c["id"], 0)
+    return corpora
+
+
 @router.get("/corpora")
 async def api_list_corpora(request: Request):
     if _is_cloud():
         user_id = _get_user_id(request)
         if user_id:
-            return list_user_corpora(user_id)
-        return list_corpora()
-    return list_corpora(include_private=_is_owner_request(request))
+            return _annotate_compile_state(list_user_corpora(user_id))
+        return _annotate_compile_state(list_corpora())
+    return _annotate_compile_state(list_corpora(include_private=_is_owner_request(request)))
 
 
 @router.post("/corpora")
@@ -340,6 +391,8 @@ async def api_corpus_network(request: Request):
             "word_count": c.get("word_count", 0),
             "status": c.get("status", "draft"),
             "access_level": c.get("access_level", "public"),
+            "task_types": c.get("task_types", []),
+            "autonomy_level": c.get("autonomy_level", 0),
         })
 
     links = []
@@ -358,6 +411,7 @@ async def api_corpus_network(request: Request):
 async def api_get_corpus(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
+    corpus["source_composition"] = source_composition(corpus["id"])
     return corpus
 
 
@@ -500,6 +554,11 @@ async def api_upload_files(
 ):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    # Uploads share the "index" bucket because the client always fires a
+    # follow-up /index. The follow-up now only charges when embedding work
+    # actually ran (see api_index_corpus), so the net per-upload cost stays
+    # at 1 quota unit in the typical case — no double-charging.
+    _check_quota(request, "index")
     _check_document_limit(request, corpus["id"])
     results = []
     for f in files:
@@ -552,6 +611,8 @@ async def api_upload_files(
         )
         results.append(doc)
 
+    if results:
+        _track_usage(request, "index")
     return {"uploaded": len(results), "documents": results}
 
 
@@ -565,9 +626,10 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request
     _check_document_limit(request, corpus["id"])
     try:
         doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type, source_kind=req.source_kind)
-        return doc
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _track_usage(request, "ingest_url")
+    return doc
 
 
 @router.post("/corpora/{corpus_id}/ingest-urls")
@@ -594,11 +656,13 @@ async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Reque
     from noosphere.core.knowledge_growth import ingest_rss_feed
 
     try:
-        return ingest_rss_feed(corpus["id"], req.feed_url.strip(), max_items=req.max_items)
+        result = ingest_rss_feed(corpus["id"], req.feed_url.strip(), max_items=req.max_items)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+    _track_usage(request, "ingest_feed")
+    return result
 
 
 @router.post("/corpora/{corpus_id}/capture")
@@ -801,6 +865,50 @@ async def api_recompile_concept(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/corpora/{corpus_id}/documents/{doc_id}/refine-compile")
+async def api_refine_concept(
+    corpus_id: str, doc_id: str, req: RefineRequest, request: Request,
+):
+    """Apply a natural-language edit to a concept doc's compiled truth."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
+    from noosphere.core.knowledge_growth import refine_concept_note
+
+    try:
+        result = refine_concept_note(doc_id, req.instruction)
+        _track_usage(request, "compile")
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/entities/{entity_id}/refine-compile")
+async def api_refine_entity(
+    corpus_id: str, entity_id: str, req: RefineRequest, request: Request,
+):
+    """Apply a natural-language edit to an entity's compiled description."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "compile")
+    from noosphere.core.entities import refine_entity_note, get_entity
+
+    ent = get_entity(entity_id)
+    if not ent or ent.get("corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    try:
+        result = refine_entity_note(entity_id, req.instruction)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="Refine failed — LLM unavailable.",
+        )
+    _track_usage(request, "compile")
+    return result
+
+
 @router.get("/corpora/{corpus_id}/documents/{doc_id}/versions")
 async def api_concept_versions(corpus_id: str, doc_id: str, request: Request):
     """List all snapshot versions of a concept doc (oldest first)."""
@@ -912,8 +1020,21 @@ async def api_enrich_corpus(corpus_id: str, request: Request):
 
 @router.post("/corpora/{corpus_id}/index")
 async def api_index_corpus(corpus_id: str, request: Request, req: IndexRequest = None):
+    """Run indexing (chunk + embed) over a corpus.
+
+    Quota behavior: charged only when actual embedding work happens. The
+    frontend fires /index after every ingest action via a debounced helper,
+    so back-to-back ingests coalesce into one call; but even the one call
+    returns `embedded=0` if content hashes unchanged (force=false). In that
+    no-op case we skip quota deduction — the user shouldn't pay for a call
+    that did no work. This keeps the "one user action ≠ N quota units" bug
+    from reappearing as the UI evolves.
+    """
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    # Peek at quota without deducting — actual deduction happens after we
+    # know whether any work was done.
+    _check_quota(request, "index")
     from noosphere.core.indexer import index_corpus
     kwargs = {}
     if req:
@@ -923,11 +1044,15 @@ async def api_index_corpus(corpus_id: str, request: Request, req: IndexRequest =
             kwargs["chunk_strategy"] = req.chunk_strategy
     try:
         result = index_corpus(corpus["id"], **kwargs)
-        return result
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    # Only charge when we actually re-embedded. A hash-matched no-op run
+    # shouldn't burn a user's daily quota.
+    if result.get("embedded", 0) > 0:
+        _track_usage(request, "index")
+    return result
 
 
 # ── Search ──
@@ -947,6 +1072,149 @@ async def api_search(corpus_id: str, req: SearchRequest, request: Request):
         caller=caller,
     )
     _track_usage(request, "search")
+    return result
+
+
+# ── KB-as-agent L0 interface (ask / describe / probe) ──
+
+def _caller_corpus_id(request: Request) -> str:
+    """Extract `X-Noosphere-Caller-Corpus` header. Returns the corpus id only if
+    it resolves to a locally-known corpus — random IDs from external callers are
+    ignored so citation graph can't be trivially poisoned. Later work: require
+    the caller to authenticate as the corpus owner to strengthen this.
+    """
+    cid = (request.headers.get("x-noosphere-caller-corpus") or "").strip()
+    if not cid:
+        return ""
+    c = get_corpus(cid) or get_corpus_by_slug(cid)
+    return c["id"] if c else ""
+
+
+@router.post("/corpora/{corpus_id}/ask")
+async def api_ask(corpus_id: str, req: AskRequest, request: Request):
+    """Synthesized answer with inline [N] citations, grounded in the corpus.
+
+    Enforces access gating (public / private / token / paid) like search.
+
+    If the caller sets `X-Noosphere-Caller-Corpus: {corpus_id}` and that corpus
+    is locally known, a `query`-kind citation from caller to target is recorded
+    (24h-deduped per pair) — this is how agent-to-agent usage accrues into
+    `kb_reputation`.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    token_id = _check_corpus_access(corpus, request)
+    _check_quota(request, "ask")
+    agent_id = request.headers.get("x-agent-id", "")
+    caller_corpus = _caller_corpus_id(request)
+    caller = "owner" if _is_owner_request(request) else "external"
+    try:
+        result = kb_ask(
+            corpus["id"], req.question, top_k=req.top_k,
+            caller=caller, agent_id=agent_id, token_id=token_id,
+        )
+    except LLMError as e:
+        raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Corpus not found")
+    if caller_corpus and caller_corpus != corpus["id"] and result.get("chunks_used", 0) > 0:
+        _record_inter_kb_query(caller_corpus, corpus["id"], req.question[:200])
+    _track_usage(request, "ask")
+    return result
+
+
+def _record_inter_kb_query(citing: str, cited: str, context: str = "") -> None:
+    """Fire-and-forget wrapper around `record_inter_kb_query`. Silent on failure:
+    attribution is best-effort, the query itself already succeeded."""
+    try:
+        from noosphere.core.citations import record_inter_kb_query
+        record_inter_kb_query(citing, cited, context=context)
+    except Exception as e:
+        logger.warning(f"inter-KB citation record failed: {e}")
+
+
+@router.get("/corpora/{corpus_id}/describe")
+async def api_describe(corpus_id: str):
+    """Machine-readable capability card for a corpus.
+
+    No authentication required — capability descriptions are discoverable
+    so agents can evaluate relevance before committing to a query.
+    """
+    result = kb_describe(corpus_id) or kb_describe(
+        (get_corpus_by_slug(corpus_id) or {}).get("id", "")
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Corpus not found")
+    return result
+
+
+@router.post("/corpora/{corpus_id}/route")
+async def api_route(corpus_id: str, req: RouteRequest, request: Request):
+    """Recommend other KBs that may better answer a question.
+
+    Public — any agent can call. Returns a ranked list of candidate corpora
+    (local + registered remote), excluding the source and any private corpora.
+    Ranking combines keyword relevance + target KB reputation + explicit
+    manifest endorsements from this corpus.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    if corpus.get("access_level") == "private":
+        raise HTTPException(status_code=403, detail="Private corpus")
+    result = kb_route(corpus["id"], req.question, limit=req.limit)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Corpus not found")
+    return result
+
+
+@router.get("/corpora/{corpus_id}/citations")
+async def api_list_citations(corpus_id: str, direction: str = "out"):
+    """List citations for a corpus. `direction=out` (default) returns what this
+    KB cites; `direction=in` returns what cites this KB.
+    """
+    from noosphere.core.citations import citations_out as _out, citations_in as _in
+    corpus = _resolve_corpus(corpus_id)
+    if direction == "in":
+        return {"citations": _in(corpus["id"]), "direction": "in"}
+    return {"citations": _out(corpus["id"]), "direction": "out"}
+
+
+@router.post("/corpora/{corpus_id}/citations")
+async def api_record_citation(corpus_id: str, req: CitationRequest, request: Request):
+    """Owner declares an explicit manifest citation — "this KB builds on KB X".
+
+    Idempotent by (citing, cited, kind=manifest). Owner-only.
+    """
+    from noosphere.core.citations import upsert_manifest_citation, refresh_kb_reputation
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    if not req.cited_corpus_id or req.cited_corpus_id == corpus["id"]:
+        raise HTTPException(status_code=400, detail="cited_corpus_id must be set and differ from source")
+    result = upsert_manifest_citation(corpus["id"], req.cited_corpus_id, context=req.context)
+    # Refresh the cited KB's reputation since it just received a new edge.
+    try:
+        refresh_kb_reputation(req.cited_corpus_id)
+    except Exception:
+        pass
+    return result
+
+
+@router.post("/corpora/{corpus_id}/preview-ask")
+async def api_preview_ask(corpus_id: str, req: PreviewAskRequest, request: Request):
+    """Low-cost evaluation query — bypasses access gating even for paid corpora.
+
+    Returns a truncated synthesized answer so agents can assess KB fit before
+    paying for full access. Rate-limited via the `preview_ask` quota action.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    if corpus.get("access_level") == "private":
+        raise HTTPException(status_code=403, detail="Private corpus")
+    _check_quota(request, "preview_ask")
+    try:
+        result = kb_preview_ask(corpus["id"], req.question)
+    except LLMError as e:
+        raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Corpus not found")
+    _track_usage(request, "preview_ask")
     return result
 
 
@@ -1029,6 +1297,15 @@ async def api_preview(corpus_id: str):
             "last_updated": corpus.get("updated_at", ""),
             "status": corpus.get("status", "draft"),
             "embedding_model": corpus.get("embedding_model", ""),
+        },
+        "capability": {
+            "task_types": corpus.get("task_types", []),
+            "autonomy_level": corpus.get("autonomy_level", 0),
+            "source_composition": source_composition(corpus["id"]),
+            "calibration_policy": corpus.get("calibration_policy"),
+            "license_terms": corpus.get("license_terms"),
+            "samples": corpus.get("samples", []),
+            "kb_reputation": corpus.get("kb_reputation", 0.0) or 0.0,
         },
         "content_types": [{"type": r["doc_type"] or "doc", "count": r["cnt"]} for r in doc_types],
         "samples": samples,
@@ -1157,33 +1434,44 @@ async def api_global_search(req: SearchRequest):
 
 
 def _compute_quality_score(corpus: dict) -> float:
-    """Compute a quality ranking score from objective signals (0.0–1.0)."""
+    """Compute a quality ranking score from objective signals (0.0–1.0).
+
+    Combines Tier 2 signals (size, freshness, uptime) with Tier 3 `kb_reputation`
+    (accumulated citation-weighted score). Tier 3 is capped at 0.35 so a brand
+    new KB can still rank well via Tier 2 while an established KB gets a real
+    lift from its reputation.
+    """
     import math
     score = 0.0
-    # Document count: log scale, max ~0.3 at 500+ docs
+    # Document count: log scale, max ~0.25 at 500+ docs
     doc_count = corpus.get("document_count", 0)
     if isinstance(doc_count, dict):
         doc_count = doc_count.get("document_count", 0)
     q = corpus.get("quality", {})
     if isinstance(q, dict):
         doc_count = doc_count or q.get("document_count", 0)
-    score += min(0.3, math.log1p(doc_count) / 20)
-    # Word count: log scale, max ~0.2 at 100k+ words
+    score += min(0.25, math.log1p(doc_count) / 24)
+    # Word count: log scale, max ~0.15 at 100k+ words
     word_count = q.get("word_count", 0) if isinstance(q, dict) else corpus.get("word_count", 0)
-    score += min(0.2, math.log1p(word_count) / 60)
+    score += min(0.15, math.log1p(word_count) / 80)
     # Health: online nodes get a bonus
     health = q.get("health_status", "") if isinstance(q, dict) else corpus.get("health_status", "")
     if health == "online":
-        score += 0.15
+        score += 0.1
     elif health == "degraded":
-        score += 0.05
+        score += 0.03
     # Access level: public gets slight preference (more useful for discovery)
     if corpus.get("access_level") == "public":
-        score += 0.1
+        score += 0.08
     elif corpus.get("access_level") == "paid":
-        score += 0.05
+        score += 0.04
+    # Tier 3: KB reputation (accumulated citation signal)
+    kbr = corpus.get("kb_reputation", 0.0) or 0.0
+    if isinstance(kbr, dict):
+        kbr = 0.0
+    score += min(0.35, float(kbr))
     # Base score so nothing is zero
-    score += 0.1
+    score += 0.07
     return round(min(1.0, score), 4)
 
 
@@ -1263,17 +1551,41 @@ def _search_registered_corpora(query: str, limit: int = 20) -> list[dict]:
 
 # ── Chat ──
 
+def _humanize_upstream_err(e: Exception, stage: str) -> str:
+    """Extract the useful bit from an httpx error so users see the real cause
+    (e.g. "User location is not supported" vs. a generic 5xx)."""
+    import httpx
+    if isinstance(e, httpx.HTTPStatusError):
+        try:
+            body = e.response.json()
+            msg = body.get("error", {}).get("message") or body.get("error") or e.response.text[:200]
+        except Exception:
+            msg = e.response.text[:200]
+        return f"{stage} failed ({e.response.status_code}): {msg}"
+    return f"{stage} failed: {str(e)[:200]}"
+
+
 @router.post("/chat")
-async def api_global_chat(req: ChatRequest):
+async def api_global_chat(req: ChatRequest, request: Request):
     """Chat across all public corpora in the Noosphere."""
+    import httpx
+    _check_quota(request, "chat")
     from noosphere.core.chat import chat_with_noosphere
-    return chat_with_noosphere(req.message, history=req.history, top_k=req.top_k)
+    try:
+        result = chat_with_noosphere(req.message, history=req.history, top_k=req.top_k)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM error — {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=_humanize_upstream_err(e, "Embedding"))
+    _track_usage(request, "chat")
+    return result
 
 
 @router.post("/corpora/{corpus_id}/chat")
 async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     """Chat with a specific corpus."""
     import uuid
+    import httpx
     from datetime import datetime, timezone
 
     corpus = _resolve_corpus(corpus_id)
@@ -1281,7 +1593,12 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     _check_quota(request, "chat")
     caller = "owner" if _is_owner_request(request) else "external"
     from noosphere.core.chat import chat_with_corpus
-    result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k, caller=caller)
+    try:
+        result = chat_with_corpus(corpus["id"], req.message, history=req.history, top_k=req.top_k, caller=caller)
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM error — {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=_humanize_upstream_err(e, "Embedding"))
 
     conn = get_conn()
     now = datetime.now(timezone.utc).isoformat()
@@ -1451,6 +1768,10 @@ async def api_register_node(req: RegisterNodeRequest):
     for c in req.corpora:
         row_id = f"{endpoint}:{c.get('corpus_id', '')}"
         tags_json = _json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else c.get("tags", "[]")
+        task_types_json = _json.dumps(c.get("task_types", [])) if isinstance(c.get("task_types"), list) else c.get("task_types", "[]")
+        source_comp_json = _json.dumps(c.get("source_composition", {})) if isinstance(c.get("source_composition"), dict) else c.get("source_composition", "{}")
+        autonomy_level = int(c.get("autonomy_level", 0) or 0)
+        kb_reputation = float(c.get("kb_reputation", 0.0) or 0.0)
         corpus_id = c.get("corpus_id", "")
 
         existing_corpus = conn.execute(
@@ -1462,23 +1783,29 @@ async def api_register_node(req: RegisterNodeRequest):
             conn.execute(
                 """UPDATE registered_corpora SET name=?, slug=?, description=?, author=?,
                    tags=?, document_count=?, chunk_count=?, word_count=?,
-                   access_level=?, status=?, updated_at=?
+                   access_level=?, status=?, task_types=?, autonomy_level=?,
+                   source_composition=?, kb_reputation=?, updated_at=?
                    WHERE node_endpoint=? AND corpus_id=?""",
                 (c.get("name", ""), c.get("slug", ""), c.get("description", ""), c.get("author", ""),
                  tags_json, c.get("document_count", 0), c.get("chunk_count", 0), c.get("word_count", 0),
-                 c.get("access_level", "public"), c.get("status", "draft"), now, endpoint, corpus_id),
+                 c.get("access_level", "public"), c.get("status", "draft"),
+                 task_types_json, autonomy_level, source_comp_json, kb_reputation,
+                 now, endpoint, corpus_id),
             )
         else:
             conn.execute(
                 """INSERT INTO registered_corpora
                    (id, node_endpoint, corpus_id, name, slug, description, author,
                     tags, document_count, chunk_count, word_count, access_level, status,
+                    task_types, autonomy_level, source_composition, kb_reputation,
                     registered_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (row_id, endpoint, corpus_id, c.get("name", ""), c.get("slug", ""),
                  c.get("description", ""), c.get("author", ""), tags_json,
                  c.get("document_count", 0), c.get("chunk_count", 0), c.get("word_count", 0),
-                 c.get("access_level", "public"), c.get("status", "draft"), now, now),
+                 c.get("access_level", "public"), c.get("status", "draft"),
+                 task_types_json, autonomy_level, source_comp_json, kb_reputation,
+                 now, now),
             )
         registered += 1
 

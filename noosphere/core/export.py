@@ -4,7 +4,7 @@ import io
 import json
 import zipfile
 
-from noosphere.core.corpus import get_corpus
+from noosphere.core.corpus import get_corpus, source_composition
 from noosphere.core.ingest import get_documents
 from noosphere.core.db import get_conn
 
@@ -45,7 +45,7 @@ def export_corpus(corpus_id: str) -> io.BytesIO:
             tags = []
 
     manifest = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "corpus_id": corpus["id"],
         "name": corpus["name"],
         "description": corpus.get("description", ""),
@@ -62,6 +62,12 @@ def export_corpus(corpus_id: str) -> io.BytesIO:
         "embedding_dim": corpus.get("embedding_dim", 0),
         "language": corpus.get("language", "en"),
         "tags": tags,
+        "task_types": corpus.get("task_types", []),
+        "source_composition": source_composition(corpus_id),
+        "samples": corpus.get("samples", []),
+        "autonomy_level": corpus.get("autonomy_level", 0),
+        "calibration_policy": corpus.get("calibration_policy"),
+        "license_terms": corpus.get("license_terms"),
         "access": {
             "level": corpus.get("access_level", "public"),
             "pricing": None,

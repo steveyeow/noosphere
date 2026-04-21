@@ -4,6 +4,8 @@ Publish your knowledge as a living knowledge base any AI agent can discover, que
 
 ## Why
 
+Information platforms change with how information is consumed. Portals indexed the web for humans. Search ranked it for humans. Social media competed for human attention — which means popular is rarely the same as valuable. Agents don't pay an attention tax; they select for informational value and verifiable provenance. The platform shape that fits agent consumption is different.
+
 AI agents are getting better at executing tasks, but they still struggle with judgment — the kind that comes from deep domain expertise, hard-won experience, and contextual understanding. Today's solutions focus on extending agent memory or sharing operational fixes between agents. What's missing is the knowledge itself.
 
 Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publish what they know; agents query, learn, and cite it — with attribution and quality signals built in.
@@ -36,8 +38,8 @@ Supply side                              Demand side
 1. **Ingest** — Markdown directories, file upload, single URL, **multiple URLs in one request**, **RSS/Atom feeds** (recurring inflow), PDF/DOCX/CSV/JSON. Everything becomes documents in a corpus.
 2. **Grow** — **Save from chat** into the corpus (capture documents with provenance). **Compile** runs retrieval + LLM to add a fused “concept” note from existing material (similar in spirit to LLM-maintained wiki pages, but grounded on your stored sources).
 3. **Index** — Documents are chunked, embedded, and indexed for hybrid search (keyword + vector + fusion).
-4. **Serve** — Every corpus gets discovery and query endpoints. Agents connect directly; creators manage via the web UI.
-5. **Control** — Public, private, token-gated, or paid. Bring your own Stripe, keep 100% — or use the hosted platform.
+4. **Serve** — Every corpus exposes an agent interface: MCP and REST endpoints to query, cite, and preview. Agents talk to the corpus; they don't just download it. The interface expands over time — capability self-description, routing beyond scope, calibrated confidence.
+5. **Control** — Public, private, token-gated, or paid. Bring your own Stripe, keep 100% — or use the hosted platform. No sponsored placement or brand injection in results: ranking and pricing track informational value, not paid visibility.
 
 ## Quick start
 
@@ -127,30 +129,54 @@ Agent: "I need crypto derivatives pricing expertise"
             Match on name, description, tags, author
                     ↓
          2. Quality signals (automatic)
-            document_count, word_count, freshness,
-            query_count (popularity), uptime
+            document_count, source_composition, citations_in,
+            kb_reputation, freshness, uptime
                     ↓
-         3. Preview (sample content)
+         3. Preview (sample content) + describe (capability card)
             GET /api/v1/corpora/{id}/preview
-            → 3-5 representative chunks, no auth needed
+            GET /api/v1/corpora/{id}/describe
                     ↓
-         4. Direct query or purchase
-            POST /api/v1/corpora/{id}/search
-            → full ranked results with citations
+         4. preview_ask (evaluation query) before paying
+            POST /api/v1/corpora/{id}/preview-ask
+            → truncated synthesized answer, bypasses access gating
+                    ↓
+         5. ask or search (committed use)
+            POST /api/v1/corpora/{id}/ask      → synthesized answer + citations
+            POST /api/v1/corpora/{id}/search   → ranked chunks + citations
 ```
 
-**Quality signals are automatic.** Every knowledge base carries objective metrics that agents can use to rank results — no user ratings required:
+Agents talk to every corpus through the same small toolbox:
 
-| Signal | What it tells you | Source |
-|--------|-------------------|--------|
-| `document_count` | Knowledge base size | Registration metadata |
-| `word_count` | Content depth | Registration metadata |
-| `last_updated` | Active maintenance | Last registration heartbeat |
-| `query_count` | Popularity / usefulness | Query log (opt-in) |
-| `uptime` | Reliability | Health check history |
-| `access_level` | Free vs. paid | Corpus config |
+| Tool | What it returns | When to use |
+|------|-----------------|-------------|
+| `describe` | Machine-readable capability card (task types, sample Q&A, source mix, `kb_reputation`, license) | Step 2–3: decide if a KB looks right for your task |
+| `preview` | A few representative chunks + quality signals | Step 3: glance at the content |
+| `preview_ask` | Truncated synthesized answer to an evaluation question (bypasses paid gating) | Step 4: try before you pay |
+| `ask` | Full synthesized answer with inline `[N]` citations + calibrated confidence | Step 5: committed use |
+| `route` | Ranked list of other KBs that may answer better | Any step: hop to a better-fit KB |
+| `search` | Ranked raw chunks with citations | Step 5: when you want passages, not synthesis |
 
-Agents sort by these signals to surface the most relevant, well-maintained knowledge bases first. As the network grows, stronger signals emerge naturally — the most-queried knowledge bases rise to the top.
+`ask` respects access level (paid / token / public); `preview_ask` does not, so paid KBs can still be evaluated without pre-commitment. `route` and `describe` are always public.
+
+**Quality signals are automatic and layered across four tiers** — self-declared (manifest), computed (corpus metrics, provenance), accumulated (queries, citations, calibration), and interactive (preview, live evaluation). No user ratings required — signals emerge from the data and the network.
+
+| Signal | What it tells you | Source | Tier |
+|--------|-------------------|--------|------|
+| `document_count` | Knowledge base size | Registration metadata | Computed |
+| `word_count` | Content depth | Registration metadata | Computed |
+| `source_composition` | Mix of user-original vs curated vs external | Ingestion provenance | Computed |
+| `last_updated` | Active maintenance | Last registration heartbeat | Computed |
+| `query_count` | Demand / usefulness | Query log (opt-in) | Accumulated |
+| `query_diversity` | Breadth of questions answered | Query log | Accumulated |
+| `citations_in` | Incoming citations from other KBs (agent-era PageRank) | Citation graph | Accumulated |
+| `kb_reputation` | Rolled-up Tier 3 score (0–1); citation-weighted recursive trust | Citation graph + future retention/calibration/satisfaction | Accumulated |
+| `calibration` | Historical accuracy of self-reported confidence | Query outcome tracking | Accumulated |
+| `uptime` | Reliability | Health check history | Computed |
+| `access_level` | Free vs. paid | Corpus config | Self-declared |
+
+Signals are **axes, not a ranking function** — each consuming agent weights them for its own task. A medical query weights calibration + provenance heavily; a creative task weights style samples + author reputation. Tier 1 (self-declared) alone is suspect; Tier 2+ carries more weight. New KBs bootstrap from Tiers 1/2/4; Tier 3 accrues with usage.
+
+**KB reputation (`kb_reputation`).** Tier 3 signals roll up into a single 0.0–1.0 score per corpus, surfaced on the capability card. The v1 formula uses a citation-weighted PageRank term — each incoming citation is weighted by the citing KB's own `kb_reputation`, so trust compounds recursively. Future terms (query retention, calibration accuracy, satisfaction rate) plug in as those signals land. New KBs start at 0 and accumulate with use; a well-known author speeds cold-start via Tier 1 signals but earns `kb_reputation` the same way everyone else does.
 
 **Preview before commit.** Any knowledge base (including paid ones) exposes a preview — a few representative chunks so agents can assess relevance before purchasing access.
 

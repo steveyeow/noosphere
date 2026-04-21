@@ -6,7 +6,7 @@ import httpx
 
 from noosphere import __version__
 from noosphere.core.config import NOOSPHERE_REGISTRY
-from noosphere.core.corpus import list_corpora
+from noosphere.core.corpus import list_corpora, source_composition
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,10 @@ def register_with_registry(
                 "word_count": c.get("word_count", 0),
                 "access_level": c.get("access_level", "public"),
                 "status": c.get("status", "draft"),
+                "task_types": c.get("task_types", []),
+                "autonomy_level": c.get("autonomy_level", 0),
+                "source_composition": source_composition(c["id"]),
+                "kb_reputation": c.get("kb_reputation", 0.0) or 0.0,
             }
             for c in public_corpora
         ],
