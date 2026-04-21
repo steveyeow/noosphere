@@ -957,6 +957,7 @@ Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and b
 - [x] MCP + REST `route` — recommend other KBs for out-of-scope questions (uses citation graph + manifest match)
 - [x] MCP + REST `preview_ask` — truncated evaluation query that bypasses access gating so agents can judge answer quality before paying
 - [x] Shared L0 runtime (per-corpus prompt + retrieval on top of shared inference layer)
+- [ ] Manifest auto-fill via LLM — infer `task_types` from document distribution + query logs, suggest `samples` from high-scoring Q&A history, refresh `description` on content drift. Pro-tier feature (cost), self-hosted users get it free when they configure their own LLM. Owner-in-the-loop: system proposes, owner accepts/edits.
 
 **4b. Discovery and trust — four-tier signal stack**
 - [x] Source composition rollup (Tier 2)
@@ -966,6 +967,7 @@ Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and b
 - [ ] Calibration tracking (Tier 3)
 - [ ] Entity reputation computation (Tier 3)
 - [ ] Adversarial-resistance pass: recursive citation deweighting, probe-based calibration verification
+- [ ] Author / creator profile as a **separate** Tier 1 signal (identity + optional external-platform reputation like GitHub, Scholar). Kept distinct from `kb_reputation` so agents can distinguish "famous author" from "proven KB" — a new Karpathy KB has high author signal but low KBR until it earns its own. Low default weight; decays as KBR accumulates.
 
 **4c. Inter-KB learning mechanisms**
 - [x] Direct query with provenance — `X-Noosphere-Caller-Corpus` header attribution on `ask`; successful inter-KB calls auto-record `query`-kind citations (24h dedupe per pair) and refresh `kb_reputation` on the cited corpus
