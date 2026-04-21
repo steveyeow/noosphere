@@ -22,11 +22,15 @@ from noosphere.cloud.db import (
 # Daily action limits
 QUOTA_LIMITS = {
     "free": {
-        "search": 50,          # queries per day
-        "ingest_url": 5,       # URL ingestions per day
-        "ingest_feed": 1,      # feed ingestions per day
-        "compile": 0,          # compile is Pro-only — synthesis is the paid surface
-        "chat": 20,            # chat messages per day
+        "search": 50,            # queries per day
+        "ingest_url": 5,         # URL ingestions per day
+        "ingest_feed": 1,        # feed ingestions per day
+        "compile": 0,            # compile is Pro-only — synthesis is the paid surface
+        "chat": 20,              # chat messages per day
+        "ask": 20,               # KB-as-agent synthesized answers — same LLM cost as chat
+        "probe": 100,            # free evaluation query; generous to support discovery
+        "extract_entities": 0,   # entity extraction is Pro-only (LLM-heavy, N calls per doc)
+        "index": 3,              # ingest operations (chunk + embed); each covers many chunks
     },
     "pro": {
         "search": 10000,
@@ -34,6 +38,10 @@ QUOTA_LIMITS = {
         "ingest_feed": 20,
         "compile": 50,
         "chat": 500,
+        "ask": 500,
+        "probe": 2000,
+        "extract_entities": 20,
+        "index": 100,
     },
 }
 
@@ -71,9 +79,12 @@ def check_quota(request: Request, action: str) -> None:
 
     used = count_usage_today(user_id, action)
     if used >= limit:
-        # limit=0 means the action is Pro-only on this tier; message differently
-        # so the copy doesn't read "limit reached (0)" which is nonsensical.
-        if limit == 0:
+        # pro_only=True when limit=0 — the action is gated entirely behind Pro,
+        # not a daily cap. Frontend uses this to render the paywall modal's
+        # headline ("Compile is a Pro feature") vs daily-cap messaging
+        # ("You've used your 20 chats today").
+        pro_only = (limit == 0)
+        if pro_only:
             msg = f"{action.replace('_', ' ').capitalize()} is a Pro feature. Upgrade to unlock."
         else:
             msg = f"Daily {action} limit reached ({limit}). Upgrade to Pro for higher limits."
@@ -85,6 +96,7 @@ def check_quota(request: Request, action: str) -> None:
                 "limit": limit,
                 "used": used,
                 "tier": tier,
+                "pro_only": pro_only,
                 "message": msg,
             },
         )
