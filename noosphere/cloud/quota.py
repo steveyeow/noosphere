@@ -31,6 +31,7 @@ QUOTA_LIMITS = {
         "preview_ask": 100,      # free evaluation query; generous to support discovery
         "extract_entities": 0,   # entity extraction is Pro-only (LLM-heavy, N calls per doc)
         "index": 3,              # ingest operations (chunk + embed); each covers many chunks
+        "manifest_suggest": 0,   # manifest auto-fill is Pro-only (LLM cost); Free gets 1 auto-apply at corpus creation
     },
     "pro": {
         "search": 10000,
@@ -42,6 +43,7 @@ QUOTA_LIMITS = {
         "preview_ask": 2000,
         "extract_entities": 20,
         "index": 100,
+        "manifest_suggest": 50,
     },
 }
 

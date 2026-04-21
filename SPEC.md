@@ -957,15 +957,18 @@ Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and b
 - [x] MCP + REST `route` — recommend other KBs for out-of-scope questions (uses citation graph + manifest match)
 - [x] MCP + REST `preview_ask` — truncated evaluation query that bypasses access gating so agents can judge answer quality before paying
 - [x] Shared L0 runtime (per-corpus prompt + retrieval on top of shared inference layer)
-- [ ] Manifest auto-fill via LLM — infer `task_types` from document distribution + query logs, suggest `samples` from high-scoring Q&A history, refresh `description` on content drift. Pro-tier feature (cost), self-hosted users get it free when they configure their own LLM. Owner-in-the-loop: system proposes, owner accepts/edits.
+- [x] Manifest auto-fill via LLM — `noosphere/core/manifest_autofill.py` proposes `task_types` + `samples` + `description_suggestion` from corpus content. REST `POST /corpora/{id}/manifest/suggest` returns a proposal; `POST /manifest/apply` writes selected fields. Post-ingest hook `autofill_if_empty` runs silently on first indexing. Pro-gated quota (`manifest_suggest`); self-hosted with LLM = free. Web UI Capability card spec in `docs/capability-card-ui.md` — frontend work deferred until static/ changes settle.
 
 **4b. Discovery and trust — four-tier signal stack**
 - [x] Source composition rollup (Tier 2)
 - [ ] Source verification (link-resolve check) (Tier 2)
 - [x] Citation edge schema + ingestion (Tier 3) — `corpus_citations` table, owner-declared manifest citations via REST, feeds `kb_reputation`
 - [ ] Query diversity metric (Tier 3)
-- [ ] Calibration tracking (Tier 3)
+- [x] Query retention (Tier 3) — `query_retention_score` from repeat `agent_id` over 30d
+- [x] Satisfaction rate (Tier 3) — `satisfaction_score` = 1 - refund_rate over 90d
+- [ ] Calibration tracking (Tier 3) — v2a stubbed at 0.5; needs feedback endpoint for real measurement
 - [ ] Entity reputation computation (Tier 3)
+- [x] KBR v2a — four-term weighted composite; nightly refresh via `POST /cron/refresh-kb-reputation`
 - [ ] Adversarial-resistance pass: recursive citation deweighting, probe-based calibration verification
 - [ ] Author / creator profile as a **separate** Tier 1 signal (identity + optional external-platform reputation like GitHub, Scholar). Kept distinct from `kb_reputation` so agents can distinguish "famous author" from "proven KB" — a new Karpathy KB has high author signal but low KBR until it earns its own. Low default weight; decays as KBR accumulates.
 

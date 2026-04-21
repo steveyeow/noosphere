@@ -185,18 +185,28 @@ def weighted_citation_score_in(corpus_id: str) -> float:
 
 # ── KBR (kb_reputation) ────────────────────────────────────────────
 
-# KBR v1: only the citation PageRank term. Placeholder weights below leave room
-# for query_retention, calibration_accuracy, satisfaction_rate in M4.
+# KBR v2a formula. Three terms are computed from live data; `calibration_accuracy`
+# is stubbed at 0.5 until a feedback endpoint exists (see SPEC §Phase 4b).
 KBR_WEIGHTS = {
     "citation_pagerank": 0.4,
-    "query_retention": 0.3,        # not yet implemented
-    "calibration_accuracy": 0.2,   # not yet implemented
-    "satisfaction_rate": 0.1,      # not yet implemented
+    "query_retention": 0.3,
+    "calibration_accuracy": 0.2,
+    "satisfaction_rate": 0.1,
 }
 
 # Soft saturation constant: weighted score of K lifts the citation term to
 # ~0.5. Tune as the network grows.
 CITATION_SATURATION_K = 5.0
+
+# Minimum samples needed for Tier 3 signals to contribute. Below this, the
+# term returns 0 so new KBs aren't penalized (or rewarded) by noise.
+RETENTION_MIN_SAMPLES = 10
+SATISFACTION_MIN_PAID = 10
+
+# v2a: calibration has no ground truth yet — stub at neutral 0.5 until a
+# feedback endpoint lands. Treating every KB as "neither well- nor poorly-
+# calibrated" until proven otherwise.
+CALIBRATION_STUB = 0.5
 
 
 def citation_pagerank_score(corpus_id: str) -> float:
@@ -211,10 +221,87 @@ def citation_pagerank_score(corpus_id: str) -> float:
     return raw / (raw + CITATION_SATURATION_K)
 
 
+def query_retention_score(corpus_id: str, *, window_days: int = 30) -> float:
+    """Fraction of recent query traffic from repeat agents.
+
+    An agent is "repeat" if `agent_id` appears more than once in the window.
+    The ratio is doubled then clipped to [0, 1] so a 50% repeat rate saturates —
+    past that, the signal is already unambiguous.
+
+    Returns 0.0 when traffic is below `RETENTION_MIN_SAMPLES` (cold start).
+    """
+    from datetime import timedelta
+
+    since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+    rows = get_conn().execute(
+        """SELECT agent_id, COUNT(*) AS n
+           FROM query_logs
+           WHERE corpus_id=? AND created_at >= ? AND agent_id IS NOT NULL AND agent_id != ''
+           GROUP BY agent_id""",
+        (corpus_id, since),
+    ).fetchall()
+    total = sum(r["n"] for r in rows)
+    if total < RETENTION_MIN_SAMPLES:
+        return 0.0
+    repeat_queries = sum(r["n"] for r in rows if r["n"] >= 2)
+    rate = repeat_queries / total
+    return min(1.0, rate * 2)
+
+
+def satisfaction_score(corpus_id: str, *, window_days: int = 90) -> float:
+    """1 - refund_rate over completed paid queries in the window.
+
+    Conservative default: when fewer than `SATISFACTION_MIN_PAID` paid queries
+    exist, returns 1.0 (absence of refunds treated as neutral-positive, not
+    penalizing new paid corpora).
+    """
+    from datetime import timedelta
+
+    since = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+    conn = get_conn()
+    total_paid = conn.execute(
+        """SELECT COUNT(*) AS n FROM payments
+           WHERE corpus_id=? AND created_at >= ?
+             AND status IN ('completed', 'refunded')""",
+        (corpus_id, since),
+    ).fetchone()["n"]
+    if total_paid < SATISFACTION_MIN_PAID:
+        return 1.0
+    refunded = conn.execute(
+        """SELECT COUNT(*) AS n FROM payments
+           WHERE corpus_id=? AND created_at >= ? AND status='refunded'""",
+        (corpus_id, since),
+    ).fetchone()["n"]
+    return max(0.0, 1.0 - (refunded / total_paid))
+
+
+def calibration_score(corpus_id: str) -> float:
+    """v2a stub — neutral 0.5 until a feedback endpoint exists.
+
+    To be replaced: pairs of (reported_confidence, observed_outcome) over
+    recent `ask` calls, computing `1 - |mean_confidence - mean_feedback|`.
+    """
+    return CALIBRATION_STUB
+
+
 def compute_kb_reputation(corpus_id: str) -> float:
-    """KBR v1 — only the citation term is active. Other terms contribute 0 until M4."""
-    citation_term = citation_pagerank_score(corpus_id)
-    return round(KBR_WEIGHTS["citation_pagerank"] * citation_term, 4)
+    """KBR v2a — all four terms active, calibration stubbed.
+
+    Formula:
+        0.4 * citation_pagerank + 0.3 * query_retention
+        + 0.2 * calibration (stub 0.5) + 0.1 * satisfaction_rate
+    """
+    citation = citation_pagerank_score(corpus_id)
+    retention = query_retention_score(corpus_id)
+    calibration = calibration_score(corpus_id)
+    satisfaction = satisfaction_score(corpus_id)
+    kbr = (
+        KBR_WEIGHTS["citation_pagerank"] * citation
+        + KBR_WEIGHTS["query_retention"] * retention
+        + KBR_WEIGHTS["calibration_accuracy"] * calibration
+        + KBR_WEIGHTS["satisfaction_rate"] * satisfaction
+    )
+    return round(kbr, 4)
 
 
 def refresh_kb_reputation(corpus_id: str) -> float:

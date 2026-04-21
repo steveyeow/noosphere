@@ -175,6 +175,13 @@ class CitationRequest(BaseModel):
     context: str = ""
 
 
+class ManifestApplyRequest(BaseModel):
+    task_types: list[str] | None = None
+    samples: list[dict] | None = None
+    description_suggestion: str | None = None
+    refresh_description: bool = False
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[dict] = []
@@ -1147,6 +1154,49 @@ async def api_describe(corpus_id: str):
     return result
 
 
+@router.post("/corpora/{corpus_id}/manifest/suggest")
+async def api_manifest_suggest(corpus_id: str, request: Request):
+    """Ask the LLM to propose capability-card fields from corpus content.
+
+    Returns the proposal without applying it — owner may edit and apply via
+    `PATCH /corpora/{id}`. Requires owner auth. Pro-tier quota in cloud mode.
+    """
+    from noosphere.core.manifest_autofill import suggest_manifest
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "manifest_suggest")
+    try:
+        proposal = suggest_manifest(corpus["id"])
+    except LLMError as e:
+        raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
+    if proposal is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot suggest manifest — corpus has no documents to infer from",
+        )
+    _track_usage(request, "manifest_suggest")
+    return proposal
+
+
+@router.post("/corpora/{corpus_id}/manifest/apply")
+async def api_manifest_apply(corpus_id: str, req: ManifestApplyRequest, request: Request):
+    """Apply a (possibly owner-edited) manifest proposal to the corpus.
+
+    Only the fields present in the request body are updated. Equivalent to a
+    targeted `PATCH` but scoped to the capability-card fields.
+    """
+    from noosphere.core.manifest_autofill import apply_proposal
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    proposal = {
+        "task_types": req.task_types,
+        "samples": req.samples,
+        "description_suggestion": req.description_suggestion,
+    }
+    result = apply_proposal(corpus["id"], proposal, refresh_description=req.refresh_description)
+    return result
+
+
 @router.post("/corpora/{corpus_id}/route")
 async def api_route(corpus_id: str, req: RouteRequest, request: Request):
     """Recommend other KBs that may better answer a question.
@@ -1919,6 +1969,20 @@ async def api_network_nodes():
     except Exception:
         rows = []
     return {"nodes": [dict(r) for r in rows], "count": len(rows)}
+
+
+@router.post("/cron/refresh-kb-reputation")
+async def api_cron_refresh_kbr():
+    """Batch-refresh `kb_reputation` for every local corpus.
+
+    KBR v2 signals (retention, satisfaction) change continuously with traffic,
+    so a nightly cron keeps rankings current. Citation-triggered refreshes
+    (from `record_inter_kb_query` and manifest citations) cover point-in-time
+    updates; this fills the rolling-window gap.
+    """
+    from noosphere.core.citations import refresh_all_kb_reputations
+    n = refresh_all_kb_reputations()
+    return {"status": "ok", "refreshed": n}
 
 
 @router.get("/cron/health-check")

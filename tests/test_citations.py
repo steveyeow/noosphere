@@ -103,23 +103,29 @@ def test_weighted_score_uses_citing_reputation():
     assert delta_low < score_with_high  # high-rep edge contributed more
 
 
-def test_compute_kb_reputation_saturates_towards_one():
+def test_kb_reputation_cold_start_baseline():
+    """v2a baseline: calibration stub 0.5 * 0.2 = 0.1, plus satisfaction
+    default 1.0 * 0.1 = 0.1 when no paid traffic → KBR floor ≈ 0.2."""
+    target = create_corpus("cold start")
+    kbr = compute_kb_reputation(target["id"])
+    # 0.4 * 0 + 0.3 * 0 + 0.2 * 0.5 + 0.1 * 1.0 = 0.2
+    assert 0.19 < kbr < 0.21
+
+
+def test_kb_reputation_citation_lifts_above_baseline():
     a = create_corpus("citer")
     target = create_corpus("target")
-    # Boost a's own kb_reputation so each citation weighs more
     from noosphere.core.db import get_conn
     get_conn().execute("UPDATE corpora SET kb_reputation=? WHERE id=?", (1.0, a["id"]))
     get_conn().commit()
 
-    # No citations → 0
-    assert compute_kb_reputation(target["id"]) == 0.0
-
-    # One citation with weight 1 and citing rep 1.0 → weighted_score = 1
-    # citation_term = 1 / (1 + K) for K=5 → 1/6 ≈ 0.1667
-    # kb_reputation = 0.4 * 0.1667 ≈ 0.0667
+    base = compute_kb_reputation(target["id"])
     record_citation(a["id"], target["id"], KIND_MANIFEST)
-    kbr1 = compute_kb_reputation(target["id"])
-    assert 0.05 < kbr1 < 0.1
+    after = compute_kb_reputation(target["id"])
+    # Adding a strong citation lifts KBR: weighted_score = 1, citation_term = 1/6,
+    # delta = 0.4 * 1/6 ≈ 0.067
+    assert after > base
+    assert 0.06 < (after - base) < 0.08
 
 
 def test_refresh_kb_reputation_persists_to_row():
@@ -145,8 +151,116 @@ def test_refresh_all_kb_reputations_runs_through_all():
 
     n = refresh_all_kb_reputations()
     assert n == 3
-    # After two-pass refresh, C's reputation should reflect B's now-nonzero rep
-    assert get_corpus(c["id"])["kb_reputation"] > 0
+    # After two-pass refresh, C's reputation should be boosted above baseline
+    # via a → b → c chain.
+    base = compute_kb_reputation(create_corpus("baseline")["id"])
+    assert get_corpus(c["id"])["kb_reputation"] > base
+
+
+# ── KBR v2 terms: retention / satisfaction ─────────────────────────
+
+
+def test_query_retention_cold_start_returns_zero():
+    from noosphere.core.citations import query_retention_score
+    c = create_corpus("Retention Cold")
+    assert query_retention_score(c["id"]) == 0.0
+
+
+def test_query_retention_high_when_agents_come_back():
+    from datetime import datetime, timezone
+    from noosphere.core.citations import query_retention_score
+    from noosphere.core.db import get_conn
+    c = create_corpus("Retention Hot")
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    # 10 queries from 3 repeat agents (all repeat) + 1 query from a one-off agent
+    for i in range(10):
+        agent = f"repeat_{i % 3}"
+        conn.execute(
+            "INSERT INTO query_logs (id, corpus_id, agent_id, created_at) VALUES (?,?,?,?)",
+            (f"q{i}", c["id"], agent, now),
+        )
+    conn.execute(
+        "INSERT INTO query_logs (id, corpus_id, agent_id, created_at) VALUES (?,?,?,?)",
+        ("q-oneoff", c["id"], "oneoff", now),
+    )
+    conn.commit()
+    score = query_retention_score(c["id"])
+    # repeat rate = 10/11 ≈ 0.91, doubled and clipped → 1.0
+    assert score == 1.0
+
+
+def test_satisfaction_score_cold_start_is_trusting():
+    from noosphere.core.citations import satisfaction_score
+    c = create_corpus("Sat Cold")
+    assert satisfaction_score(c["id"]) == 1.0
+
+
+def test_satisfaction_score_penalizes_refunds():
+    from datetime import datetime, timezone
+    from noosphere.core.citations import satisfaction_score
+    from noosphere.core.db import get_conn
+    c = create_corpus("Sat Hot")
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+    # 10 completed + 2 refunded = 12 paid, refund rate 2/12 ≈ 0.167
+    for i in range(10):
+        conn.execute(
+            """INSERT INTO payments (id, corpus_id, payment_type, amount_cents,
+                                      status, created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (f"pc{i}", c["id"], "per_query", 100, "completed", now),
+        )
+    for i in range(2):
+        conn.execute(
+            """INSERT INTO payments (id, corpus_id, payment_type, amount_cents,
+                                      status, created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (f"pr{i}", c["id"], "per_query", 100, "refunded", now),
+        )
+    conn.commit()
+    score = satisfaction_score(c["id"])
+    assert 0.82 < score < 0.84
+
+
+def test_calibration_score_is_stubbed():
+    from noosphere.core.citations import CALIBRATION_STUB, calibration_score
+    c = create_corpus("Calib")
+    assert calibration_score(c["id"]) == CALIBRATION_STUB == 0.5
+
+
+def test_kb_reputation_combines_all_four_terms():
+    """Fully-active KB (cited, repeat traffic, paid without refunds) scores well
+    above the cold-start baseline."""
+    from datetime import datetime, timezone
+    from noosphere.core.db import get_conn
+    citer = create_corpus("Citer")
+    target = create_corpus("Active Target")
+    get_conn().execute("UPDATE corpora SET kb_reputation=? WHERE id=?", (1.0, citer["id"]))
+    get_conn().commit()
+    record_citation(citer["id"], target["id"], KIND_MANIFEST)
+
+    # Repeat agent traffic
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_conn()
+    for i in range(12):
+        conn.execute(
+            "INSERT INTO query_logs (id, corpus_id, agent_id, created_at) VALUES (?,?,?,?)",
+            (f"q{i}", target["id"], f"a{i % 3}", now),
+        )
+    # Paid with no refunds
+    for i in range(10):
+        conn.execute(
+            """INSERT INTO payments (id, corpus_id, payment_type, amount_cents, status, created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (f"p{i}", target["id"], "per_query", 100, "completed", now),
+        )
+    conn.commit()
+
+    kbr = compute_kb_reputation(target["id"])
+    # citation ~0.067 + retention 0.3*1.0 + calibration 0.2*0.5 + satisfaction 0.1*1.0
+    # ≈ 0.067 + 0.3 + 0.1 + 0.1 = 0.567
+    assert 0.55 < kbr < 0.58
 
 
 # ── REST citations endpoints ───────────────────────────────────────

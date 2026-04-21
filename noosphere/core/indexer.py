@@ -173,6 +173,15 @@ def index_corpus(
         embedding_dim=dim,
     )
 
+    # Post-indexing hook: auto-fill manifest if it's still empty. Fires once
+    # per corpus (no-op if `task_types` is already set), so owner customizations
+    # are preserved. Silent on LLM failure — indexing itself already succeeded.
+    try:
+        from noosphere.core.manifest_autofill import autofill_if_empty
+        autofill_if_empty(corpus_id)
+    except Exception:
+        pass
+
     if on_progress:
         on_progress("done", len(all_chunks), len(all_chunks))
 
