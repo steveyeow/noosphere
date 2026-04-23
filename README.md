@@ -73,6 +73,66 @@ Four pricing shapes: **pay-per-query**, **subscription**, **corpus licensing** (
 
 No sponsored placement, no brand injection, no lead-gen fees — pricing and ranking track value delivered, not exposure bought. Self-hosted: bring your own Stripe, keep 100%. Cloud: 10% commission on platform-facilitated payments only.
 
+### How agents decide to pay
+
+Paying for a query is never a single signal. The agent combines multiple factors, all exposed on the same public endpoints every caller sees — no privileged channel, no hidden API.
+
+**Match — declared (via `describe` → manifest)**
+The manifest is the primary declared channel. Cheap to read, easy to claim, falsifiable on inspection.
+- `task_types` — enum of query shapes the KB handles (`how-to`, `factual-lookup`, `synthesis`, `advice`, `comparison`, `retrieval`). Topical fit at zero cost.
+- `description`, `tags` — free-text scope.
+- `calibration_policy` — does the KB report answer confidence? `self` (owner-assessed) or `third_party` (externally calibrated)? Decision-chaining agents filter hard on this.
+- `source_composition` — `user_original` / `user_capture` / `external_public` ratios. Predicts originality of answers.
+- `samples` — example Q&A. Lowest-weight declared signal (owner picks them).
+
+**Depth — computed (from corpus data)**
+Signals the owner can't fabricate without actually doing the work.
+- `document_count`, `chunk_count`, `word_count` — corpus depth.
+- Per-document `source_kind` — at query time, **`external_public` chunks are filtered out for paid callers** (anti-copyright-laundering). A large corpus that's mostly scraped will return thin paid answers regardless of what the manifest claims.
+- Endpoint uptime and registry liveness.
+
+**Trust — accumulated (`kb_reputation` ∈ [0, 1])**
+```
+KBR = 0.4·citation_pagerank
+    + 0.3·query_retention
+    + 0.2·calibration_accuracy
+    + 0.1·satisfaction_rate
+```
+- `citation_pagerank` — how often other KBs cite this one, weighted by the citing KB's own reputation (recursive). Forgeable only by bribing already-reputable peers.
+- `query_retention` — do agents come back to this KB after querying once? High retention = useful enough to return to.
+- `calibration_accuracy` — when the KB reports "confidence 0.9", does it actually get those right 90% of the time? Measured against verified answers.
+- `satisfaction_rate` — agent-reported success on paid calls.
+
+KBR is the one signal owners can't directly set. It accumulates from real citations, real return usage, real calibration checks.
+
+**Fit — interactive (via `preview_ask` / `preview` / `search` / `route`)**
+Before paying, the agent can actually try the KB.
+- `preview_ask` — **the key affordance.** Bypasses paid gating (Free 100/day, Pro 2000/day on hosted), returns a truncated but real answer to the agent's actual question. Query-specific quality signal, not a generic claim.
+- `preview` — static sample chunks for structural inspection.
+- `search` — ranked raw chunks with citations; exposes retrieval quality without synthesis cost.
+- `route` — the KB can self-declare a question is out of scope and redirect the agent. An honest `route` response saves both sides a wasted paid call.
+
+**Cost — price + access (`pricing` + `access_level`)**
+- `pricing` returns per-query or subscription cost in cents.
+- `access_level` flags whether payment is even possible (`paid` = yes; `token` = needs pre-granted token; `public` = no payment needed; `private` = can't query).
+- Callers attach an `X-Noosphere-Caller-Corpus` header so citations are recorded in the graph when a paid query resolves to answers — which then feeds back into the citing KB's and the answering KB's reputation.
+
+**The decision, roughly:**
+```
+should_pay(kb, q, policy) =
+    in_scope(kb.describe, q)                              # Match
+  ∧ kb.kb_reputation      ≥ policy.min_kbr                # Trust
+  ∧ preview_ask(kb, q).quality ≥ policy.min_preview       # Fit
+  ∧ kb.pricing.per_query  ≤ policy.budget_for(q)          # Cost
+  ∧ (kb.calibration_policy.source == "third_party"        # Optional
+     if policy.requires_calibration)
+```
+
+Not every agent uses every factor — cheap lookups skip `preview_ask`; high-stakes decisions require third-party calibration; research agents weight `source_composition` heavily. The system publishes every signal on a uniform interface; agents pick their own weights.
+
+**What this means for creators:**
+Three categories are under your control — declared (write the manifest), computed (choose what to ingest), interactive (enable `preview_ask`, keep the KB reachable). The fourth — accumulated reputation — can't be bought. A small, well-cited, calibrated KB out-earns a sprawling uncited one.
+
 ## Who it's for
 
 **Creators (supply side):** Build your own knowledge base — like [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [Garry Tan's GBrain](https://github.com/garrytan/gbrain), but without the engineering setup. Upload your files, paste your blog URLs, subscribe to RSS feeds. Your knowledge base grows over time. Share it free, or charge for access.
