@@ -231,8 +231,24 @@ def search(corpus, query):
 @click.option("--doc-type", default="doc", help="Document type for new files")
 @click.option("--prune", is_flag=True, help="Remove documents whose source files no longer exist")
 @click.option("--provider", default="", help="Embedding provider")
-def sync(directory, corpus, doc_type, prune, provider):
-    """Sync a directory to an existing corpus (add new, update changed, optionally prune deleted)."""
+@click.option("--obsidian", "obsidian_mode", is_flag=True,
+              help="Treat the directory as an Obsidian vault (parse wikilinks, tags, "
+                   "frontmatter; skip .obsidian/ and .trash/; source_kind=user_original)")
+@click.option("--watch", is_flag=True,
+              help="Keep running and re-sync whenever files change. "
+                   "Uses a polling loop (no watchdog dependency required).")
+@click.option("--interval", default=2.0, help="Watch polling interval in seconds (default: 2)")
+def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, interval):
+    """Sync a directory to an existing corpus (add new, update changed, optionally prune deleted).
+
+    Karpathy-style setup (local vault on disk, LLM-maintained wiki):
+
+        noosphere sync ~/my-vault --corpus my-kb --obsidian --watch
+
+    The vault stays on your disk; Noosphere mirrors it into the corpus and
+    keeps the index fresh as you edit in Obsidian. Only writes to the vault
+    happen if you enable server-side writeback separately.
+    """
     from noosphere.core.corpus import get_corpus, get_corpus_by_slug
     from noosphere.core.ingest import sync_directory
     from noosphere.core.indexer import index_corpus
@@ -242,26 +258,82 @@ def sync(directory, corpus, doc_type, prune, provider):
         click.echo(f"Corpus not found: {corpus}", err=True)
         raise SystemExit(1)
 
-    click.echo(f"Syncing {directory} → {c['name']} ({c['id']})")
-    result = sync_directory(c["id"], directory, doc_type=doc_type, prune=prune)
-    click.echo(f"  {result['new']} new, {result['updated']} updated, "
-               f"{result['pruned']} pruned, {result['unchanged']} unchanged")
+    fmt = "obsidian" if obsidian_mode else "generic"
 
-    if result["new"] or result["updated"]:
-        click.echo("\nIndexing changed documents...")
+    def _run_once():
+        result = sync_directory(c["id"], directory, doc_type=doc_type, prune=prune, format=fmt)
+        click.echo(f"  {result['new']} new, {result['updated']} updated, "
+                   f"{result['pruned']} pruned, {result['unchanged']} unchanged")
 
-        def progress(stage, current, total):
-            if stage == "embedding":
-                click.echo(f"  Embedding: {current}/{total}")
-            elif stage == "done":
-                click.echo(f"  Done: {current} chunks embedded")
+        if result["new"] or result["updated"]:
+            click.echo("  Indexing changed documents...")
 
-        idx_result = index_corpus(c["id"], provider=provider, on_progress=progress)
-        click.echo(f"  Total chunks: {idx_result['chunk_count']}")
-        if idx_result.get("skipped"):
-            click.echo(f"  Skipped (unchanged): {idx_result['skipped']}")
+            def progress(stage, current, total):
+                if stage == "embedding" and total and current % max(1, total // 4) == 0:
+                    click.echo(f"    Embedding: {current}/{total}")
+                elif stage == "done":
+                    click.echo(f"    Indexed {current} chunks")
+
+            idx_result = index_corpus(c["id"], provider=provider, on_progress=progress)
+            if idx_result.get("skipped"):
+                click.echo(f"  Skipped (unchanged): {idx_result['skipped']}")
+        return result
+
+    mode_label = "Obsidian vault" if obsidian_mode else "directory"
+    click.echo(f"Syncing {mode_label} {directory} → {c['name']} ({c['id']})")
+    _run_once()
+
+    if not watch:
+        return
+
+    # Polling watch mode — rescan the tree every `interval` seconds and detect
+    # changes by the max mtime across all tracked files. This is cheap for
+    # typical vaults (<5k files) and avoids the watchdog dependency.
+    import os
+    import time
+    from pathlib import Path
+
+    directory_path = Path(directory)
+    if obsidian_mode:
+        def list_tracked():
+            return [
+                f for f in directory_path.rglob("*.md")
+                if f.is_file()
+                and not any(p.startswith(".") for p in f.relative_to(directory_path).parts)
+            ]
     else:
-        click.echo("  Nothing to re-index.")
+        from noosphere.core.ingest import SUPPORTED_FILE_EXTENSIONS
+        def list_tracked():
+            return [
+                f for f in directory_path.rglob("*")
+                if f.is_file() and f.suffix.lower() in SUPPORTED_FILE_EXTENSIONS
+            ]
+
+    def fingerprint():
+        fps = []
+        for f in list_tracked():
+            try:
+                st = f.stat()
+                fps.append((str(f), st.st_mtime, st.st_size))
+            except OSError:
+                continue
+        return frozenset(fps)
+
+    last_fp = fingerprint()
+    click.echo(f"\nWatching {directory} for changes (polling every {interval}s, Ctrl+C to stop)...")
+    try:
+        while True:
+            time.sleep(interval)
+            fp = fingerprint()
+            if fp != last_fp:
+                last_fp = fp
+                click.echo(f"\n[{time.strftime('%H:%M:%S')}] Change detected — resyncing")
+                try:
+                    _run_once()
+                except Exception as e:
+                    click.echo(f"  Sync error: {e}", err=True)
+    except KeyboardInterrupt:
+        click.echo("\nWatch stopped.")
 
 
 @cli.command("ingest-feed")

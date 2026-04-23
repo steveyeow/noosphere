@@ -15,6 +15,12 @@ let _pendingHomeScope=null;
 // next renderHome so the user lands mid-send, not mid-draft.
 let _pendingHomeInput=null;
 let _pendingHomeAutoSend=false;
+// One-shot: when the user picks an option (upload / url / archive / rss) from
+// the corpus-page attach popover, the popover closes on the corpus page and
+// we navigate to #/main with the corpus pre-selected. renderHome consumes
+// this and renders the matching panel into the home chat-output stream — so
+// the user lands directly in chat mode with the picked panel ready to fill.
+let _pendingHomeAttachAction=null;
 // Composer mode: 'create' | 'enrich' | 'compile'. Default 'enrich' because
 // most sessions add to an existing KB; 'create' kicks in for users without
 // any corpora; 'compile' swaps Send behavior to synthesize a wiki/entity.
@@ -495,8 +501,7 @@ function renderHome(){
         <div class="home-composer-foot">
           <span class="home-composer-left">
             <button class="composer-attach" id="home-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-            <button class="composer-sliders" id="home-sliders" title="Sources" aria-label="Sources"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
-            <button class="composer-mode-label" id="home-mode-label" type="button">Enrich mode</button>
+            <button class="composer-mode-label" id="home-mode-label" type="button" title="Composer mode">Enrich mode</button>
             <span class="home-composer-hint" id="home-composer-hint">Type <kbd>/</kbd> for commands</span>
             <button class="home-composer-cancel" id="home-cancel" type="button" style="display:none">Cancel</button>
           </span>
@@ -576,14 +581,13 @@ function renderHome(){
   const input=document.getElementById('term-input');
   const output=document.getElementById('term-output');
   const sendBtn=document.getElementById('home-send');
-  const slidersBtn=document.getElementById('home-sliders');
-  if(slidersBtn)slidersBtn.onclick=(e)=>showSourcesPopover(e.currentTarget,{corpusId:null,corpusName:null});
   const attachBtn=document.getElementById('home-attach');
   if(attachBtn)attachBtn.onclick=(e)=>showAttachPopover(e.currentTarget,output,input);
-  // Mode label is clickable too — anchors the popover to the sliders button so
-  // the flyout lines up predictably regardless of which of the two the user hits.
+  // Mode label is the sole entry point for the mode picker now — the
+  // separate sliders toggle was removed because the popover only controls
+  // mode (sources moved into the + menu).
   const modeLabelBtn=document.getElementById('home-mode-label');
-  if(modeLabelBtn)modeLabelBtn.onclick=()=>{const a=document.getElementById('home-sliders');showSourcesPopover(a,{corpusId:null,corpusName:null})};
+  if(modeLabelBtn)modeLabelBtn.onclick=(e)=>showSourcesPopover(e.currentTarget,{corpusId:null,corpusName:null});
   // Scoped corpus: null means "Any" (default). Persists across sends.
   // Hoisted to module-level _homeScope so the Recently compiled section and
   // the Compile picker can read the same selection. Consumes _pendingHomeScope
@@ -685,6 +689,21 @@ function renderHome(){
     autosize();
     if(shouldSend){setTimeout(()=>{sendBtn?.click()},0)}
     else{input.focus()}
+  }
+  // One-shot: corpus page's attach popover handed off to us. Corpus is already
+  // pre-selected via _pendingHomeScope; now collapse home to chat mode and
+  // render the matching panel (upload/url/archive/rss) into the chat stream
+  // so the user lands directly on the right form, scoped to the corpus.
+  if(_pendingHomeAttachAction){
+    const action=_pendingHomeAttachAction;
+    _pendingHomeAttachAction=null;
+    setTimeout(()=>{
+      const home=document.getElementById('home');if(home)home.classList.add('home--active');
+      if(action==='upload'){showTermUpload(output,input,_homeScope)}
+      else if(action==='url'){showTermUpload(output,input,_homeScope);setTimeout(()=>{document.querySelector('.term-upload-tab[data-tab="url"]')?.click()},50)}
+      else if(action==='rss'){showTermConnectRSS(output,input,_homeScope)}
+      else if(action==='add-source'){showAddSourcePicker({corpusId:null})}
+    },0);
   }
   function enterWrite(seedTitle){
     _mode='write';
@@ -1326,7 +1345,7 @@ function showTermUpload(output,input,defaultCorpus,opts){
   const onComplete=typeof opts.onComplete==='function'?opts.onComplete:null;
   const wrap=document.createElement('div');wrap.className='term-upload-wrap';
   let _uFiles=[];let _tab='files';
-  wrap.innerHTML=`<div class="term-upload-tabs"><button class="term-upload-tab active" data-tab="files" type="button">Files</button><button class="term-upload-tab" data-tab="url" type="button">URL</button><button class="term-upload-tab" data-tab="paste" type="button">Paste</button><button class="term-upload-tab" data-tab="archive" type="button">Archive</button></div><div class="term-upload-body" id="tu-body"></div>`;
+  wrap.innerHTML=`<div class="term-upload-tabs"><button class="term-upload-tab active" data-tab="files" type="button">Files</button><button class="term-upload-tab" data-tab="url" type="button">URL</button><button class="term-upload-tab" data-tab="paste" type="button">Paste</button></div><div class="term-upload-body" id="tu-body"></div>`;
   output.appendChild(wrap);
   const sc=document.getElementById('term-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
   const body=wrap.querySelector('#tu-body');
@@ -1490,42 +1509,16 @@ function showTermUpload(output,input,defaultCorpus,opts){
       if(input&&!onComplete)input.focus();
     };
   }
-  function renderArchive(){
-    body.innerHTML=`<div class="term-upload-txt-hint">Import a full archive export. Every item lands as your own content.</div><div class="term-upload-archive-picks"><label class="term-upload-archive-pick"><input type="radio" name="arc-kind" value="twitter" checked /><span>Twitter / X</span><span class="term-upload-archive-sub">ZIP from twitter.com/settings/download_your_data</span></label><label class="term-upload-archive-pick"><input type="radio" name="arc-kind" value="notion" /><span>Notion</span><span class="term-upload-archive-sub">ZIP from Settings → Data export (Markdown &amp; CSV)</span></label></div><input type="file" id="tu-fi" accept=".zip" class="term-upload-input" /><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Import archive</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
-    const fi=body.querySelector('#tu-fi'),goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
-    fi.onchange=()=>{goBtn.disabled=!fi.files.length};
-    cancelBtn.onclick=cancelAndReturn;
-    goBtn.onclick=async()=>{
-      if(!fi.files.length)return;
-      const kind=(body.querySelector('input[name="arc-kind"]:checked')||{}).value||'twitter';
-      const label=kind==='twitter'?'Twitter / X':'Notion';
-      goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
-      const cid=await resolveCorpus();
-      if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
-      const fd=new FormData();fd.append('file',fi.files[0]);
-      try{
-        const r=await fetch(`${API}/corpora/${cid}/import/${kind}`,{method:'POST',body:fd});
-        const d=await r.json().catch(()=>({}));
-        wrap.remove();
-        if(!r.ok){reportErr('Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
-        // Archive import used to skip indexing — newly imported items stayed
-        // un-searchable until something else triggered /index. Fix: debounced
-        // trigger here so the archive actually becomes usable.
-        ensureIndexed(cid);
-        await loadC();
-        const corpus=_corpora.find(c=>c.id===cid);
-        reportOK(`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?` (${d.skipped} skipped)`:''}.`,{type:'card',label:`${label} imported`,status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${d.imported||0} items`,corpus_id:cid});
-      }catch(e){wrap.remove();reportErr('Import failed: '+e.message)}
-      if(input&&!onComplete)input.focus();
-    };
-  }
+  // Archive tab removed — app-specific archive imports (Obsidian vault,
+  // Notion export, Twitter archive) now live inside their per-app panel,
+  // reachable via Composer + → Add a source / My sources, the chint logos,
+  // or the Connectors directory. See showTermArchiveUpload + showAppPanel.
   function setTab(t){
     _tab=t;
     tabsEl.forEach(el=>el.classList.toggle('active',el.dataset.tab===t));
     if(t==='files')renderFiles();
     else if(t==='url')renderURL();
     else if(t==='paste')renderPaste();
-    else if(t==='archive')renderArchive();
   }
   tabsEl.forEach(el=>el.onclick=()=>setTab(el.dataset.tab));
   setTab('files');
@@ -1895,24 +1888,238 @@ async function drawGraphIn(container,corpora,existingCanvas){
    entry needs to flip from `soon` → `avail`. */
 
 /* Planned external-source connectors. Each status:
-     'avail' — user can connect now (OAuth flow exists)
-     'soon'  — planned, grayed out, "Coming soon" tag
-   Pro-gating: every external connector is Pro (matches Notion Business). */
+     'avail' — at least one method is wired
+     'soon'  — every method is still coming, grayed out
+   Pro-gating: every external connector is Pro (matches Notion Business),
+   except Obsidian which is free (no account tier gating on local files).
+
+   Each entry has a `methods[]` array grouped by category:
+     group='archive' — one-shot import (ZIP, export file)
+     group='live'    — persistent sync (CLI, OAuth, plugin)
+   Method `status`: 'ready' | 'beta' | 'soon'.
+   Method `action`: what to do on click — one of 'upload_archive',
+     'copy_cli', 'open_oauth' (not wired), 'show_instructions'. */
 const _SOURCE_CONNECTORS=[
-  {kind:'notion',name:'Notion',desc:'Live-sync your pages and databases',mono:'N',bg:'#000000',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'gdrive',name:'Google Drive',desc:'Docs, Sheets, and folders',mono:'D',bg:'#1a73e8',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'github',name:'GitHub',desc:'READMEs, issues, discussions',mono:'Gh',bg:'#1f2328',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'gmail',name:'Gmail',desc:'Threads filtered by label',mono:'M',bg:'#ea4335',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'slack',name:'Slack',desc:'Channels and direct messages',mono:'#',bg:'#4a154b',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'email_inbox',name:'Email forwarding',desc:'Forward emails to a unique inbox address',mono:'@',bg:'#6e6e73',fg:'#ffffff',status:'soon',pro:true},
-  {kind:'rss_auto',name:'RSS (auto-sync)',desc:'Scheduled feed polling',mono:'≫',bg:'#f26522',fg:'#ffffff',status:'soon',pro:true},
+  {kind:'obsidian',name:'Obsidian',desc:'Your local markdown vault — upload or keep live-synced.',mono:'O',bg:'#6c4fd5',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
+   methods:[
+     {group:'archive',id:'zip',name:'Upload vault (ZIP)',status:'ready',action:'upload_archive',archiveKind:'obsidian',
+      desc:'One-shot. Zip your vault folder and upload it. Wikilinks, tags, and folder structure are preserved. Vault and Noosphere diverge after this.'},
+     {group:'live',id:'cli',name:'CLI two-way sync',status:'beta',action:'copy_cli',
+      cli:'noosphere sync ~/your-vault --corpus {CORPUS} --obsidian --watch',
+      desc:'Watches your vault on disk. Every edit in Obsidian flows into Noosphere. Karpathy-style setup: files stay local, Noosphere keeps your index fresh.'},
+     {group:'live',id:'plugin',name:'Obsidian plugin',status:'soon',action:'show_instructions',
+      desc:'UI inside Obsidian showing sync status, peer subscribers, and enrichments. Planned.'},
+   ]},
+  {kind:'notion',name:'Notion',desc:'Your Notion workspace — one-shot export today, live sync coming.',mono:'N',bg:'#000000',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
+   methods:[
+     {group:'archive',id:'zip',name:'Upload export (ZIP)',status:'ready',action:'upload_archive',archiveKind:'notion',
+      desc:'Settings → Data export (Markdown & CSV). Pages land as user_original.'},
+     {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,
+      desc:'Authorize Noosphere to read your pages and databases, and keep them in sync.'},
+   ]},
+  {kind:'twitter',name:'Twitter / X',desc:'Your Twitter/X data export.',mono:'𝕏',bg:'#000000',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
+   methods:[
+     {group:'archive',id:'zip',name:'Upload data export (ZIP)',status:'ready',action:'upload_archive',archiveKind:'twitter',
+      desc:'ZIP from twitter.com/settings/download_your_data. Tweets become documents.'},
+   ]},
+  {kind:'gdrive',name:'Google Drive',desc:'Docs, Sheets, and folders',mono:'D',bg:'#1a73e8',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,desc:'Authorize Drive folder access; Noosphere indexes Docs and Sheets live.'},
+   ]},
+  {kind:'github',name:'GitHub',desc:'READMEs, issues, discussions',mono:'Gh',bg:'#1f2328',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,desc:'Connect repos; pull READMEs, issues, and discussions.'},
+   ]},
+  {kind:'gmail',name:'Gmail',desc:'Threads filtered by label',mono:'M',bg:'#ea4335',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,desc:'Authorize Gmail; pull threads matching labels you choose.'},
+   ]},
+  {kind:'slack',name:'Slack',desc:'Channels and direct messages',mono:'#',bg:'#4a154b',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,desc:'Install the Noosphere app in your workspace; select channels to index.'},
+   ]},
+  {kind:'email_inbox',name:'Email forwarding',desc:'Forward emails to a unique inbox address',mono:'@',bg:'#6e6e73',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'forward',name:'Email forwarding address',status:'soon',action:'show_instructions',pro:true,desc:'Get a unique address per corpus; forward emails to ingest their content.'},
+   ]},
+  {kind:'rss_auto',name:'RSS (auto-sync)',desc:'Scheduled feed polling',mono:'≫',bg:'#f26522',fg:'#ffffff',status:'soon',pro:true,
+   methods:[
+     {group:'live',id:'feed',name:'Auto-polling feed',status:'soon',action:'show_instructions',pro:true,desc:'Register an RSS/Atom URL and Noosphere pulls new items on a schedule. Today only manual adds (via + → Add RSS feed) are wired.'},
+   ]},
 ];
 
+/* ══════ PER-APP PANEL ══════
+   One unified modal per application. Takes a connector `kind` and renders
+   every available ingest method for that app, grouped into:
+     - Import archive — one-shot ZIP / export upload
+     - Live connection — persistent sync (CLI, OAuth, plugin)
+   Each method has a status badge (Ready / Beta / Soon) and a single action
+   button. Clicking lands you on the actual flow (upload panel, CLI
+   copy-to-clipboard, instructions). This is the single canonical surface
+   for any app click, regardless of where the click originated (chint logos,
+   source picker, Connectors page). */
+function _closeAppPanel(){const p=document.getElementById('app-panel-overlay');if(p)p.remove()}
+function showAppPanel(kind,ctx){
+  ctx=ctx||{};
+  const c=_SOURCE_CONNECTORS.find(x=>x.kind===kind);
+  if(!c){toast(`Unknown app: ${kind}`,'error');return}
+  _closeAppPanel();
+  const STATUS_BADGES={
+    ready:'<span class="app-m-badge app-m-badge-ready">Ready</span>',
+    beta:'<span class="app-m-badge app-m-badge-beta">Beta</span>',
+    soon:'<span class="app-m-badge app-m-badge-soon">Soon</span>',
+  };
+  const methods=c.methods||[];
+  const archiveMethods=methods.filter(m=>m.group==='archive');
+  const liveMethods=methods.filter(m=>m.group==='live');
+  const renderMethod=m=>{
+    const badge=STATUS_BADGES[m.status]||'';
+    const pro=m.pro?'<span class="app-m-badge app-m-badge-pro">Pro</span>':'';
+    const disabled=m.status==='soon'?'disabled':'';
+    const actionLabel=m.status==='ready'?'Use':(m.status==='beta'?'Try':'Preview');
+    return `<button class="app-m-row" data-mid="${m.id}" ${disabled}>
+      <span class="app-m-main">
+        <span class="app-m-top"><span class="app-m-name">${esc(m.name)}</span>${badge}${pro}</span>
+        <span class="app-m-desc">${esc(m.desc||'')}</span>
+      </span>
+      <span class="app-m-action">${actionLabel}</span>
+    </button>`;
+  };
+  const archiveHTML=archiveMethods.length
+    ? `<div class="app-section-hd">Import archive</div><div class="app-section-body">${archiveMethods.map(renderMethod).join('')}</div>`
+    : '';
+  const liveHTML=liveMethods.length
+    ? `<div class="app-section-hd">Live connection</div><div class="app-section-body">${liveMethods.map(renderMethod).join('')}</div>`
+    : '';
+  const ov=document.createElement('div');
+  ov.id='app-panel-overlay';ov.className='srcs-pick-overlay app-panel-overlay';
+  ov.innerHTML=`<div class="srcs-pick app-panel" style="position:relative">
+    <button class="srcs-pick-close" id="app-panel-close" title="Close">×</button>
+    <div class="app-panel-hd">
+      <span class="app-panel-ico" style="background:${c.bg};color:${c.fg}">${c.mono}</span>
+      <div class="app-panel-hd-text">
+        <h2 class="srcs-pick-ttl">${esc(c.name)}</h2>
+        <p class="srcs-pick-sub">${esc(c.desc||'')}</p>
+      </div>
+    </div>
+    <div class="app-panel-body">${archiveHTML}${liveHTML}</div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('app-panel-close').onclick=_closeAppPanel;
+  ov.addEventListener('click',e=>{if(e.target===ov)_closeAppPanel()});
+  ov.querySelectorAll('.app-m-row').forEach(btn=>{
+    if(btn.disabled)return;
+    btn.onclick=()=>{
+      const mid=btn.dataset.mid;
+      const m=methods.find(x=>x.id===mid);
+      if(!m)return;
+      if(m.pro&&gateProFeature&&gateProFeature(`${c.name} · ${m.name} is a Pro feature`))return;
+      _closeAppPanel();
+      _triggerAppMethod(c,m,ctx);
+    };
+  });
+  const esc2=(e)=>{if(e.key==='Escape'){_closeAppPanel();document.removeEventListener('keydown',esc2)}};
+  document.addEventListener('keydown',esc2);
+}
+
+/* Dispatch a method click to its concrete action. Kept separate so the
+   panel rendering stays a pure view. */
+function _triggerAppMethod(connector,method,ctx){
+  if(method.action==='upload_archive'){
+    // Open the focused archive-upload panel, pre-selected to this method's archiveKind.
+    _openArchiveUpload(method.archiveKind,ctx);
+    return;
+  }
+  if(method.action==='copy_cli'){
+    // Copy the CLI command (with corpus slug substituted if known) to the clipboard.
+    const corpusId=ctx.corpusId||_homeScope||'your-corpus';
+    const slug=_corpora.find(c=>c.id===corpusId)?.slug||corpusId;
+    const cmd=(method.cli||'').replace('{CORPUS}',slug);
+    if(navigator.clipboard){navigator.clipboard.writeText(cmd).then(()=>toast('CLI command copied — paste into your terminal','success'))}
+    else{toast(`Run: ${cmd}`,'success')}
+    return;
+  }
+  if(method.action==='show_instructions'){
+    toast(`${connector.name} · ${method.name} — coming soon`,'info');
+    return;
+  }
+  toast('Unhandled action','error');
+}
+
+/* Open a focused single-archive-kind uploader. No tabs, no radio picker —
+   just a file input + Import button scoped to a specific app's archive
+   format. Called from the per-app panel's "Upload archive (ZIP)" method. */
+function _openArchiveUpload(archiveKind,ctx){
+  const go=()=>{
+    const input=document.getElementById('term-input');
+    const output=document.getElementById('term-output');
+    const home=document.getElementById('home');if(home)home.classList.add('home--active');
+    if(!input||!output){setTimeout(go,120);return}
+    const targetCorpus=ctx&&ctx.corpusId?ctx.corpusId:_homeScope;
+    const panelOpts=ctx&&ctx.corpusId?{lockCorpus:true,onComplete:ctx.onComplete}:null;
+    showTermArchiveUpload(output,input,targetCorpus,archiveKind,panelOpts);
+  };
+  if(location.hash!=='#/main'&&location.hash!==''){location.hash='#/main';setTimeout(go,200)}
+  else go();
+}
+
+/* Focused single-archive uploader. Mirrors showTermUpload's card rendering
+   (so the chat stream feedback stays consistent) but the body is one file
+   picker labeled with the app name. */
+const ARCHIVE_META={
+  obsidian:{label:'Obsidian vault',hint:'ZIP your vault folder — wikilinks, tags, and folders are preserved.'},
+  notion:{label:'Notion export',hint:'ZIP from Settings → Data export (Markdown & CSV).'},
+  twitter:{label:'Twitter / X export',hint:'ZIP from twitter.com/settings/download_your_data.'},
+};
+function showTermArchiveUpload(output,input,defaultCorpus,archiveKind,opts){
+  opts=opts||{};
+  const lockCorpus=!!opts.lockCorpus;
+  const onComplete=typeof opts.onComplete==='function'?opts.onComplete:null;
+  const meta=ARCHIVE_META[archiveKind]||{label:archiveKind,hint:'Upload the archive ZIP.'};
+  const wrap=document.createElement('div');wrap.className='term-upload-wrap';
+  wrap.innerHTML=`<div class="term-upload-tabs"><div class="term-upload-tab active">${esc(meta.label)}</div></div><div class="term-upload-body"><div class="term-upload-txt-hint">${esc(meta.hint)} Every item lands as your own content.</div><input type="file" id="tu-fi" accept=".zip" class="term-upload-input" /><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Import archive</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div></div>`;
+  if(onComplete){const rp=document.getElementById('rpanel')||document.getElementById('content');rp?rp.appendChild(wrap):output.appendChild(wrap)}
+  else output.appendChild(wrap);
+  const reportOK=(msg,cardDef)=>{if(onComplete){onComplete();return}addLine(output,'resp',msg);if(cardDef)addLine(output,'card',null,null,cardDef)};
+  const reportErr=(msg)=>{if(onComplete)toast(msg,'error');else addLine(output,'resp',msg)};
+  const fi=wrap.querySelector('#tu-fi'),goBtn=wrap.querySelector('#tu-go'),cancelBtn=wrap.querySelector('#tu-cancel');
+  fi.onchange=()=>{goBtn.disabled=!fi.files.length};
+  cancelBtn.onclick=()=>{wrap.remove();if(input&&!onComplete)input.focus()};
+  async function resolveCorpus(){
+    if(lockCorpus)return defaultCorpus;
+    if(defaultCorpus)return defaultCorpus;
+    if(_corpora.length===1)return _corpora[0].id;
+    // Fall back to a quick-create if no corpus chosen on home
+    try{
+      const nm='My Knowledge';
+      const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm})});
+      if(!r.ok)return null;
+      const c=await r.json();await loadC();_homeScope=c.id;return c.id;
+    }catch(e){return null}
+  }
+  goBtn.onclick=async()=>{
+    if(!fi.files.length)return;
+    goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
+    const cid=await resolveCorpus();
+    if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
+    const fd=new FormData();fd.append('file',fi.files[0]);
+    try{
+      const r=await fetch(`${API}/corpora/${cid}/import/${archiveKind}`,{method:'POST',body:fd});
+      const d=await r.json().catch(()=>({}));
+      wrap.remove();
+      if(!r.ok){reportErr('Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+      ensureIndexed(cid);
+      await loadC();
+      const corpus=_corpora.find(c=>c.id===cid);
+      reportOK(`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?` (${d.skipped} skipped)`:''}.`,{type:'card',label:`${meta.label} imported`,status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${d.imported||0} items`,corpus_id:cid});
+    }catch(e){wrap.remove();reportErr('Import failed: '+e.message)}
+    if(input&&!onComplete)input.focus();
+  };
+}
+
 /* Composer "+" attach menu — Notion pattern. Single unified entry point for
-   adding content to a KB: file upload, paste text, import a URL, import a
-   public archive, or register an RSS feed. Replaces the old big-pill
-   shortcut row below the composer so the surface between composer and
-   Recent / Suggested stays clean. */
+   adding content to a KB: file upload, paste text, import a URL, register
+   an RSS feed, see connected sources, or browse apps. */
 function _closeAttachPopover(){
   const p=document.getElementById('attach-pop');if(p)p.remove();
   document.querySelectorAll('.composer-attach.active').forEach(b=>b.classList.remove('active'));
@@ -1931,12 +2138,27 @@ function showAttachPopover(anchor,output,input,opts){
   const ICO_FEED_LOCAL=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>`;
   const ICO_ARCHIVE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
 
+  const ICO_APPS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
+  const ICO_SRCS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><line x1="7.8" y1="7.2" x2="11" y2="16.2"/><line x1="16.2" y1="7.2" x2="13" y2="16.2"/></svg>`;
+  const ICO_CHEV=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="srcs-chev"><polyline points="9 18 15 12 9 6"/></svg>`;
+
+  // My sources count — empty for now until a connected-sources table lands;
+  // when populated, the flyout lists each connected app and lets you jump
+  // into its app panel.
+  const connectedSources=[];
+
+  // Mini-logo preview for the "Add a source" row — shows the first 4
+  // connectors as quick chips so the menu hints at what's available
+  // without opening the picker.
+  const addLogos=_SOURCE_CONNECTORS.slice(0,4).map(c=>`<span class="srcs-mini-logo" style="background:${c.bg};color:${c.fg}">${c.mono}</span>`).join('');
+
   const pop=document.createElement('div');pop.id='attach-pop';pop.className='srcs-pop';
   pop.innerHTML=`<button class="srcs-pop-item" data-action="upload"><span class="srcs-pop-ico">${ICO_FILE}</span><span class="srcs-pop-nm">Upload file</span><span class="srcs-pop-aside"><span class="srcs-pop-val">PDF · MD · DOCX</span></span></button>` +
     `<button class="srcs-pop-item" data-action="url"><span class="srcs-pop-ico">${ICO_LINK}</span><span class="srcs-pop-nm">Import a page</span><span class="srcs-pop-aside"><span class="srcs-pop-val">URL or paste</span></span></button>` +
-    `<button class="srcs-pop-item" data-action="archive"><span class="srcs-pop-ico">${ICO_ARCHIVE}</span><span class="srcs-pop-nm">Import archive</span><span class="srcs-pop-aside"><span class="srcs-pop-val">Twitter · Notion</span></span></button>` +
+    `<button class="srcs-pop-item" data-action="rss"><span class="srcs-pop-ico">${ICO_FEED_LOCAL}</span><span class="srcs-pop-nm">Add RSS feed</span><span class="srcs-pop-aside"><span class="srcs-pop-val">living source</span></span></button>` +
     `<div class="srcs-pop-sep"></div>` +
-    `<button class="srcs-pop-item" data-action="rss"><span class="srcs-pop-ico">${ICO_FEED_LOCAL}</span><span class="srcs-pop-nm">Add RSS feed</span><span class="srcs-pop-aside"><span class="srcs-pop-val">living source</span></span></button>`;
+    `<button class="srcs-pop-item" data-menu="my-sources"><span class="srcs-pop-ico">${ICO_SRCS}</span><span class="srcs-pop-nm">My sources</span><span class="srcs-pop-aside"><span class="srcs-pop-val">${connectedSources.length}</span>${ICO_CHEV}</span></button>` +
+    `<button class="srcs-pop-item" data-action="add-source"><span class="srcs-pop-ico">${ICO_APPS}</span><span class="srcs-pop-nm">Add a source</span><span class="srcs-pop-aside"><span class="srcs-pop-logos">${addLogos}</span>${ICO_CHEV}</span></button>`;
   document.body.appendChild(pop);
   const r=anchor.getBoundingClientRect();const pw=pop.offsetWidth;const ph=pop.offsetHeight;
   let left=r.left;if(left+pw>window.innerWidth-8)left=window.innerWidth-pw-8;if(left<8)left=8;
@@ -1955,18 +2177,54 @@ function showAttachPopover(anchor,output,input,opts){
   const lockedCorpus=opts.corpusId||null;
   const panelOpts=lockedCorpus?{lockCorpus:true,onComplete:opts.onComplete}:null;
   const targetCorpus=lockedCorpus||_homeScope;
+  const appCtx={corpusId:lockedCorpus,onComplete:opts.onComplete};
+
+  // Flyout for "My sources" — shows connected apps (empty state for now).
+  function openMySourcesFlyout(rowBtn){
+    _closeSrcsFlyout();
+    rowBtn.classList.add('hover');
+    const fl=document.createElement('div');fl.id='srcs-flyout';fl.className='srcs-flyout';
+    if(connectedSources.length){
+      fl.innerHTML=connectedSources.map(s=>`<button class="srcs-flyout-row" data-kind="${s.kind}"><span class="srcs-flyout-main"><span class="srcs-flyout-nm">${esc(s.name)}</span><span class="srcs-flyout-dc">${esc(s.detail||'')}</span></span></button>`).join('');
+    }else{
+      fl.innerHTML=`<div class="srcs-flyout-empty">No sources connected yet.<br/>Use <strong>Add a source</strong> below to import an Obsidian vault, a Notion export, or connect an app.</div>`;
+    }
+    document.body.appendChild(fl);
+    const popR=pop.getBoundingClientRect();const rowR=rowBtn.getBoundingClientRect();
+    const fw=fl.offsetWidth;const fh=fl.offsetHeight;
+    let fLeft=popR.right+6;if(fLeft+fw>window.innerWidth-8)fLeft=popR.left-fw-6;
+    let fTop=rowR.top-4;if(fTop+fh>window.innerHeight-8)fTop=window.innerHeight-fh-8;if(fTop<8)fTop=8;
+    fl.style.left=fLeft+'px';fl.style.top=fTop+'px';
+    fl.querySelectorAll('.srcs-flyout-row').forEach(btn=>{
+      btn.onclick=()=>{_closeAttachPopover();showAppPanel(btn.dataset.kind,appCtx)};
+    });
+  }
+
   pop.querySelectorAll('.srcs-pop-item').forEach(btn=>{
+    const menu=btn.dataset.menu;
+    if(menu==='my-sources'){
+      btn.addEventListener('mouseenter',()=>openMySourcesFlyout(btn));
+      btn.addEventListener('click',()=>openMySourcesFlyout(btn));
+      return;
+    }
+    // Close any open flyout when hovering a non-menu item
+    btn.addEventListener('mouseenter',_closeSrcsFlyout);
     btn.onclick=()=>{
       const action=btn.dataset.action;
       _closeAttachPopover();
+      // When opts.onAction is set (corpus page handoff), the popover is just
+      // a picker — the caller takes over from here (typically navigates to
+      // /main and re-fires the panel there). Skips the local panel render so
+      // we don't double up with whatever the caller's about to show.
+      if(opts.onAction){opts.onAction(action);return}
       if(!lockedCorpus){
         // Collapse home to chat mode so the injected panel has room.
         const home=document.getElementById('home');if(home)home.classList.add('home--active');
       }
       if(action==='upload'){showTermUpload(output,input,targetCorpus,panelOpts)}
       else if(action==='url'){showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
-      else if(action==='archive'){showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const arcTab=document.querySelector('.term-upload-tab[data-tab="archive"]');arcTab?.click()},50)}
       else if(action==='rss'){showTermConnectRSS(output,input,targetCorpus,panelOpts)}
+      else if(action==='add-source'){showAddSourcePicker(appCtx)}
     };
   });
 
@@ -1981,7 +2239,7 @@ function showAttachPopover(anchor,output,input,opts){
 function _closeSrcsPopover(){
   const p=document.getElementById('srcs-pop');if(p)p.remove();
   const f=document.getElementById('srcs-flyout');if(f)f.remove();
-  document.querySelectorAll('.composer-sliders.active').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.composer-mode-label.active').forEach(b=>b.classList.remove('active'));
 }
 function _closeSrcsFlyout(){
   const f=document.getElementById('srcs-flyout');if(f)f.remove();
@@ -2061,101 +2319,44 @@ function _refreshComposerPlaceholder(){
   }
 }
 
-/* Sources popover — Notion-style hierarchy.
-
-   Main panel shows three rows: My sources (count), Add sources (connector
-   logos), Mode (current mode name). Each row with a `>` indicator opens a
-   right-side flyout submenu on hover/click. The flyout sits flush with the
-   main panel so users can slide the cursor across without losing the menu. */
+/* Mode popover — anchored to the "Enrich mode" label. Minimal design:
+   list the composer modes with name + description, click to pick.
+   Sources (My / Add) moved into the + attach popover — see showAttachPopover.
+   The separate sliders toggle was removed: the popover controls mode only,
+   so the mode label itself is the entry point. */
 function showSourcesPopover(anchor,ctx){
-  // Toggle: clicking again closes
   if(document.getElementById('srcs-pop')){_closeSrcsPopover();return}
   anchor.classList.add('active');
-  // Connected sources for THIS corpus (none yet — Phase 2+ populates this
-  // from the connectors table once OAuth connectors are wired up).
-  const connected=[];
-  // Mode section — only on home composer (no ctx.corpusId means "Any" scope).
-  // Inside a specific corpus, mode is implicitly Enrich and swapping is noise.
-  const showModes=!ctx||!ctx.corpusId;
   const pop=document.createElement('div');
   pop.id='srcs-pop';pop.className='srcs-pop';
-
-  // Icons — minimal line glyphs, no decorative emoji.
-  const ICO_SRCS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="18" r="2.2"/><line x1="7.8" y1="7.2" x2="11" y2="16.2"/><line x1="16.2" y1="7.2" x2="13" y2="16.2"/></svg>`;
-  const ICO_ADD=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-  const ICO_MODE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
-  const ICO_CHEV=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="srcs-chev"><polyline points="9 18 15 12 9 6"/></svg>`;
-
-  // Mini-logo strip for the Add sources row — first 4 connectors as quick chips.
-  const addLogos=_SOURCE_CONNECTORS.slice(0,4).map(c=>`<span class="srcs-mini-logo" style="background:${c.bg};color:${c.fg}">${c.mono}</span>`).join('');
-
-  const currentMode=COMPOSER_MODES.find(m=>m.id===_composerMode)||COMPOSER_MODES[1];
-
-  const modeRowHTML=showModes?`<div class="srcs-pop-sep"></div><button class="srcs-pop-item" data-menu="mode"><span class="srcs-pop-ico">${ICO_MODE}</span><span class="srcs-pop-nm">Mode</span><span class="srcs-pop-aside"><span class="srcs-pop-val">${esc(currentMode.name)}</span>${ICO_CHEV}</span></button>`:'';
-
-  pop.innerHTML=`<button class="srcs-pop-item" data-menu="sources"><span class="srcs-pop-ico">${ICO_SRCS}</span><span class="srcs-pop-nm">My sources</span><span class="srcs-pop-aside"><span class="srcs-pop-val">${connected.length}</span>${ICO_CHEV}</span></button><button class="srcs-pop-item" id="srcs-pop-add"><span class="srcs-pop-ico">${ICO_ADD}</span><span class="srcs-pop-nm">Add sources</span><span class="srcs-pop-aside"><span class="srcs-pop-logos">${addLogos}</span></span></button>${modeRowHTML}`;
+  const modes=COMPOSER_MODES;
+  pop.innerHTML=`<div class="srcs-pop-hd">Composer mode</div>`+
+    modes.map(m=>{
+      const active=m.id===_composerMode;
+      return `<button class="srcs-pop-mode${active?' active':''}" data-mode="${m.id}">
+        <span class="srcs-pop-mode-main">
+          <span class="srcs-pop-mode-nm">${esc(m.name)}${active?' <span class="srcs-pop-mode-chk">✓</span>':''}</span>
+          <span class="srcs-pop-mode-dc">${esc(m.desc)}</span>
+        </span>
+      </button>`;
+    }).join('');
   document.body.appendChild(pop);
-  // Drop down below the anchor, left-aligned to the button
   const r=anchor.getBoundingClientRect();const pw=pop.offsetWidth;const ph=pop.offsetHeight;
   let left=r.left;if(left+pw>window.innerWidth-8)left=window.innerWidth-pw-8;if(left<8)left=8;
   let top=r.bottom+6;if(top+ph>window.innerHeight-8)top=r.top-ph-6;
   pop.style.left=left+'px';pop.style.top=top+'px';
 
-  // Add sources → open connector-picker modal
-  document.getElementById('srcs-pop-add').onclick=()=>{_closeSrcsPopover();showAddSourcePicker(ctx||{})};
-
-  // Flyout submenu renderer — anchored to the Mode / My sources row
-  function openFlyout(rowBtn,which){
-    _closeSrcsFlyout();
-    rowBtn.classList.add('hover');
-    const fl=document.createElement('div');fl.id='srcs-flyout';fl.className='srcs-flyout';
-    if(which==='mode'){
-      fl.innerHTML=COMPOSER_MODES.map(m=>`<button class="srcs-flyout-row${m.id===_composerMode?' active':''}" data-mode="${m.id}"><span class="srcs-flyout-main"><span class="srcs-flyout-nm">${esc(m.name)}</span><span class="srcs-flyout-dc">${esc(m.desc)}</span></span><span class="srcs-flyout-chk">${m.id===_composerMode?'✓':''}</span></button>`).join('');
-    }else if(which==='sources'){
-      if(connected.length){
-        fl.innerHTML=connected.map(c=>`<div class="srcs-flyout-row srcs-flyout-static"><span class="srcs-flyout-main"><span class="srcs-flyout-nm">${esc(c.name)}</span></span></div>`).join('');
-      }else{
-        fl.innerHTML=`<div class="srcs-flyout-empty">No sources connected yet.<br/>Add Notion, Drive, or GitHub to feed this corpus live.</div>`;
-      }
-    }
-    document.body.appendChild(fl);
-    // Position: right of the main panel, top-aligned with the hovered row.
-    const popR=pop.getBoundingClientRect();const rowR=rowBtn.getBoundingClientRect();
-    const fw=fl.offsetWidth;const fh=fl.offsetHeight;
-    let fLeft=popR.right+6;
-    if(fLeft+fw>window.innerWidth-8)fLeft=popR.left-fw-6;
-    let fTop=rowR.top-4;
-    if(fTop+fh>window.innerHeight-8)fTop=window.innerHeight-fh-8;
-    if(fTop<8)fTop=8;
-    fl.style.left=fLeft+'px';fl.style.top=fTop+'px';
-
-    if(which==='mode'){
-      fl.querySelectorAll('.srcs-flyout-row').forEach(btn=>{
-        btn.onclick=()=>{
-          _composerMode=btn.dataset.mode;
-          _closeSrcsPopover();
-          _refreshComposerPlaceholder();
-        };
-      });
-    }
-  }
-
-  pop.querySelectorAll('.srcs-pop-item[data-menu]').forEach(btn=>{
-    // Hover opens flyout (Notion pattern) — click also works for touch/keyboard.
-    btn.addEventListener('mouseenter',()=>openFlyout(btn,btn.dataset.menu));
-    btn.addEventListener('click',()=>openFlyout(btn,btn.dataset.menu));
-  });
-  // Closing the flyout when hovering a non-menu item (like Add sources)
-  pop.querySelectorAll('.srcs-pop-item:not([data-menu])').forEach(btn=>{
-    btn.addEventListener('mouseenter',_closeSrcsFlyout);
+  pop.querySelectorAll('.srcs-pop-mode').forEach(btn=>{
+    btn.onclick=()=>{
+      _composerMode=btn.dataset.mode;
+      _closeSrcsPopover();
+      _refreshComposerPlaceholder();
+    };
   });
 
-  // Close on outside click / Escape
   setTimeout(()=>{
     const outside=(e)=>{
       if(pop.contains(e.target))return;
-      const fl=document.getElementById('srcs-flyout');
-      if(fl&&fl.contains(e.target))return;
       if(e.target===anchor)return;
       _closeSrcsPopover();document.removeEventListener('click',outside,true);
     };
@@ -2176,7 +2377,7 @@ function renderChint(elId,ctx){
   const logos=_SOURCE_CONNECTORS.map(c=>`<button class="chint-logo" style="background:${c.bg};color:${c.fg}" title="${esc(c.name)}" data-kind="${c.kind}">${c.mono}</button>`).join('');
   el.innerHTML=`<span class="chint-lbl">Connect live sources</span><span class="chint-logos">${logos}</span><button class="chint-close" type="button" title="Dismiss">×</button>`;
   el.querySelector('.chint-close').onclick=()=>{localStorage.setItem(_CHINT_FLAG,'1');el.innerHTML=''};
-  el.querySelectorAll('.chint-logo').forEach(btn=>{btn.onclick=()=>{location.hash='#/connectors'}});
+  el.querySelectorAll('.chint-logo').forEach(btn=>{btn.onclick=()=>{showAppPanel(btn.dataset.kind,ctx||{})}});
 }
 
 /* Full Directory page — browseable catalog of all planned connectors.
@@ -2188,9 +2389,16 @@ function renderConnectors(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   const cardsHTML=_SOURCE_CONNECTORS.map((c,i)=>{
     const isSoon=c.status==='soon';
-    const btnLabel=isSoon?'Coming soon':(c.pro?'Connect · Pro':'Connect');
+    // Per-connector CTA override (e.g. Obsidian uses "Import vault" today
+    // because it's one-shot ZIP, not a persistent OAuth connection). Falls
+    // back to "Connect" for OAuth-style connectors once they ship.
+    const defaultCta=c.pro?'Connect · Pro':'Connect';
+    const activeLabel=c.cta?(c.pro?`${c.cta} · Pro`:c.cta):defaultCta;
+    // Panel opens for every app, including 'soon' ones — lets users see the
+    // per-method roadmap. Soon-status apps get a "View" label instead of CTA.
+    const btnLabel=isSoon?'View':activeLabel;
     const btnClass=isSoon?'ck-btn ck-btn-soon':'ck-btn ck-btn-connect';
-    return `<div class="ck-card${isSoon?' ck-card-soon':''}"><div class="ck-card-top"><span class="ck-ico" style="background:${c.bg};color:${c.fg}">${c.mono}</span><div class="ck-card-meta"><div class="ck-nm">${esc(c.name)}</div><div class="ck-rank">#${i+1} popular</div></div></div><div class="ck-dc">${esc(c.desc)}</div><div class="ck-card-foot"><button class="${btnClass}" data-kind="${c.kind}" ${isSoon?'disabled':''}>${btnLabel}</button></div></div>`;
+    return `<div class="ck-card${isSoon?' ck-card-soon':''}"><div class="ck-card-top"><span class="ck-ico" style="background:${c.bg};color:${c.fg}">${c.mono}</span><div class="ck-card-meta"><div class="ck-nm">${esc(c.name)}</div><div class="ck-rank">#${i+1} popular</div></div></div><div class="ck-dc">${esc(c.desc)}</div><div class="ck-card-foot"><button class="${btnClass}" data-kind="${c.kind}">${btnLabel}</button></div></div>`;
   }).join('');
   ct.innerHTML=`<div class="ck-page"><div class="ck-hd"><h1 class="ck-title">Connectors</h1><p class="ck-sub">Connect external sources so your corpus stays live — agents query them in real time. Rolling out continuously.</p></div><div class="ck-toolbar"><input type="text" class="ck-search" id="ck-search" placeholder="Search connectors..." /></div><div class="ck-grid" id="ck-grid">${cardsHTML}</div></div>`;
   document.getElementById('ck-search').oninput=(e)=>{
@@ -2201,11 +2409,13 @@ function renderConnectors(){
       card.style.display=(!q||nm.includes(q)||dc.includes(q))?'':'none';
     });
   };
-  ct.querySelectorAll('.ck-btn-connect').forEach(btn=>{
+  // Every card click opens the per-app panel — even for 'soon' apps, so
+  // users can see the full roadmap (e.g. "OAuth live sync — Soon") per app.
+  // Per-method Pro gating and status are handled inside showAppPanel.
+  ct.querySelectorAll('.ck-btn').forEach(btn=>{
     btn.onclick=()=>{
-      const kind=btn.dataset.kind;const c=_SOURCE_CONNECTORS.find(x=>x.kind===kind);
-      if(c.pro&&gateProFeature(`${c.name} connector is a Pro feature`))return;
-      toast(`${c.name} OAuth flow not wired yet`,'error');
+      const kind=btn.dataset.kind;
+      showAppPanel(kind,{});
     };
   });
 }
@@ -2218,7 +2428,7 @@ function showAddSourcePicker(ctx){
     const tag=isSoon
       ? `<span class="srcs-pick-tag">Coming soon</span>`
       : (c.pro?`<span class="srcs-pick-tag tag-pro">Pro</span>`:`<span class="srcs-pick-tag tag-avail">Available</span>`);
-    return `<button class="srcs-pick-row" data-kind="${c.kind}" ${isSoon?'disabled':''}><span class="srcs-pick-ico" style="background:${c.bg};color:${c.fg}">${c.mono}</span><span class="srcs-pick-main"><span class="srcs-pick-nm">${esc(c.name)}${tag}</span><span class="srcs-pick-dc">${esc(c.desc)}</span></span></button>`;
+    return `<button class="srcs-pick-row" data-kind="${c.kind}"><span class="srcs-pick-ico" style="background:${c.bg};color:${c.fg}">${c.mono}</span><span class="srcs-pick-main"><span class="srcs-pick-nm">${esc(c.name)}${tag}</span><span class="srcs-pick-dc">${esc(c.desc)}</span></span></button>`;
   }).join('');
   ov.innerHTML=`<div class="srcs-pick" style="position:relative"><button class="srcs-pick-close" id="srcs-pick-close" title="Close">×</button><div class="srcs-pick-hd"><h2 class="srcs-pick-ttl">Add a source</h2><p class="srcs-pick-sub">Connect external tools so agents can draw from your living knowledge. More connectors rolling out continuously.</p></div><div class="srcs-pick-body">${rows}</div></div>`;
   document.body.appendChild(ov);
@@ -2229,10 +2439,8 @@ function showAddSourcePicker(ctx){
     btn.onclick=()=>{
       if(btn.disabled)return;
       const kind=btn.dataset.kind;
-      const c=_SOURCE_CONNECTORS.find(x=>x.kind===kind);
-      if(c.pro&&gateProFeature(`${c.name} connector is a Pro feature`))return;
-      // Real OAuth flow wired per-connector as each lands.
-      toast(`${c.name} OAuth flow not wired yet`,'error');
+      close();
+      showAppPanel(kind,ctx||{});
     };
   });
 }
@@ -2295,7 +2503,7 @@ async function renderCorpus(id,sessionId){
   const wikiCount=wikiDocs.length;
   const conceptCount=conceptDocs.length;
   const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-attach-host" class="cv-attach-host"></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   document.getElementById('cv-desc-edit').onclick=()=>{
     const wrap=document.querySelector('.cv-desc-wrap');
@@ -2312,7 +2520,6 @@ async function renderCorpus(id,sessionId){
   // Composer is the SOLE action surface on the corpus page. Section "+ Add"
   // and "Compile" buttons are discoverable shortcuts that just trigger the
   // composer in the right state — no inline panels under those buttons.
-  const cvAttachHost=document.getElementById('cv-attach-host');
   const rawAddBtn=document.getElementById('cv-raw-add');
   const compileBtn=document.getElementById('cv-compile-btn');
   const cvComposerInput=document.getElementById('cv-composer-input');
@@ -2368,11 +2575,20 @@ async function renderCorpus(id,sessionId){
   }
   if(cvComposerMode)cvComposerMode.onclick=()=>_cvOpenModePicker(cvComposerMode);
 
-  // "+ Add" in Sources header is a shortcut to the composer's attach popover —
-  // no separate inline panel. Clicking focuses the composer and opens the same
-  // attach menu the composer's + button does, anchored to the composer's + so
-  // the popover visually points at the input.
-  const openCorpusAttach=anchor=>showAttachPopover(anchor,cvAttachHost,cvComposerInput,{corpusId:id,onComplete:()=>renderCorpus(id)});
+  // "+ Add" in Sources header AND the composer's + both open the same attach
+  // popover anchored to the corpus composer's + (so the picker visually
+  // points at the input). Picking an option doesn't render the panel here —
+  // it hands off to the home chat: corpus is pre-selected on the chip, the
+  // matching panel (upload/url/archive/rss) is pre-rendered into the chat
+  // stream, and the user lands in chat mode ready to fill it in.
+  const openCorpusAttach=anchor=>showAttachPopover(anchor,null,null,{
+    onAction:(action)=>{
+      _pendingHomeScope=id;
+      _pendingHomeAttachAction=action;
+      _termCtx={};
+      location.hash='#/main';
+    }
+  });
   if(rawAddBtn)rawAddBtn.onclick=()=>{cvComposerInput?.focus();openCorpusAttach(cvComposerAttach||rawAddBtn)};
   if(cvComposerAttach)cvComposerAttach.onclick=()=>openCorpusAttach(cvComposerAttach);
 

@@ -79,6 +79,81 @@ def _html_to_markdown(html: str) -> str:
 SUPPORTED_FILE_EXTENSIONS = (".md", ".txt", ".text", ".pdf", ".docx", ".csv", ".json", ".jsonl", ".html", ".htm")
 
 
+def _enrich_obsidian_metadata(metadata: dict, body: str, rel_path: str) -> None:
+    """Mutate ``metadata`` in place with Obsidian-specific fields derived from
+    the note body and its relative path.
+
+    Captures `[[wikilinks]]` and `#hashtags` for later entity resolution,
+    preserves folder structure as ``folder_path`` + adds first folder segment
+    as a tag, normalizes frontmatter ``tags`` / ``aliases`` list fields.
+    """
+    from noosphere.core.importers import _WIKILINK_PATTERN, _HASHTAG_PATTERN
+
+    rel_parts = rel_path.split("/")
+    folder = "/".join(rel_parts[:-1])
+    metadata["folder_path"] = folder
+    metadata["source"] = "obsidian_vault"
+
+    existing_tags = metadata.get("tags") or metadata.get("tag") or []
+    if isinstance(existing_tags, str):
+        existing_tags = [t.strip() for t in existing_tags.split(",") if t.strip()]
+    elif not isinstance(existing_tags, list):
+        existing_tags = []
+    tags: list[str] = ["obsidian"] + [str(t).strip() for t in existing_tags if str(t).strip()]
+    for m in _HASHTAG_PATTERN.finditer(body):
+        tags.append(m.group(1))
+    if folder:
+        tags.append(folder.split("/")[0])
+    seen: set[str] = set()
+    metadata["tags"] = [t for t in tags if not (t in seen or seen.add(t))]
+
+    wikilink_targets: list[str] = []
+    for m in _WIKILINK_PATTERN.finditer(body):
+        target = m.group(1).strip()
+        if target and target not in wikilink_targets:
+            wikilink_targets.append(target)
+    if wikilink_targets:
+        metadata["wikilink_targets"] = wikilink_targets
+
+    aliases = metadata.get("aliases") or metadata.get("alias")
+    if isinstance(aliases, str):
+        metadata["aliases"] = [a.strip() for a in aliases.split(",") if a.strip()]
+    elif not isinstance(aliases, list):
+        metadata.pop("aliases", None)
+
+
+def _ingest_obsidian_file(
+    corpus_id: str, filepath: Path, rel: str, content: str, file_hash: str
+) -> dict | None:
+    """Ingest a single .md file from an Obsidian vault as a new document.
+
+    Direct DB insert rather than routing through ``ingest_file`` because we
+    want the Obsidian-specific metadata (wikilinks, frontmatter list syntax)
+    and `source_kind=user_original` — the user owns their vault.
+    """
+    from noosphere.core.importers import _parse_obsidian_frontmatter
+
+    metadata, body = _parse_obsidian_frontmatter(content)
+    if not body.strip():
+        return None
+    title = (metadata.get("title") or "").strip() or _extract_markdown_title(body) or filepath.stem
+    metadata["source_path"] = rel
+    _enrich_obsidian_metadata(metadata, body, rel)
+
+    conn = get_conn()
+    doc_id = str(uuid.uuid4())
+    now = _now()
+    conn.execute(
+        "INSERT INTO documents (id, corpus_id, title, content, doc_type, source_kind, "
+        "word_count, content_hash, metadata_json, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (doc_id, corpus_id, title, body, "note", "user_original",
+         _word_count(body), file_hash, json.dumps(metadata), now),
+    )
+    conn.commit()
+    return {"id": doc_id, "title": title}
+
+
 def _extract_pdf_text(raw: bytes) -> str:
     import fitz
     doc = fitz.open(stream=raw, filetype="pdf")
@@ -440,8 +515,16 @@ def sync_directory(
     doc_type: str = "doc",
     prune: bool = False,
     file_extensions: tuple[str, ...] = SUPPORTED_FILE_EXTENSIONS,
+    format: str = "generic",
 ) -> dict:
     """Sync a directory to a corpus: add new files, update changed, optionally prune deleted.
+
+    ``format`` picks an ingest profile:
+      - ``"generic"`` — default behavior, light frontmatter parsing
+      - ``"obsidian"`` — treat the directory as an Obsidian vault: parse YAML
+        frontmatter including list-style tags/aliases, extract `#hashtags` and
+        `[[wikilinks]]`, attach folder path as tags, skip `.obsidian/` config
+        and `.trash/`. Notes are saved as ``source_kind='user_original'``.
 
     Returns dict with counts: new, updated, pruned, unchanged.
     """
@@ -466,10 +549,18 @@ def sync_directory(
         if sp:
             path_to_doc[sp] = dict(doc)
 
-    files = sorted(
-        f for f in directory.rglob("*")
-        if f.is_file() and f.suffix.lower() in file_extensions
-    )
+    if format == "obsidian":
+        # Obsidian: only .md files, skip `.obsidian/`, `.trash/`, dotfiles.
+        files = sorted(
+            f for f in directory.rglob("*.md")
+            if f.is_file()
+            and not any(part.startswith(".") for part in f.relative_to(directory).parts)
+        )
+    else:
+        files = sorted(
+            f for f in directory.rglob("*")
+            if f.is_file() and f.suffix.lower() in file_extensions
+        )
 
     new_count = 0
     updated_count = 0
@@ -497,9 +588,15 @@ def sync_directory(
                 unchanged_count += 1
                 continue
 
-            metadata, body = _extract_markdown_metadata(content)
+            if format == "obsidian":
+                from noosphere.core.importers import _parse_obsidian_frontmatter
+                metadata, body = _parse_obsidian_frontmatter(content)
+            else:
+                metadata, body = _extract_markdown_metadata(content)
             title = metadata.get("title") or _extract_markdown_title(body) or filepath.stem
             metadata["source_path"] = rel
+            if format == "obsidian":
+                _enrich_obsidian_metadata(metadata, body, rel)
 
             conn.execute(
                 "UPDATE documents SET title=?, content=?, word_count=?, content_hash=?, "
@@ -511,7 +608,10 @@ def sync_directory(
             conn.commit()
             updated_count += 1
         else:
-            doc = ingest_file(corpus_id, filepath, doc_type=doc_type, base_dir=directory)
+            if format == "obsidian":
+                doc = _ingest_obsidian_file(corpus_id, filepath, rel, content, file_hash)
+            else:
+                doc = ingest_file(corpus_id, filepath, doc_type=doc_type, base_dir=directory)
             if doc:
                 new_count += 1
 

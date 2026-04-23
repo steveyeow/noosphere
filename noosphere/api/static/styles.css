@@ -554,10 +554,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cv-chat-dock .home-composer{max-width:620px;margin:0 auto}
 .home-chip-locked{cursor:default;pointer-events:none;background:transparent;color:var(--tx3)}
 .home-chip-locked:hover{background:transparent}
-/* Inline attach panel host — sits between the Sources header and the doc list,
-   so upload/url/rss panels render inside the corpus content, not in a popover. */
-.cv-attach-host{display:flex;flex-direction:column}
-.cv-attach-host:empty{display:none}
 /* Scroll spacer so the last source doesn't hide behind the floating dock. */
 .cv-scroll-end{height:120px}
 /* The .cv-layout needs to be the positioning parent of the dock. */
@@ -1137,3 +1133,40 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
    sizing keeps alignment with the adjacent label text. */
 input[type="checkbox"]{accent-color:var(--tx);width:13px;height:13px;cursor:pointer;flex-shrink:0}
 @media(max-width:720px){.cap-card__body{grid-template-columns:1fr;gap:6px 0}.cap-card__label{margin-top:8px}}
+
+/* ── Per-app panel (Upload archive / Live connection / Plugin) ──
+   Modal overlay reusing srcs-pick-overlay positioning but with its own
+   header + sectioned method list. */
+.app-panel{max-width:560px;width:92vw}
+.app-panel-hd{display:flex;gap:14px;align-items:flex-start;padding:20px 24px 12px;border-bottom:1px solid var(--bd)}
+.app-panel-ico{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:8px;font-size:18px;font-weight:600;flex-shrink:0;font-family:'Libre Baskerville',Georgia,serif}
+.app-panel-hd-text{min-width:0;flex:1}
+.app-panel-hd-text .srcs-pick-ttl{margin:0 0 4px;font-size:17px}
+.app-panel-hd-text .srcs-pick-sub{margin:0;font-size:12px;color:var(--tx3);line-height:1.4}
+.app-panel-body{padding:8px 24px 20px;max-height:60vh;overflow-y:auto}
+.app-section-hd{margin:14px 0 6px;font-size:10.5px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+.app-section-body{display:flex;flex-direction:column;gap:8px}
+.app-m-row{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--bg2);text-align:left;cursor:pointer;transition:border-color .12s,background .12s;font-family:inherit;color:var(--tx)}
+.app-m-row:hover:not(:disabled){border-color:var(--tx3);background:var(--bg1)}
+.app-m-row:disabled{opacity:.55;cursor:not-allowed}
+.app-m-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.app-m-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.app-m-name{font-size:13px;font-weight:600;color:var(--tx)}
+.app-m-desc{font-size:11.5px;color:var(--tx3);line-height:1.45}
+.app-m-action{font-size:11px;color:var(--tx2);padding:5px 10px;border-radius:5px;border:1px solid var(--bd);flex-shrink:0;align-self:flex-start;background:var(--bg1)}
+.app-m-row:disabled .app-m-action{opacity:.6}
+.app-m-badge{display:inline-block;font-size:9.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:3px}
+.app-m-badge-ready{background:rgba(46,160,67,.14);color:#2ea043}
+.app-m-badge-beta{background:rgba(210,153,34,.16);color:#c99421}
+.app-m-badge-soon{background:var(--bd);color:var(--tx3)}
+.app-m-badge-pro{background:rgba(59,130,246,.14);color:#3b82f6}
+
+/* ── Mode picker (the sliders toggle) ── */
+.srcs-pop-hd{padding:8px 12px 4px;font-size:10.5px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+.srcs-pop-mode{display:flex;gap:10px;padding:8px 12px;background:transparent;border:0;text-align:left;cursor:pointer;font-family:inherit;color:var(--tx);border-radius:5px;margin:0 4px}
+.srcs-pop-mode:hover{background:var(--bg1)}
+.srcs-pop-mode.active{background:var(--bg1)}
+.srcs-pop-mode-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.srcs-pop-mode-nm{font-size:12.5px;font-weight:600;color:var(--tx)}
+.srcs-pop-mode-chk{color:var(--tx2);margin-left:4px}
+.srcs-pop-mode-dc{font-size:11px;color:var(--tx3);line-height:1.4}

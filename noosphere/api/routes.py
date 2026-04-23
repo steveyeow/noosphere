@@ -839,6 +839,33 @@ async def api_import_notion(corpus_id: str, request: Request, file: UploadFile =
             pass
 
 
+@router.post("/corpora/{corpus_id}/import/obsidian")
+async def api_import_obsidian(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import an Obsidian vault (zipped folder of .md files).
+
+    Preserves folder paths, YAML frontmatter, `#hashtags`, and `[[wikilinks]]`
+    on every note. Notes land as source_kind=user_original — the user owns
+    their vault. First-class entry point for Obsidian users bringing an
+    existing vault into the network.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Expected a .zip archive of your vault folder")
+    path = await _save_upload_to_temp(file)
+    try:
+        from noosphere.core.importers import import_obsidian_vault
+        return import_obsidian_vault(corpus["id"], path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 # ── Entity extraction (Phase 0.5) ──
 
 

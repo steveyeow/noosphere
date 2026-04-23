@@ -24,7 +24,7 @@ How the five value propositions above are actually built.
 
 Four ways to grow a knowledge base, mixed freely in the same corpus:
 - **Write / Note** — direct markdown, chat capture (`user_original` · `user_capture`)
-- **Import** — upload files, or pull your own content from elsewhere: Notion ZIP, Twitter archive, your own blog URLs (all `user_original`)
+- **Import** — upload files, or pull your own content from elsewhere: Obsidian vault, Notion ZIP, Twitter archive, your own blog URLs (all `user_original`)
 - **Connect** — RSS feeds, external URLs, live connectors; recurring inflow that stays current (`external_public`)
 - **Compile / Distill** — LLM-driven secondary work: `compile` fuses retrieved passages into concept notes; `distill` (planned) extracts your judgment via structured conversation (`user_capture`)
 
@@ -152,7 +152,7 @@ Supply side                              Demand side
 
 ## What it does
 
-1. **Ingest** — Markdown directories, file upload, single URL, **multiple URLs in one request**, **RSS/Atom feeds** (recurring inflow), PDF/DOCX/CSV/JSON. Everything becomes documents in a corpus.
+1. **Ingest** — Markdown directories, file upload, single URL, **multiple URLs in one request**, **Obsidian vaults** (wikilinks + tags preserved), **Notion / Twitter archives**, **RSS/Atom feeds** (recurring inflow), PDF/DOCX/CSV/JSON. Everything becomes documents in a corpus.
 2. **Grow** — **Save from chat** into the corpus (capture documents with provenance). **Compile** runs retrieval + LLM to add a fused “concept” note from existing material (similar in spirit to LLM-maintained wiki pages, but grounded on your stored sources).
 3. **Index** — Documents are chunked, embedded, and indexed for hybrid search (keyword + vector + fusion).
 4. **Serve** — Every corpus exposes an agent interface: MCP and REST endpoints to query, cite, and preview. Agents talk to the corpus; they don't just download it. The interface expands over time — capability self-description, routing beyond scope, calibrated confidence.
@@ -180,6 +180,96 @@ Then:
 - Open `http://localhost:8420` for the web UI with interactive corpus network
 - Connect your MCP client (Claude, Cursor, etc.) to `http://localhost:8420/mcp`
 - Use the REST API at `http://localhost:8420/api/v1/corpora`
+
+## Ingesting your knowledge
+
+Noosphere is designed as a general knowledge layer — no single tool is the source of truth. You bring your knowledge in through whichever path fits what you already have, and every document lands in the same corpus with the same `source_kind` attribution, search index, and agent interface.
+
+The composer's `+` menu has two kinds of entry points, cleanly separated:
+
+- **Primitive actions** — Upload file, Import a page, Add RSS feed. Format-agnostic, not tied to any app.
+- **Sources** — My sources (connected apps) and Add a source (browse the app catalog). Every third-party app — Obsidian, Notion, Twitter, future Google Drive / GitHub / Gmail / Slack — lives here. Clicking an app opens its **per-app panel** listing every method that app supports (one-shot archive import, live sync, plugin, etc.) with status badges (Ready / Beta / Soon).
+
+The app catalog is also reachable from the composer's source-logo strip and the `#/connectors` page. All three entry points open the same per-app panel, so there's one place to learn what each app can do.
+
+### Upload files
+
+Drop PDFs, Markdown, DOCX, TXT, CSV, JSON, or HTML. You pick the `source_kind` when the file is something other than your own work. Files are parsed, chunked, embedded, and indexed in the background — searchable in seconds.
+
+### Import a page (URL or paste)
+
+Paste a URL and Noosphere fetches + cleans the article into Markdown. Paste raw text and the first line becomes the title. Useful for one-off reference material — blog posts, papers, someone's essay — that you want agents to be able to cite.
+
+### Connect an RSS/Atom feed
+
+For sources that keep producing new content — a blog, a substack, a podcast feed — use composer `+` → **Add RSS feed**. Noosphere ingests the current posts immediately; Pro accounts get automatic re-polling so new posts keep flowing in. Feed content is `external_public` — it won't be resold to paying callers, but it's fully searchable within your own corpus.
+
+### Obsidian — vault import + live sync (Karpathy-style)
+
+Obsidian gets first-class support with two methods, both reachable from the **Obsidian** entry in the app catalog:
+
+**1. Upload vault (ZIP)** — one-shot. Zip your vault folder in Finder/Explorer (Compress), upload the ZIP. Every `.md` note becomes a document; your vault and Noosphere diverge after that.
+
+**2. CLI two-way sync** — persistent. The [Karpathy "LLM-maintained wiki"](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: your vault stays on disk, Obsidian stays your editor, Noosphere mirrors edits in the background and keeps the index fresh.
+
+```bash
+# One-time: point Noosphere at your vault
+python -m noosphere.cli sync ~/my-vault --corpus my-knowledge --obsidian
+
+# Keep it live: re-sync on every file change (Ctrl+C to stop)
+python -m noosphere.cli sync ~/my-vault --corpus my-knowledge --obsidian --watch
+```
+
+Both methods preserve:
+- Every `.md` note becomes a document (`source_kind=user_original` — it's your writing)
+- **YAML frontmatter** — `tags:`, `aliases:`, `created:`, custom properties flow into document metadata. List syntax (`tags: [a, b]` or block `- a`) is parsed.
+- **Folder structure** — the top-level folder becomes a tag; the full path is stored on the document as `metadata.folder_path`
+- **`#hashtags`** in note bodies → merged into the document's tag list
+- **`[[wikilinks]]`** → captured as `metadata.wikilink_targets` so later entity-resolution passes can map them to canonical entities without losing your explicit intent. `[[Alice|alt]]` and `[[Page#section]]` are both handled.
+
+Skipped: `.obsidian/` config, `.trash/`, dotfiles, and attachments (images, embedded PDFs). Upload important attachments separately via the regular file uploader.
+
+**Roadmap**: An Obsidian plugin with in-editor UI (sync status, peer subscribers, enrichments written back to the vault as a `__noosphere/` subfolder) is planned. The CLI path already delivers the core Karpathy experience; the plugin will sit on top of it.
+
+### Import other archives
+
+Same pattern as Obsidian's ZIP method — each app's panel includes its own archive uploader:
+- **Notion** workspace exports (Settings → Data export → Markdown & CSV)
+- **Twitter / X** data exports (twitter.com/settings/download_your_data)
+
+Both land as `user_original` — you're importing your own data, and what you publish on Noosphere can be monetized if you choose.
+
+### Save from chat
+
+Every answer in chat has a **Save to corpus** affordance. A comparison you asked for, an analysis, a useful synthesis — any of these can be filed back into the corpus as a new document (`source_kind=user_capture`). This is how explorations compound into your knowledge base instead of disappearing into chat history.
+
+### CLI — bulk ingest a folder
+
+For scripted workflows or first-time onboarding of a large existing folder:
+
+```bash
+python -m noosphere.cli init ./my-knowledge-base --name "My Knowledge"
+```
+
+Walks the directory, ingests every supported file, and runs the initial index. Equivalent to using the web upload repeatedly, but scriptable. For Obsidian vaults use `sync --obsidian` (above) instead — it knows about wikilinks, tags, and vault conventions.
+
+### Roadmap — more connectors
+
+The composer's source picker lists the full catalog. Shipping one at a time:
+
+| Connector       | Status         | Notes                                                             |
+| --------------- | -------------- | ----------------------------------------------------------------- |
+| Obsidian        | **Available**  | ZIP import + CLI two-way sync (`--obsidian --watch`). Plugin planned. |
+| Notion          | **Available**  | ZIP import today; live-sync OAuth planned                         |
+| Twitter / X     | **Available**  | One-shot archive import                                           |
+| RSS / Atom      | **Available**  | Manual feed add today; auto-polling on Pro planned                |
+| Google Drive    | Coming soon    | Docs, Sheets, folder selection                                    |
+| GitHub          | Coming soon    | READMEs, issues, discussions                                      |
+| Gmail           | Coming soon    | Threads filtered by label                                         |
+| Slack           | Coming soon    | Channels and DMs                                                  |
+| Email forwarding| Coming soon    | A unique inbox address per corpus                                 |
+
+Every connector lands as a document in the same corpus — the agent interface (`ask`, `search`, `describe`, etc.) doesn't care where a document came from, only about `source_kind` attribution and whether it's monetizable under the Principle-3 copyright rule.
 
 ## How the network works
 
