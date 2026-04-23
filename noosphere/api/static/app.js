@@ -6,6 +6,15 @@ let _cloudMode=false,_supabase=null,_authUser=null,_authSession=null;
 // helpers (placeholder refresh, compile routing) can see what the user has
 // selected in the chip. null = "Any" (across all corpora); otherwise a corpus id.
 let _homeScope=null;
+// One-shot pre-selection consumed by renderHome() — set when the user enters
+// the home composer from a corpus page's "Chat with X" CTA, so the chip and
+// placeholder are already scoped on arrival.
+let _pendingHomeScope=null;
+// One-shot handoff: corpus-page chat dock → New Chat composer. _pendingHomeInput
+// is the typed text; _pendingHomeAutoSend=true fires the home send-flow on the
+// next renderHome so the user lands mid-send, not mid-draft.
+let _pendingHomeInput=null;
+let _pendingHomeAutoSend=false;
 // Composer mode: 'create' | 'enrich' | 'compile'. Default 'enrich' because
 // most sessions add to an existing KB; 'create' kicks in for users without
 // any corpora; 'compile' swaps Send behavior to synthesize a wiki/entity.
@@ -60,14 +69,24 @@ function handleQuotaError(res,body){
 
 /* Pre-intercept a Pro-only action for Free users, saving a round-trip.
    Returns true if the user is Free (modal opened, caller should bail).
-   Self-hosted users (no auth) always pass through. */
+
+   Self-hosted (!_cloudMode): always pass through — the open-source build has
+   no Pro concept; every feature is available. Cloud mode: Pro users pass,
+   everyone else sees the paywall modal (including unauthenticated viewers,
+   who need to sign in before upgrading). */
 function gateProFeature(reason){
-  if(!_authUser)return false;
-  const tier=_authUser.user_metadata?.tier||'free';
+  if(!_cloudMode)return false;
+  const tier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
   if(tier==='pro')return false;
   showProModal(reason);
   return true;
 }
+
+/* True when Pro badges / Pro-locked rows should render at all. Self-hosted
+   has no tiers, so hide them entirely. In cloud mode always show them —
+   even for signed-out visitors (the badge tells them this is gated before
+   they sign up). */
+function shouldShowProUI(){return !!_cloudMode}
 
 /* Extract a readable error message from a parsed JSON body. Handles the case
    where FastAPI's `detail` is an object (e.g. 429 quota_exceeded) rather than
@@ -258,13 +277,17 @@ async function route(){const h=location.hash||'#/';stopAll();
     await renderCompile(qp);
   }
   else if(h.startsWith('#/corpus/')){
-    // #/corpus/{cid} or #/corpus/{cid}/entity/{eid}[?query]
+    // #/corpus/{cid}                    — Overview tab (default)
+    // #/corpus/{cid}/insights           — Insights tab (agent activity)
+    // #/corpus/{cid}/entity/{eid}[?q]   — entity drill-down (legacy)
     const afterPrefix=h.substring('#/corpus/'.length);
     const [pathPart,queryPart]=afterPrefix.split('?');
     const segs=pathPart.split('/');
     const corpusId=segs[0];
     if(segs[1]==='entity'&&segs[2]){
       await renderEntity(corpusId,segs[2]);
+    }else if(segs[1]==='insights'){
+      await renderCorpusInsights(corpusId);
     }else{
       const params=new URLSearchParams(queryPart||'');
       const sessionId=params.get('session');
@@ -561,6 +584,12 @@ function renderHome(){
   // the flyout lines up predictably regardless of which of the two the user hits.
   const modeLabelBtn=document.getElementById('home-mode-label');
   if(modeLabelBtn)modeLabelBtn.onclick=()=>{const a=document.getElementById('home-sliders');showSourcesPopover(a,{corpusId:null,corpusName:null})};
+  // Scoped corpus: null means "Any" (default). Persists across sends.
+  // Hoisted to module-level _homeScope so the Recently compiled section and
+  // the Compile picker can read the same selection. Consumes _pendingHomeScope
+  // if a corpus page's "Chat with X" CTA pre-selected one before navigating here.
+  _homeScope=_pendingHomeScope||null;
+  _pendingHomeScope=null;
   _refreshComposerPlaceholder();
   renderChint('home-chint',{corpusId:null});
   const composer=document.getElementById('home-composer');
@@ -573,10 +602,6 @@ function renderHome(){
   // Composer mode state. 'ask' (default, talk to your knowledge) vs.
   // 'write' (the composer becomes a note body; Send becomes Save).
   let _mode='ask';
-  // Scoped corpus: null means "Any" (default). Persists across sends.
-  // Hoisted to module-level _homeScope so the Recently compiled section and
-  // the Compile picker can read the same selection.
-  _homeScope=null;
 
   // Auto-resize textarea as user types
   function autosize(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,_mode==='write'?Math.round(window.innerHeight*0.6):200)+'px'}
@@ -647,6 +672,19 @@ function renderHome(){
     chipLbl.textContent=prefix+name;
     // Enrich placeholder depends on whether a KB is picked — keep them in sync.
     _refreshComposerPlaceholder();
+  }
+  // Initial paint — honors _homeScope set from _pendingHomeScope above.
+  updateChip();
+  // Consume any pre-filled draft from a corpus-page chat dock. Auto-send fires
+  // on next tick so placeholder/chip paint first and the send flow sees the
+  // final state (otherwise scope might not be read yet by the send handler).
+  if(_pendingHomeInput){
+    const pending=_pendingHomeInput;const shouldSend=_pendingHomeAutoSend;
+    _pendingHomeInput=null;_pendingHomeAutoSend=false;
+    input.value=pending;
+    autosize();
+    if(shouldSend){setTimeout(()=>{sendBtn?.click()},0)}
+    else{input.focus()}
   }
   function enterWrite(seedTitle){
     _mode='write';
@@ -733,7 +771,7 @@ function renderHome(){
     }
     _menuOpen=true;
     menu.querySelectorAll('.home-chip-menu-item').forEach(el=>{
-      el.onclick=()=>{_homeScope=el.dataset.id||null;updateChip();closeChipMenu();input.focus()};
+      el.onclick=()=>{_homeScope=el.dataset.id||null;updateChip();closeChipMenu();_refreshComposerPlaceholder();input.focus()};
     });
     const nameEl=menu.querySelector('#chip-new-name'),goEl=menu.querySelector('#chip-new-go');
     const createNew=async()=>{
@@ -741,7 +779,7 @@ function renderHome(){
       goEl.disabled=true;goEl.textContent='…';
       try{
         const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,access_level:'public'})});
-        const c=await r.json();await loadC();_homeScope=c.id;updateChip();closeChipMenu();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
+        const c=await r.json();await loadC();_homeScope=c.id;updateChip();closeChipMenu();_refreshComposerPlaceholder();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
       }catch(e){toast('Failed to create corpus');goEl.disabled=false;goEl.textContent='Create'}
     };
     goEl.onclick=createNew;
@@ -1275,7 +1313,17 @@ function addLine(container,type,text,id,line){
      - Paste   → POST /corpora/:id/upload (multipart, synthesized .md)
      - Archive → POST /corpora/:id/import/{twitter|notion}
    Call sites pass `defaultCorpus` so the home page's chip selection carries. */
-function showTermUpload(output,input,defaultCorpus){
+function showTermUpload(output,input,defaultCorpus,opts){
+  opts=opts||{};
+  // When lockCorpus is true, the panel is pinned to defaultCorpus and never
+  // reads _homeScope — the corpus page uses this so the upload always targets
+  // the corpus the user is viewing, regardless of the home chip's stale value.
+  const lockCorpus=!!opts.lockCorpus;
+  // onComplete replaces the chat-stream success feedback (addLine cards) with
+  // a caller-provided callback — the corpus page passes renderCorpus(id) so
+  // the Sources list refreshes inline instead of leaving a stray "Added …"
+  // line behind.
+  const onComplete=typeof opts.onComplete==='function'?opts.onComplete:null;
   const wrap=document.createElement('div');wrap.className='term-upload-wrap';
   let _uFiles=[];let _tab='files';
   wrap.innerHTML=`<div class="term-upload-tabs"><button class="term-upload-tab active" data-tab="files" type="button">Files</button><button class="term-upload-tab" data-tab="url" type="button">URL</button><button class="term-upload-tab" data-tab="paste" type="button">Paste</button><button class="term-upload-tab" data-tab="archive" type="button">Archive</button></div><div class="term-upload-body" id="tu-body"></div>`;
@@ -1284,10 +1332,12 @@ function showTermUpload(output,input,defaultCorpus){
   const body=wrap.querySelector('#tu-body');
   const tabsEl=wrap.querySelectorAll('.term-upload-tab');
 
-  // Shared: resolve a corpus id. Read _homeScope FRESH on each call so chip
-  // changes between open-panel and submit are respected. Fallbacks: single
-  // corpus → auto-create → inline picker.
+  // Shared: resolve a corpus id. On the home composer, read _homeScope FRESH
+  // on each call so chip changes between open-panel and submit are respected.
+  // On the corpus page (lockCorpus), defaultCorpus is the only answer.
+  // Fallbacks: single corpus → auto-create → inline picker.
   async function resolveCorpus(){
+    if(lockCorpus)return defaultCorpus||null;
     let cid=_homeScope||defaultCorpus||null;
     if(cid)return cid;
     await loadC();
@@ -1298,10 +1348,29 @@ function showTermUpload(output,input,defaultCorpus){
     }
     return await pickCorpusInline(output);
   }
+  // Report a failure. On home, it streams into the chat; on corpus page, the
+  // output container isn't a terminal stream — toast instead.
+  function reportErr(msg){
+    if(onComplete)toast(msg,'error');
+    else addLine(output,'resp',msg);
+  }
+  // Report a success. On home, stream a resp + card line pair; on corpus
+  // page, fire the onComplete callback (e.g. renderCorpus(id)) so the caller
+  // refreshes its own UI state.
+  function reportOK(respLine,cardDef){
+    if(onComplete){onComplete();return}
+    addLine(output,'resp',respLine);
+    if(cardDef)addLine(output,'card',null,null,cardDef);
+  }
   function cancelAndReturn(){
     wrap.remove();
-    const home=document.getElementById('home');
-    if(home&&!output.children.length)home.classList.remove('home--active');
+    // Only toggle home--active when we're actually on home. On corpus page
+    // onComplete is set and there is no #home element; we'd still no-op but
+    // skip the children.length check to be explicit.
+    if(!onComplete){
+      const home=document.getElementById('home');
+      if(home&&!output.children.length)home.classList.remove('home--active');
+    }
     if(input)input.focus();
   }
   function renderFiles(){
@@ -1325,25 +1394,25 @@ function showTermUpload(output,input,defaultCorpus){
       if(!_uFiles.length)return;
       goBtn.disabled=true;goBtn.textContent='Uploading...';cancelBtn.style.display='none';
       const cid=await resolveCorpus();
-      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
       const fd=new FormData();
       for(const f of _uFiles)fd.append('files',f);
       fd.append('source_kind',body.querySelector('#tu-sk')?.value||'user_original');
+      const nFiles=_uFiles.length;
       try{
         const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
         const d=await r.json();
         wrap.remove();
-        if(!r.ok){addLine(output,'resp','Upload failed: '+(d.detail||r.statusText));if(input)input.focus();return}
-        addLine(output,'resp',`Added ${d.uploaded||_uFiles.length} file${_uFiles.length>1?'s':''}`);
+        if(!r.ok){reportErr('Upload failed: '+(d.detail||r.statusText));if(input)input.focus();return}
         // Fire-and-forget processing. Debouncer coalesces consecutive ingests
         // into one index run; corpus detail page has a Re-process button for
         // recovery if anything ever fails silently.
         ensureIndexed(cid);
-        const corpus=_corpora.find(c=>c.id===cid);
-        addLine(output,'card',null,null,{type:'card',label:'Files Added',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${_uFiles.length} file${_uFiles.length>1?'s':''} added — ingesting in background`,corpus_id:cid});
         await loadC();
-      }catch(e){wrap.remove();addLine(output,'resp','Upload failed: '+e.message)}
-      if(input)input.focus();
+        const corpus=_corpora.find(c=>c.id===cid);
+        reportOK(`Added ${d.uploaded||nFiles} file${nFiles>1?'s':''}`,{type:'card',label:'Files Added',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${nFiles} file${nFiles>1?'s':''} added — ingesting in background`,corpus_id:cid});
+      }catch(e){wrap.remove();reportErr('Upload failed: '+e.message)}
+      if(input&&!onComplete)input.focus();
     };
   }
   function renderURL(){
@@ -1363,9 +1432,12 @@ function showTermUpload(output,input,defaultCorpus){
     body.querySelector('#tu-rss-switch').onclick=()=>{
       const url=urlEl.value.trim();
       wrap.remove();
-      const home=document.getElementById('home');
-      if(home)home.classList.add('home--active');
-      showTermConnectRSS(output,input,_homeScope||defaultCorpus);
+      if(!onComplete){
+        const home=document.getElementById('home');
+        if(home)home.classList.add('home--active');
+      }
+      const nextCorpus=lockCorpus?defaultCorpus:(_homeScope||defaultCorpus);
+      showTermConnectRSS(output,input,nextCorpus,opts);
       // Pre-fill the RSS panel with what they had typed
       setTimeout(()=>{const rssUrl=document.getElementById('tu-url');if(rssUrl)rssUrl.value=url;const goBtn=document.getElementById('tu-go');if(goBtn)goBtn.disabled=!url},50);
     };
@@ -1374,20 +1446,19 @@ function showTermUpload(output,input,defaultCorpus){
       const url=urlEl.value.trim();if(!url)return;
       goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
       const cid=await resolveCorpus();
-      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
       const sk=body.querySelector('#tu-sk')?.value||'external_public';
       try{
         const r=await fetch(`${API}/corpora/${cid}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,source_kind:sk})});
         const d=await r.json();
         wrap.remove();
-        if(!r.ok){addLine(output,'resp','Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
-        addLine(output,'resp',`Imported: "${d.title||d.name||url}"`);
+        if(!r.ok){reportErr('Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
         ensureIndexed(cid);
-        const corpus=_corpora.find(c=>c.id===cid);
-        addLine(output,'card',null,null,{type:'card',label:'URL Imported',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:urlEl.value||'',corpus_id:cid});
         await loadC();
-      }catch(e){wrap.remove();addLine(output,'resp','Import failed: '+e.message)}
-      if(input)input.focus();
+        const corpus=_corpora.find(c=>c.id===cid);
+        reportOK(`Imported: "${d.title||d.name||url}"`,{type:'card',label:'URL Imported',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:url,corpus_id:cid});
+      }catch(e){wrap.remove();reportErr('Import failed: '+e.message)}
+      if(input&&!onComplete)input.focus();
     };
   }
   function renderPaste(){
@@ -1400,7 +1471,7 @@ function showTermUpload(output,input,defaultCorpus){
       const text=taEl.value.trim();if(!text)return;
       goBtn.disabled=true;goBtn.textContent='Saving...';cancelBtn.style.display='none';
       const cid=await resolveCorpus();
-      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
       const firstLine=(text.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
       const title=firstLine.slice(0,80)||('Pasted '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
       const fd=new FormData();
@@ -1410,14 +1481,13 @@ function showTermUpload(output,input,defaultCorpus){
         const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
         const d=await r.json();
         wrap.remove();
-        if(!r.ok){addLine(output,'resp','Save failed: '+(d.detail||r.statusText));if(input)input.focus();return}
-        addLine(output,'resp',`Saved: "${title}"`);
+        if(!r.ok){reportErr('Save failed: '+(d.detail||r.statusText));if(input)input.focus();return}
         ensureIndexed(cid);
-        const corpus=_corpora.find(c=>c.id===cid);
-        addLine(output,'card',null,null,{type:'card',label:'Text Saved',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:title,corpus_id:cid});
         await loadC();
-      }catch(e){wrap.remove();addLine(output,'resp','Save failed: '+e.message)}
-      if(input)input.focus();
+        const corpus=_corpora.find(c=>c.id===cid);
+        reportOK(`Saved: "${title}"`,{type:'card',label:'Text Saved',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:title,corpus_id:cid});
+      }catch(e){wrap.remove();reportErr('Save failed: '+e.message)}
+      if(input&&!onComplete)input.focus();
     };
   }
   function renderArchive(){
@@ -1431,23 +1501,22 @@ function showTermUpload(output,input,defaultCorpus){
       const label=kind==='twitter'?'Twitter / X':'Notion';
       goBtn.disabled=true;goBtn.textContent='Importing...';cancelBtn.style.display='none';
       const cid=await resolveCorpus();
-      if(!cid){wrap.remove();addLine(output,'resp','No corpus selected.');if(input)input.focus();return}
+      if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
       const fd=new FormData();fd.append('file',fi.files[0]);
       try{
         const r=await fetch(`${API}/corpora/${cid}/import/${kind}`,{method:'POST',body:fd});
         const d=await r.json().catch(()=>({}));
         wrap.remove();
-        if(!r.ok){addLine(output,'resp','Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
-        const corpus=_corpora.find(c=>c.id===cid);
-        addLine(output,'resp',`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?` (${d.skipped} skipped)`:''}.`);
+        if(!r.ok){reportErr('Import failed: '+(d.detail||r.statusText));if(input)input.focus();return}
         // Archive import used to skip indexing — newly imported items stayed
         // un-searchable until something else triggered /index. Fix: debounced
         // trigger here so the archive actually becomes usable.
         ensureIndexed(cid);
-        addLine(output,'card',null,null,{type:'card',label:`${label} imported`,status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${d.imported||0} items`,corpus_id:cid});
         await loadC();
-      }catch(e){wrap.remove();addLine(output,'resp','Import failed: '+e.message)}
-      if(input)input.focus();
+        const corpus=_corpora.find(c=>c.id===cid);
+        reportOK(`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?` (${d.skipped} skipped)`:''}.`,{type:'card',label:`${label} imported`,status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${d.imported||0} items`,corpus_id:cid});
+      }catch(e){wrap.remove();reportErr('Import failed: '+e.message)}
+      if(input&&!onComplete)input.focus();
     };
   }
   function setTab(t){
@@ -1465,7 +1534,10 @@ function showTermUpload(output,input,defaultCorpus){
 /* ══════ CONNECT RSS FEED ══════
    Persistent source — the backend enrichment loop re-polls registered feeds,
    so this is the one connector that actually keeps flowing. */
-function showTermConnectRSS(output,input,defaultCorpus){
+function showTermConnectRSS(output,input,defaultCorpus,opts){
+  opts=opts||{};
+  const lockCorpus=!!opts.lockCorpus;
+  const onComplete=typeof opts.onComplete==='function'?opts.onComplete:null;
   const tier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
   const footer=tier==='pro'
     ? `<div style="font-family:inherit;font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.5">Noos watches this feed and pulls in new posts automatically.</div>`
@@ -1481,24 +1553,36 @@ function showTermConnectRSS(output,input,defaultCorpus){
   urlEl.oninput=()=>{goBtn.disabled=!urlEl.value.trim()};
   urlEl.onkeydown=e=>{if(e.key==='Enter'&&!goBtn.disabled){e.preventDefault();goBtn.click()}};
   wrap.querySelector('[data-pro-link]')?.addEventListener('click',ev=>{ev.preventDefault();showProModal('Auto-add is a Pro feature')});
+  function reportErr(msg){
+    if(onComplete)toast(msg,'error');
+    else addLine(output,'resp',msg);
+  }
+  function reportOK(respLine,cardDef){
+    if(onComplete){onComplete();return}
+    addLine(output,'resp',respLine);
+    if(cardDef)addLine(output,'card',null,null,cardDef);
+  }
   cancelBtn.onclick=()=>{
     wrap.remove();
-    const home=document.getElementById('home');
-    if(home&&!output.children.length)home.classList.remove('home--active');
+    if(!onComplete){
+      const home=document.getElementById('home');
+      if(home&&!output.children.length)home.classList.remove('home--active');
+    }
     if(input)input.focus();
   };
   goBtn.onclick=async()=>{
     const url=urlEl.value.trim();if(!url)return;
     const maxItems=parseInt(maxEl.value)||25;
     goBtn.disabled=true;goBtn.textContent='Fetching feed...';cancelBtn.style.display='none';
-    // Read _homeScope fresh — user may have changed the chip after opening.
-    let cid=_homeScope||defaultCorpus||null;
+    // On corpus page (lockCorpus), defaultCorpus is the only answer. On home,
+    // read _homeScope fresh so late chip-changes are respected.
+    let cid=lockCorpus?(defaultCorpus||null):(_homeScope||defaultCorpus||null);
     if(!cid){
       await loadC();
       if(_corpora.length===1){cid=_corpora[0].id}
       else if(_corpora.length===0){
         try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'My Knowledge',access_level:'public'})});const c=await r.json();cid=c.id;await loadC()}
-        catch(e){addLine(output,'resp','Failed to create corpus.');wrap.remove();if(input)input.focus();return}
+        catch(e){reportErr('Failed to create corpus.');wrap.remove();if(input)input.focus();return}
       } else {
         const picked=await pickCorpusInline(output);
         if(!picked){wrap.remove();if(input)input.focus();return}
@@ -1510,15 +1594,14 @@ function showTermConnectRSS(output,input,defaultCorpus){
       const d=await r.json();
       if(handleQuotaError(r,d)){wrap.remove();if(input)input.focus();return}
       wrap.remove();
-      if(!r.ok){addLine(output,'resp','Add feed failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+      if(!r.ok){reportErr('Add feed failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+      await loadC();
       const corpus=_corpora.find(c=>c.id===cid);
       const tierNow=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
       const tail=tierNow==='pro'?" Noos will check back every hour.":"";
-      addLine(output,'resp',`Noos read ${d.ingested||0} new post${d.ingested===1?'':'s'} from this feed.${tail}`);
-      addLine(output,'card',null,null,{type:'card',label:'Feed connected',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:url,corpus_id:cid});
-      await loadC();
-    }catch(e){wrap.remove();addLine(output,'resp','Add feed failed: '+e.message)}
-    if(input)input.focus();
+      reportOK(`Noos read ${d.ingested||0} new post${d.ingested===1?'':'s'} from this feed.${tail}`,{type:'card',label:'Feed connected',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:url,corpus_id:cid});
+    }catch(e){wrap.remove();reportErr('Add feed failed: '+e.message)}
+    if(input&&!onComplete)input.focus();
   };
 }
 
@@ -1802,155 +1885,6 @@ async function drawGraphIn(container,corpora,existingCanvas){
   sim.on('tick',()=>{});_gAnim=requestAnimationFrame(draw);
 }
 
-/* ══════ INLINE COMPILE (Wiki generator, separate from + Add) ══════ */
-function showCorpusCompile(corpusId){
-  const container=document.getElementById('cv-wiki-docs');if(!container)return;
-  if(document.getElementById('cv-compile-panel'))return;
-  const panel=document.createElement('div');panel.id='cv-compile-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-body"><input type="text" class="fi" id="cc-topic" placeholder='Topic to compile, e.g. "pricing strategy"' style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><label style="font-size:11px;color:var(--tx3)">Retrieval breadth:</label><input type="number" class="fi" id="cc-topk" value="10" min="3" max="30" style="width:60px;font-size:12px" /></div><div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">Retrieves top passages from your Sources and uses an LLM to synthesize a concept note. Requires chat API keys.</div><div class="cv-add-actions"><button class="btn-sm" id="cc-go">Compile</button><button class="btn-sm-ghost" id="cc-cancel">Cancel</button></div></div>`;
-  container.parentNode.insertBefore(panel,container);
-  const topic=panel.querySelector('#cc-topic');topic.focus();
-  panel.querySelector('#cc-cancel').onclick=()=>panel.remove();
-  panel.querySelector('#cc-go').onclick=async()=>{
-    const t=topic.value.trim();const tk=parseInt(panel.querySelector('#cc-topk').value)||10;
-    if(!t){toast('Enter a topic');return}
-    const btn=panel.querySelector('#cc-go');btn.disabled=true;btn.textContent='Compiling...';
-    try{
-      const r=await fetch(`${API}/corpora/${corpusId}/compile`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:t,top_k:tk})});
-      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
-      const d=await r.json();toast(`Compiled: ${d.title||t}`,'success');
-      panel.remove();renderCorpus(corpusId);
-    }catch(e){toast('Compile failed: '+e.message);btn.disabled=false;btn.textContent='Compile'}
-  };
-}
-
-/* ══════ INLINE ADD DOCUMENT (Raw ingestion only — tabs for Upload/Write/URL/Archive/RSS) ══════ */
-function showCorpusAddDoc(corpusId,initialTab){
-  const container=document.getElementById('cv-raw-docs')||document.getElementById('cv-docs')||document.getElementById('cv-build-srcs');
-  if(!container)return;
-  if(document.getElementById('cv-add-panel'))return;
-  const panel=document.createElement('div');panel.id='cv-add-panel';panel.className='cv-add-panel';
-  panel.innerHTML=`<div class="cv-add-tabs"><button class="cv-add-tab active" data-tab="upload">Upload files</button><button class="cv-add-tab" data-tab="write">Write</button><button class="cv-add-tab" data-tab="url">From URL</button><button class="cv-add-tab" data-tab="urls">Batch URLs</button><button class="cv-add-tab" data-tab="feed">Add feed</button><button class="cv-add-tab" data-tab="archive">Import archive</button></div><div class="cv-add-body" id="cv-add-body"></div>`;
-  container.parentNode.insertBefore(panel,container);
-
-  const body=panel.querySelector('#cv-add-body');
-  const tabs=panel.querySelectorAll('.cv-add-tab');
-  let _files=[];
-
-  function setTab(tab){
-    tabs.forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
-    if(tab==='upload'){
-      body.innerHTML=`<div class="cv-add-dz" id="cv-add-dz"><input type="file" id="cv-add-fi" multiple accept=".md,.txt,.text,.html,.htm,.pdf,.docx,.csv,.json,.jsonl" hidden /><div style="color:var(--tx3);font-size:13px">Drop files here, or <span style="color:var(--tx);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px" id="cv-add-browse">browse</span></div><div style="font-size:11px;color:var(--tx3);margin-top:4px">PDF, Markdown, DOCX, TXT, CSV, JSON</div><div id="cv-add-flist"></div></div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Upload</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      const dz=body.querySelector('#cv-add-dz'),fi=body.querySelector('#cv-add-fi'),flist=body.querySelector('#cv-add-flist');
-      const goBtn=body.querySelector('#cv-add-go'),cancelBtn=body.querySelector('#cv-add-cancel');
-      function refreshFL(){flist.innerHTML=_files.map(f=>`<div style="font-size:12px;padding:2px 0;color:var(--tx2)">${esc(f.name)} <span style="color:var(--tx3)">${(f.size/1024).toFixed(1)}KB</span></div>`).join('');goBtn.disabled=!_files.length}
-      body.querySelector('#cv-add-browse').onclick=()=>fi.click();
-      dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag-over')};
-      dz.ondragleave=()=>dz.classList.remove('drag-over');
-      dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag-over');for(const f of e.dataTransfer.files)_files.push(f);refreshFL()};
-      fi.onchange=()=>{for(const f of fi.files)_files.push(f);fi.value='';refreshFL()};
-      cancelBtn.onclick=()=>{_files=[];panel.remove()};
-      goBtn.onclick=async()=>{
-        if(!_files.length)return;goBtn.disabled=true;goBtn.textContent='Uploading...';
-        const fd=new FormData();for(const f of _files)fd.append('files',f);
-        try{await fetch(`${API}/corpora/${corpusId}/upload`,{method:'POST',body:fd})}catch(e){toast('Upload failed');goBtn.disabled=false;goBtn.textContent='Upload';return}
-        ensureIndexed(corpusId);
-        _files=[];panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='write'){
-      body.innerHTML=`<input type="text" class="term-write-title" id="cv-add-title" placeholder="Title" style="margin-bottom:6px" /><textarea class="term-write-body" id="cv-add-text" placeholder="Write your knowledge here... (Markdown supported)" rows="6" style="min-height:100px"></textarea><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Save</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-title').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const title=body.querySelector('#cv-add-title').value.trim(),text=body.querySelector('#cv-add-text').value.trim();
-        if(!title||!text){toast('Title and content are required');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Saving...';
-        const fd=new FormData();fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+text],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
-        try{await fetch(`${API}/corpora/${corpusId}/upload`,{method:'POST',body:fd})}catch(e){toast('Upload failed');btn.disabled=false;btn.textContent='Save';return}
-        ensureIndexed(corpusId);
-        panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='url'){
-      body.innerHTML=`<input type="text" class="fi" id="cv-add-url" placeholder="https://example.com/article" style="font-size:13px" /><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Import</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-url').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const url=body.querySelector('#cv-add-url').value.trim();
-        if(!url){toast('Enter a URL');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Fetching...';
-        try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});if(!r.ok)throw new Error((await r.json()).detail||'Failed')}catch(e){toast('Fetch failed: '+e.message);btn.disabled=false;btn.textContent='Import';return}
-        ensureIndexed(corpusId);
-        panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='urls'){
-      body.innerHTML=`<textarea class="term-write-body" id="cv-add-urls" placeholder="Paste URLs, one per line (max 40)" rows="6" style="min-height:80px;font-size:12px;font-family:monospace"></textarea><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Import all</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-urls').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const raw=body.querySelector('#cv-add-urls').value.trim();
-        const urls=raw.split('\n').map(u=>u.trim()).filter(u=>u&&u.startsWith('http'));
-        if(!urls.length){toast('Enter at least one URL');return}
-        if(urls.length>40){toast('Maximum 40 URLs per batch');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent=`Fetching ${urls.length} URLs...`;
-        try{const r=await fetch(`${API}/corpora/${corpusId}/ingest-urls`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls})});if(!r.ok)throw new Error((await r.json()).detail||'Failed');const d=await r.json();toast(`Imported ${d.ingested||0} pages${d.failed?' ('+d.failed+' failed)':''}`,'success')}catch(e){toast('Batch import failed: '+e.message);btn.disabled=false;btn.textContent='Import all';return}
-        ensureIndexed(corpusId);
-        panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='feed'){
-      const tier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
-      const hint=tier==='pro'
-        ? `<div style="font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.5">Noos will read every post now and keep watching — new posts sync in automatically.</div>`
-        : (_authUser
-            ? `<div style="font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.5">Noos reads every post now. <a href="#" data-pro-link="auto-add" style="color:#3b82f6;text-decoration:none">Upgrade to Pro</a> to keep this feed growing on its own.</div>`
-            : `<div style="font-size:11px;color:var(--tx3);margin-top:8px;line-height:1.5">Noos reads every post now. Re-add later to pull new ones.</div>`);
-      body.innerHTML=`<div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.55">Noos reads every post and adds it to this corpus — you can chat about it right after.</div><input type="text" class="fi" id="cv-add-feed" placeholder="https://example.com/feed.xml" style="font-size:13px" /><div style="display:flex;gap:8px;align-items:center;margin-top:6px"><label style="font-size:11px;color:var(--tx3)">Max items:</label><input type="number" class="fi" id="cv-add-feed-max" value="25" min="1" max="100" style="width:60px;font-size:12px" /></div>${hint}<div class="cv-add-actions"><button class="btn-sm" id="cv-add-go">Add feed</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div>`;
-      body.querySelector('#cv-add-feed').focus();
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      body.querySelector('[data-pro-link]')?.addEventListener('click',ev=>{ev.preventDefault();showProModal('Auto-add is a Pro feature')});
-      body.querySelector('#cv-add-go').onclick=async()=>{
-        const feedUrl=body.querySelector('#cv-add-feed').value.trim();
-        const maxItems=parseInt(body.querySelector('#cv-add-feed-max').value)||25;
-        if(!feedUrl){toast('Enter a feed URL');return}
-        const btn=body.querySelector('#cv-add-go');btn.disabled=true;btn.textContent='Reading feed…';
-        try{
-          const r=await fetch(`${API}/corpora/${corpusId}/ingest-feed`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feed_url:feedUrl,max_items:maxItems})});
-          const d=await r.json().catch(()=>({}));
-          if(handleQuotaError(r,d)){btn.disabled=false;btn.textContent='Add feed';return}
-          if(!r.ok)throw new Error(d.detail||'Failed');
-          const tierNow=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
-          const tail=tierNow==='pro'?" Noos will check back every hour.":"";
-          toast(`Noos read ${d.ingested||0} new post${d.ingested===1?'':'s'}.${tail}`,'success');
-        }catch(e){toast('Add feed failed: '+e.message);btn.disabled=false;btn.textContent='Add feed';return}
-        panel.remove();renderCorpus(corpusId);
-      };
-    } else if(tab==='archive'){
-      body.innerHTML=`<div style="display:flex;flex-direction:column;gap:10px"><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><label style="font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px"><input type="radio" name="arc-kind" value="twitter" checked /> Twitter / X data export</label><label style="font-size:12px;color:var(--tx2);display:flex;align-items:center;gap:6px"><input type="radio" name="arc-kind" value="notion" /> Notion workspace export</label></div><input type="file" id="cv-arc-fi" accept=".zip" style="font-size:12px" /><div style="font-size:11px;color:var(--tx3);line-height:1.5">These are your own exports from services you own, so all items are tagged as <strong>your original content</strong>. Twitter: upload the ZIP you get from twitter.com/settings/download_your_data. Notion: Settings → Data export (Markdown &amp; CSV).</div><div class="cv-add-actions"><button class="btn-sm" id="cv-add-go" disabled>Import archive</button><button class="btn-sm-ghost" id="cv-add-cancel">Cancel</button></div></div>`;
-      const fi=body.querySelector('#cv-arc-fi');
-      const goBtn=body.querySelector('#cv-add-go');
-      fi.onchange=()=>{goBtn.disabled=!fi.files.length};
-      body.querySelector('#cv-add-cancel').onclick=()=>panel.remove();
-      goBtn.onclick=async()=>{
-        if(!fi.files.length)return;
-        const kind=(body.querySelector('input[name="arc-kind"]:checked')||{}).value||'twitter';
-        goBtn.disabled=true;goBtn.textContent='Importing...';
-        const fd=new FormData();fd.append('file',fi.files[0]);
-        try{
-          const r=await fetch(`${API}/corpora/${corpusId}/import/${kind}`,{method:'POST',body:fd});
-          if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||'Failed');
-          const d=await r.json();
-          toast(`Imported ${d.imported||0} of ${d.total||0} items${d.skipped?', '+d.skipped+' skipped':''}`,'success');
-        }catch(e){toast('Import failed: '+e.message,'error');goBtn.disabled=false;goBtn.textContent='Import archive';return}
-        // Archive import used to skip /index here — newly imported docs stayed
-        // un-searchable. ensureIndexed fires a debounced run to pick them up.
-        ensureIndexed(corpusId);
-        panel.remove();renderCorpus(corpusId);
-      };
-    }
-  }
-  tabs.forEach(t=>t.onclick=()=>setTab(t.dataset.tab));
-  setTab(initialTab||'upload');
-}
-
 /* ══════ COMPOSER SOURCES POPOVER ══════
    Shown when the user clicks the ⚙ icon on a composer (corpus or home).
    Lists currently-connected external information sources and offers
@@ -1983,7 +1917,12 @@ function _closeAttachPopover(){
   const p=document.getElementById('attach-pop');if(p)p.remove();
   document.querySelectorAll('.composer-attach.active').forEach(b=>b.classList.remove('active'));
 }
-function showAttachPopover(anchor,output,input){
+function showAttachPopover(anchor,output,input,opts){
+  // opts = {corpusId, onComplete}. When corpusId is set, the upload/RSS
+  // panels are locked to that corpus and _homeScope is ignored — this is
+  // how the corpus page reuses the home composer's attach flow without
+  // leaking the home chip's state into a scoped page.
+  opts=opts||{};
   if(document.getElementById('attach-pop')){_closeAttachPopover();return}
   anchor.classList.add('active');
   // Icon set — minimal line glyphs matching the rest of the popover family.
@@ -2004,16 +1943,30 @@ function showAttachPopover(anchor,output,input){
   let top=r.bottom+6;if(top+ph>window.innerHeight-8)top=r.top-ph-6;
   pop.style.left=left+'px';pop.style.top=top+'px';
 
+  // Two modes:
+  //   - Home: no opts.corpusId. Default corpus is _homeScope (possibly null,
+  //     meaning "let the upload flow resolve"). Panels render their own
+  //     addLine feedback into the chat stream and we flip home--active so
+  //     the injected panel has room.
+  //   - Corpus page: opts.corpusId + opts.onComplete. Panels are locked to
+  //     that corpus and on success call onComplete (renderCorpus) instead
+  //     of streaming chat lines — the corpus page's output container isn't
+  //     a terminal, so addLine would leave orphaned DOM behind.
+  const lockedCorpus=opts.corpusId||null;
+  const panelOpts=lockedCorpus?{lockCorpus:true,onComplete:opts.onComplete}:null;
+  const targetCorpus=lockedCorpus||_homeScope;
   pop.querySelectorAll('.srcs-pop-item').forEach(btn=>{
     btn.onclick=()=>{
       const action=btn.dataset.action;
       _closeAttachPopover();
-      // Collapse home to chat mode so the injected panel has room.
-      const home=document.getElementById('home');if(home)home.classList.add('home--active');
-      if(action==='upload'){showTermUpload(output,input,_homeScope)}
-      else if(action==='url'){showTermUpload(output,input,_homeScope);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
-      else if(action==='archive'){showTermUpload(output,input,_homeScope);setTimeout(()=>{const arcTab=document.querySelector('.term-upload-tab[data-tab="archive"]');arcTab?.click()},50)}
-      else if(action==='rss'){showTermConnectRSS(output,input,_homeScope)}
+      if(!lockedCorpus){
+        // Collapse home to chat mode so the injected panel has room.
+        const home=document.getElementById('home');if(home)home.classList.add('home--active');
+      }
+      if(action==='upload'){showTermUpload(output,input,targetCorpus,panelOpts)}
+      else if(action==='url'){showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
+      else if(action==='archive'){showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const arcTab=document.querySelector('.term-upload-tab[data-tab="archive"]');arcTab?.click()},50)}
+      else if(action==='rss'){showTermConnectRSS(output,input,targetCorpus,panelOpts)}
     };
   });
 
@@ -2035,22 +1988,65 @@ function _closeSrcsFlyout(){
   document.querySelectorAll('.srcs-pop-item.hover').forEach(b=>b.classList.remove('hover'));
 }
 
+/* Build compile-mode topic examples tailored to the picked corpus.
+   Signal sources, in order of preference:
+     1. tags          — user-curated, highest-signal, low-cost
+     2. task_types    — LLM-derived answer shapes ("how-to", "advice", …)
+     3. corpus name   — last resort so we always have something concrete
+   Always returns two quoted suggestions for visual rhythm with the
+   "Topic to compile — …" label; falls back to the generic pair when no
+   corpus is picked. */
+function _compileSuggestionsFor(corpus){
+  if(!corpus)return '"Vision Pro reviews", "Team culture rituals"';
+  const tags=Array.isArray(corpus.tags)?corpus.tags.filter(Boolean):[];
+  const tts=Array.isArray(corpus.task_types)?corpus.task_types.filter(Boolean):[];
+  const nm=(corpus.name||'').trim();
+  const picks=[];
+  // Tags read as subject matter — cleanest fit for a compile topic.
+  for(const t of tags){if(picks.length<2)picks.push(`${t} overview`)}
+  // Fall through to task_types if tags didn't fill; prefix with name so
+  // the suggestion reads like a real question, not a bare word.
+  if(picks.length<2){
+    for(const t of tts){
+      if(picks.length>=2)break;
+      if(t==='how-to')picks.push(nm?`how ${nm} works`:'how this works');
+      else if(t==='factual-lookup')picks.push(nm?`${nm} key facts`:'key facts');
+      else if(t==='advice')picks.push(nm?`${nm} best practices`:'best practices');
+      else if(t==='comparison')picks.push(nm?`${nm} comparison`:'comparisons');
+      else if(t==='synthesis')picks.push(nm?`${nm} takeaways`:'key takeaways');
+    }
+  }
+  // Last-ditch: derive two topics from the corpus name alone.
+  if(picks.length<2 && nm){
+    const fills=[`${nm} overview`,`${nm} key lessons`];
+    for(const f of fills){if(picks.length<2)picks.push(f)}
+  }
+  if(picks.length===0)return '"overview", "key takeaways"';
+  if(picks.length===1)return `"${picks[0]}"`;
+  return `"${picks[0]}", "${picks[1]}"`;
+}
+
 function _refreshComposerPlaceholder(){
   // Retint the composer placeholder + the inline mode label so Send behavior
-  // is legible at a glance (Notion "Plan mode" pattern). Enrich is scoped to
-  // a specific KB by design, so its placeholder swaps based on whether the
-  // Corpus chip has a pick.
+  // is legible at a glance (Notion "Plan mode" pattern). Compile + Enrich
+  // placeholders now pull examples from the picked corpus so users see
+  // suggestions that fit THEIR KB, not a hard-coded "Vision Pro" fallback.
   const input=document.getElementById('term-input');
   const composer=document.getElementById('home-composer');
   const isWrite=composer&&composer.classList.contains('home-composer-note');
   if(input&&!isWrite){
+    const picked=_homeScope&&_corpora.find(c=>c.id===_homeScope);
     if(_composerMode==='compile'){
-      input.placeholder='Topic to compile — "Vision Pro reviews", "Team culture rituals"';
+      const suggestions=_compileSuggestionsFor(picked);
+      if(picked){
+        input.placeholder=`Topic to compile for "${picked.name}" — e.g. ${suggestions}`;
+      }else{
+        input.placeholder=`Topic to compile — e.g. ${suggestions}`;
+      }
     }else if(_composerMode==='create'){
       input.placeholder='What\'s on your mind? — "harness engineering", "founder playbook"';
     }else{
       // Enrich — target a specific KB
-      const picked=_homeScope&&_corpora.find(c=>c.id===_homeScope);
       if(picked){
         input.placeholder=`Chat to enrich "${picked.name}", or add a URL or file`;
       }else{
@@ -2251,17 +2247,55 @@ async function renderCorpus(id,sessionId){
   ct.classList.add('content--corpus');
   const al=c.access_level||'public';const tg=Array.isArray(c.tags)?c.tags:[];
   const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
-  // Split docs: wiki = AI-synthesized (doc_type=concept), raw = substrate (everything else).
-  const wikiDocs=docs.filter(d=>d.doc_type==='concept');
-  const rawDocs=docs.filter(d=>d.doc_type!=='concept');
+  // Split docs:
+  //   wiki = Manifest (pinned first) + AI-synthesized concept notes
+  //   raw  = everything else (the Sources substrate)
+  //
+  // Manifest lives INSIDE the Wiki section as its first entry — this mirrors
+  // GitHub's treatment of README.md (it's a file in the repo, just styled
+  // specially and pinned to the top). Keeping it as a real doc rather than a
+  // separate above-Wiki card gives it the same click-to-expand interaction as
+  // every other wiki doc, and avoids adding a fourth section to the layout.
+  const manifestDoc=docs.find(d=>d.doc_type==='manifest')||null;
+  const conceptDocs=docs.filter(d=>d.doc_type==='concept');
+  // Manifest always first; concept notes after.
+  const wikiDocs=manifestDoc?[manifestDoc,...conceptDocs]:conceptDocs;
+  const rawDocs=docs.filter(d=>d.doc_type!=='concept'&&d.doc_type!=='manifest');
   const docItemHTML=(d)=>{
     const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');
+    // Manifest renders with the same visual language as every other doc
+    // (same title font, same meta layout, same source-kind pill) — the only
+    // difference is a `system generated` origin tag (vs user_original etc.)
+    // and no edit/delete buttons (the doc is auto-regenerated from corpus
+    // fields; user-side edits would be thrown away on the next refresh).
+    if(d.doc_type==='manifest'){
+      return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title||'Manifest')}</span><span class="doc-hd-right"><span class="doc-mt">${wlab} · <span class="doc-sk sk-system">system generated</span></span><span class="doc-ar">▸</span></span></div></div>`;
+    }
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
     return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span></span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
   };
+  // Wiki empty-state: phrase matters depending on whether the manifest is
+  // already there. Even before the user compiles a single concept note, the
+  // manifest is the first entry — so "No concept notes yet" is the accurate
+  // framing (Wiki is never truly empty once the corpus exists).
   const wikiEmpty='<div class="empty">No concept notes yet — Compile to synthesize from your sources.</div>';
+  const wikiEmptyHidden=manifestDoc?'':wikiEmpty;   // manifest counts as content
   const rawEmpty='<div class="empty">No sources yet — + Add to import URLs, upload files, or import an archive.</div>';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${renderCapCard(cap)}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiDocs.length?wikiDocs.length+' · AI synthesis':'AI synthesis'}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="chat-area" id="chat-area"></div></div><div id="cv-chat-bar" class="cv-chat-bar"><div class="composer"><textarea class="composer-input" id="c-ci" placeholder="Ask about ${esc(c.name)}…" rows="1"></textarea><div class="composer-toolbar"><button class="composer-sliders" id="c-sliders" title="Sources" aria-label="Sources"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button><div class="composer-spacer"></div><button class="composer-send" id="c-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></div></div><div class="chint" id="c-chint"></div></div></div>`;
+  // Tab strip — Overview (current) · Insights (coming soon shell). Route
+  // via hash: #/corpus/{id} = Overview, #/corpus/{id}/insights = Insights.
+  // Keeping the URL shape stable now so future Agent-activity data lands
+  // without a migration.
+  const tabStripHTML=`<div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab cv-tab--active">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a></div>`;
+  // Wiki sub-label counts EVERY item rendered in the section (manifest +
+  // concept notes). Earlier version counted concepts only — users saw 2
+  // rows with "1" in the header and reasonably asked "why 1?". Match the
+  // visual truth. "synthesis" stays as descriptor since both qualify:
+  // manifest = templated synthesis of corpus fields; concept = LLM
+  // synthesis of sources.
+  const wikiCount=wikiDocs.length;
+  const conceptCount=conceptDocs.length;
+  const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-attach-host" class="cv-attach-host"></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   document.getElementById('cv-desc-edit').onclick=()=>{
     const wrap=document.querySelector('.cv-desc-wrap');
@@ -2275,13 +2309,107 @@ async function renderCorpus(id,sessionId){
       try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save description')}
     };
   };
-  document.getElementById('cv-compile-btn').onclick=()=>{
-    if(gateProFeature('Compile is a Pro feature'))return;
-    showCorpusCompile(id);
+  // Composer is the SOLE action surface on the corpus page. Section "+ Add"
+  // and "Compile" buttons are discoverable shortcuts that just trigger the
+  // composer in the right state — no inline panels under those buttons.
+  const cvAttachHost=document.getElementById('cv-attach-host');
+  const rawAddBtn=document.getElementById('cv-raw-add');
+  const compileBtn=document.getElementById('cv-compile-btn');
+  const cvComposerInput=document.getElementById('cv-composer-input');
+  const cvComposerSend=document.getElementById('cv-composer-send');
+  const cvComposerAttach=document.getElementById('cv-composer-attach');
+  const cvComposerMode=document.getElementById('cv-composer-mode');
+  const cvComposerHint=document.getElementById('cv-composer-hint');
+
+  // Local mode state — corpus dock only supports Enrich (chat) and Compile
+  // (synthesize wiki). Create doesn't apply because the corpus is fixed.
+  // Default Enrich; flips to Compile when user clicks Wiki "Compile" or the
+  // mode label and picks Compile.
+  let _cvDockMode='enrich';
+  const _cvSetMode=m=>{
+    _cvDockMode=m;
+    if(cvComposerMode)cvComposerMode.textContent=(m==='compile'?'Compile':'Enrich')+' mode';
+    if(cvComposerHint)cvComposerHint.textContent=m==='compile'?'Press Enter to compile':'Press Enter to chat';
+    if(cvComposerInput){
+      if(m==='compile'){
+        const sug=_compileSuggestionsFor(c);
+        cvComposerInput.placeholder=`Topic to compile for "${c.name}" — e.g. ${sug}`;
+      }else{
+        cvComposerInput.placeholder=`Chat to enrich ${c.name}, or add a URL or file`;
+      }
+    }
   };
-  document.getElementById('cv-raw-add').onclick=()=>showCorpusAddDoc(id);
-  document.getElementById('c-sliders').onclick=(e)=>showSourcesPopover(e.currentTarget,{corpusId:id,corpusName:c.name});
-  renderChint('c-chint',{corpusId:id,corpusName:c.name});
+  _cvSetMode('enrich');
+
+  // Mode picker — small popover with Enrich + Compile, anchored to the mode
+  // label. Mirrors the home composer's mode flyout but trimmed to two options.
+  function _cvOpenModePicker(anchor){
+    const existing=document.getElementById('cv-mode-pop');
+    if(existing){existing.remove();return}
+    const opts=[
+      {id:'enrich',name:'Enrich',desc:'Grow this knowledge base through conversation'},
+      {id:'compile',name:'Compile',desc:'Synthesize a wiki page from this corpus'},
+    ];
+    const pop=document.createElement('div');
+    pop.id='cv-mode-pop';pop.className='srcs-flyout';
+    pop.innerHTML=opts.map(m=>`<button class="srcs-flyout-row${m.id===_cvDockMode?' active':''}" data-mode="${m.id}"><span class="srcs-flyout-main"><span class="srcs-flyout-nm">${esc(m.name)}</span><span class="srcs-flyout-dc">${esc(m.desc)}</span></span><span class="srcs-flyout-chk">${m.id===_cvDockMode?'\u2713':''}</span></button>`).join('');
+    document.body.appendChild(pop);
+    const r=anchor.getBoundingClientRect();const pw=pop.offsetWidth;const ph=pop.offsetHeight;
+    let left=r.left;if(left+pw>window.innerWidth-8)left=window.innerWidth-pw-8;
+    let top=r.top-ph-6;if(top<8)top=r.bottom+6;
+    pop.style.left=left+'px';pop.style.top=top+'px';
+    pop.querySelectorAll('.srcs-flyout-row').forEach(btn=>{
+      btn.onclick=()=>{_cvSetMode(btn.dataset.mode);pop.remove();cvComposerInput?.focus()};
+    });
+    setTimeout(()=>{
+      const outside=e=>{if(!pop.contains(e.target)&&e.target!==anchor){pop.remove();document.removeEventListener('click',outside,true)}};
+      document.addEventListener('click',outside,true);
+    },0);
+  }
+  if(cvComposerMode)cvComposerMode.onclick=()=>_cvOpenModePicker(cvComposerMode);
+
+  // "+ Add" in Sources header is a shortcut to the composer's attach popover —
+  // no separate inline panel. Clicking focuses the composer and opens the same
+  // attach menu the composer's + button does, anchored to the composer's + so
+  // the popover visually points at the input.
+  const openCorpusAttach=anchor=>showAttachPopover(anchor,cvAttachHost,cvComposerInput,{corpusId:id,onComplete:()=>renderCorpus(id)});
+  if(rawAddBtn)rawAddBtn.onclick=()=>{cvComposerInput?.focus();openCorpusAttach(cvComposerAttach||rawAddBtn)};
+  if(cvComposerAttach)cvComposerAttach.onclick=()=>openCorpusAttach(cvComposerAttach);
+
+  // "Compile" in Wiki header just flips the composer into Compile mode. Send
+  // (or Enter) then routes to /compile with the typed topic — same as the home
+  // composer's compile flow.
+  if(compileBtn)compileBtn.onclick=()=>{_cvSetMode('compile');cvComposerInput?.focus()};
+
+  // Textarea autosize — matches the home composer behavior so the corpus dock
+  // grows as you type a longer prompt.
+  if(cvComposerInput){
+    const autosize=()=>{cvComposerInput.style.height='auto';cvComposerInput.style.height=Math.min(cvComposerInput.scrollHeight,200)+'px'};
+    cvComposerInput.addEventListener('input',autosize);
+    autosize();
+  }
+
+  // Send: mode-aware. Enrich hands off to the home chat (corpus pre-scoped,
+  // draft auto-sent). Compile navigates straight to the canvas /compile route
+  // with the topic. Empty submit = no-op (lets users open the dock without
+  // accidentally bouncing pages).
+  const doSend=()=>{
+    const v=(cvComposerInput?.value||'').trim();
+    if(!v)return;
+    if(_cvDockMode==='compile'){
+      location.hash='#/compile?fresh=1&corpus='+encodeURIComponent(id)+'&topic='+encodeURIComponent(v);
+      return;
+    }
+    _pendingHomeScope=id;
+    _pendingHomeInput=v;
+    _pendingHomeAutoSend=true;
+    _termCtx={};
+    location.hash='#/main';
+  };
+  if(cvComposerSend)cvComposerSend.onclick=doSend;
+  if(cvComposerInput)cvComposerInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend()}
+  });
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
     if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;
@@ -2293,102 +2421,110 @@ async function renderCorpus(id,sessionId){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{if(e.target.closest('.doc-actions')||item.classList.contains('editing'))return;if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='doc-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
-  wireCapCard(id);
-  setupCorpusInteract(id,sessionId);
 }
 
-// ── Capability card (agent-media identity panel) ──
-const CAP_AUTONOMY_NAMES=['Responsive','Subscribing','Synthesizing','Proactive'];
-const CAP_TASK_TYPES=['synthesis','retrieval','advice','how-to','factual-lookup','comparison'];
+/* ══════ INSIGHTS TAB — Agent activity ══════ */
+// Funnel view of how external agents actually use this KB: describe → preview
+// → ask, plus conversion and top citing KBs. Data comes from query_logs
+// (action column) and corpus_citations (incoming edges). Owner-only.
+async function renderCorpusInsights(id){
+  stopAll();hideRP();
+  const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  let c=null;try{const r=await fetch(`${API}/corpora/${id}`);if(r.ok)c=await r.json()}catch(e){}
+  if(!c){ct.innerHTML='<div class="empty" style="padding:48px;text-align:center">Corpus not found</div>';return}
+  const al=c.access_level||'public';
+  const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
+  const tg=Array.isArray(c.tags)?c.tags:[];
+  const win=(new URLSearchParams(location.hash.split('?')[1]||'').get('w'))||'7d';
+  const winOpts=[['7d','7 days'],['30d','30 days'],['all','All time']];
+  const winBar=winOpts.map(([v,l])=>`<a href="#/corpus/${id}/insights?w=${v}" class="cv-ins-win${v===win?' cv-ins-win--active':''}">${l}</a>`).join('');
 
-function renderCapCard(cap){
-  if(!cap)return '';
-  const kbr=Number(cap.kb_reputation||0);
-  const tier=kbr>=0.5?'high':kbr>=0.2?'mid':'low';
-  const lvl=Number(cap.autonomy_level||0);
-  const lvlName=CAP_AUTONOMY_NAMES[lvl]||'Responsive';
-  const tt=Array.isArray(cap.task_types)?cap.task_types:[];
-  const samples=Array.isArray(cap.samples)?cap.samples:[];
-  const sc=cap.source_composition||{};
-  const scEntries=Object.entries(sc).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  const lic=cap.license_terms||null;
-  const licStr=lic&&typeof lic==='object'?Object.entries(lic).map(([k,v])=>`${k}: ${v}`).join(' · '):'not set';
-  const calib=cap.calibration_policy||null;
-  const calibStr=calib&&typeof calib==='object'?(calib.reports_confidence?`self-reported (${calib.confidence_source||'self'})`:'not reported'):'not set';
-  return `<div class="cap-card"><div class="cap-card__top"><span class="cap-card__title">Capability card</span><span class="cap-card__subtitle">what agents see</span><div class="cap-card__badges"><span class="cap-card__kbr cap-card__kbr--${tier}" title="KB reputation — rolled-up trust score (citations + retention + calibration + satisfaction)">KBR ${kbr.toFixed(2)}</span><span class="cap-card__autonomy" title="Autonomy level — what this KB is allowed to do">L${lvl} · ${lvlName}</span></div></div><div class="cap-card__body"><span class="cap-card__label">Answers</span><div class="cap-card__value">${tt.length?tt.map(t=>`<span class="cap-card__pill">${esc(t)}</span>`).join(''):'<span class="cap-card__empty">No task types yet — auto-fill runs on first ingest.</span>'}</div><span class="cap-card__label">Content mix</span><div class="cap-card__value">${scEntries.length?`<div class="cap-card__comp-bar">${scEntries.map(([k,v])=>{const cls=k==='user_original'?'orig':k==='user_capture'?'cap':'ext';return `<div class="cap-card__comp-seg cap-card__comp-seg--${cls}" style="width:${(v*100).toFixed(1)}%" title="${esc(k)}: ${(v*100).toFixed(0)}%"></div>`}).join('')}</div><div class="cap-card__comp-leg">${scEntries.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))} ${(v*100).toFixed(0)}%</span>`).join('')}</div>`:'<span class="cap-card__empty">No documents yet</span>'}</div><span class="cap-card__label">Samples</span><div class="cap-card__value">${samples.length?samples.map((s,i)=>`<div class="cap-card__sample" data-idx="${i}"><div class="cap-card__sample-q">${esc(s.question||'')}</div><div class="cap-card__sample-a">${esc(s.answer_preview||'')}</div></div>`).join(''):'<span class="cap-card__empty">No sample Q&amp;A yet</span>'}</div><span class="cap-card__label">Licensing</span><div class="cap-card__value">${esc(licStr)}</div><span class="cap-card__label">Confidence</span><div class="cap-card__value">${esc(calibStr)}</div></div><div class="cap-card__actions"><button class="cap-card__btn" id="cap-regen">Auto-regenerate</button><button class="cap-card__btn cap-card__btn--ghost" id="cap-edit">Edit manually</button></div></div>`;
-}
+  ct.innerHTML=`<div class="cv-layout cv-layout--full"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div>${c.description?`<p class="cv-desc">${esc(c.description)}</p>`:''}${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>
+    <div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab cv-tab--active">Insights</a></div>
+    <div class="cv-ins-wrap">
+      <div class="cv-ins-head"><div class="cv-ins-title">Agent activity</div><div class="cv-ins-winbar">${winBar}</div></div>
+      <div id="cv-ins-body" class="cv-ins-body"><div class="cv-ins-loading">Loading…</div></div>
+    </div>
+    <div class="cv-scroll-end"></div></div></div>`;
 
-function wireCapCard(corpusId){
-  const card=document.querySelector('.cap-card');if(!card)return;
-  card.querySelectorAll('.cap-card__sample').forEach(s=>{s.addEventListener('click',()=>s.classList.toggle('open'))});
-  const regen=document.getElementById('cap-regen');if(regen)regen.onclick=()=>capRegenerate(corpusId);
-  const edit=document.getElementById('cap-edit');if(edit)edit.onclick=()=>capEdit(corpusId);
-}
-
-async function capRegenerate(corpusId){
-  const btn=document.getElementById('cap-regen');if(btn){btn.disabled=true;btn.textContent='Proposing…'}
+  let data=null;
   try{
-    const r=await fetch(`${API}/corpora/${corpusId}/manifest/suggest`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    if(!r.ok){const d=await r.json().catch(()=>({}));if(typeof handleQuotaError==='function'?!handleQuotaError(r,d):true)toast(d.detail||'Failed to regenerate','error');return}
-    const prop=await r.json();
-    showCapRegenModal(corpusId,prop);
-  }catch(e){toast('Failed to reach the LLM','error')}
-  finally{if(btn){btn.disabled=false;btn.textContent='Auto-regenerate'}}
+    const r=await fetch(`${API}/corpora/${id}/insights?window=${encodeURIComponent(win)}`);
+    if(r.status===403){document.getElementById('cv-ins-body').innerHTML='<div class="cv-ins-empty">Insights are owner-only. Sign in as the corpus owner to view.</div>';return}
+    if(!r.ok)throw new Error('Insights fetch failed: '+r.status);
+    data=await r.json();
+  }catch(e){
+    document.getElementById('cv-ins-body').innerHTML=`<div class="cv-ins-empty">Could not load insights: ${esc(e.message||String(e))}</div>`;
+    return;
+  }
+
+  const k=data.counters||{describe:0,preview_ask:0,ask:0};
+  const conv=data.conversion;
+  const convPct=(conv==null)?'—':(Math.round(conv*100)+'%');
+  const callers=data.unique_callers||0;
+  const rev=data.revenue;
+  const totalEvents=(k.describe||0)+(k.preview_ask||0)+(k.ask||0);
+
+  const cards=[
+    {label:'Describe calls',value:k.describe,hint:'agents considering this KB'},
+    {label:'preview_ask runs',value:k.preview_ask,hint:'evaluating fit'},
+    {label:'ask queries',value:k.ask,hint:'actual usage'},
+    {label:'preview → ask',value:convPct,hint:'conversion rate'},
+    {label:'Unique callers',value:callers,hint:'distinct agent_ids'},
+  ];
+  if(rev&&(rev.paid_queries>0||rev.total_cents>0)){
+    cards.push({label:'Revenue',value:'$'+(rev.total_cents/100).toFixed(2),hint:`${rev.paid_queries} paid`});
+  }
+
+  const kpiHTML=cards.map(c=>`<div class="cv-ins-card"><div class="cv-ins-card-val">${esc(String(c.value))}</div><div class="cv-ins-card-lbl">${esc(c.label)}</div><div class="cv-ins-card-hint">${esc(c.hint)}</div></div>`).join('');
+
+  // Funnel bar — relative widths of describe / preview / ask.
+  const maxN=Math.max(k.describe||0,k.preview_ask||0,k.ask||0,1);
+  const funnelRow=(label,n,cls)=>{
+    const pct=Math.round((n/maxN)*100);
+    return `<div class="cv-ins-fn-row"><div class="cv-ins-fn-lbl">${esc(label)}</div><div class="cv-ins-fn-bar"><div class="cv-ins-fn-fill cv-ins-fn-fill--${cls}" style="width:${pct}%"></div></div><div class="cv-ins-fn-n">${n}</div></div>`;
+  };
+  const funnelHTML=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Funnel</div><div class="cv-ins-fn">${funnelRow('describe',k.describe||0,'d')}${funnelRow('preview_ask',k.preview_ask||0,'p')}${funnelRow('ask',k.ask||0,'a')}</div></div>`;
+
+  // Top citing KBs.
+  const citing=Array.isArray(data.top_citing)?data.top_citing:[];
+  const citingHTML=citing.length
+    ? `<ul class="cv-ins-citing">${citing.map(x=>{
+        const link=x.local?`<a href="#/corpus/${x.corpus_id}" class="cv-ins-citing-nm">${esc(x.name)}</a>`:`<span class="cv-ins-citing-nm cv-ins-citing-nm--remote">${esc(x.name)}</span>`;
+        return `<li>${link}<span class="cv-ins-citing-n">${x.count}</span></li>`;
+      }).join('')}</ul>`
+    : '<div class="cv-ins-empty-sm">No incoming citations yet.</div>';
+  const citingSection=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Top citing KBs</div>${citingHTML}</div>`;
+
+  const empty=totalEvents===0
+    ? '<div class="cv-ins-empty-sm" style="margin-bottom:18px">No agent activity in this window yet. Share the corpus endpoint or <a href="#/compose" class="rp-subtle-link">connect it from another KB</a> to drive traffic.</div>'
+    : '';
+
+  document.getElementById('cv-ins-body').innerHTML=`${empty}<div class="cv-ins-cards">${kpiHTML}</div>${funnelHTML}${citingSection}`;
 }
 
-function showCapRegenModal(corpusId,prop){
-  const tt=Array.isArray(prop.task_types)?prop.task_types:[];
-  const samples=Array.isArray(prop.samples)?prop.samples:[];
-  const desc=prop.description_suggestion||'';
-  const wrap=document.createElement('div');wrap.className='acm-overlay';
-  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Proposed capability update</div><div class="acm-sub">Review what the LLM inferred from your corpus. Uncheck anything you don't want applied.</div><div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-tt" ${tt.length?'checked':''} ${tt.length?'':'disabled'}/><strong>Task types</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${tt.length?tt.map(t=>`<span class="cap-card__pill">${esc(t)}</span>`).join(''):'<em>none proposed</em>'}</div></div><div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-samples" ${samples.length?'checked':''} ${samples.length?'':'disabled'}/><strong>Sample Q&amp;A</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${samples.length?samples.map(s=>`<div style="margin-bottom:6px"><div>▸ ${esc(s.question||'')}</div><div style="color:var(--tx3);padding-left:12px">${esc(s.answer_preview||'')}</div></div>`).join(''):'<em>none proposed</em>'}</div></div>${desc?`<div style="margin:14px 0"><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cap-apply-desc"/><strong>Refresh description</strong></label><div style="padding-left:24px;color:var(--tx2);font-size:12px">${esc(desc)}</div></div>`:''}<div class="acm-actions"><button class="btn-sm-ghost" id="cap-regen-cancel">Cancel</button><button class="btn-sm" id="cap-regen-apply">Apply</button></div></div>`;
-  document.body.appendChild(wrap);
-  const close=()=>wrap.remove();
-  wrap.querySelector('#cap-regen-cancel').onclick=close;
-  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
-  wrap.querySelector('#cap-regen-apply').onclick=async()=>{
-    const applyTT=document.getElementById('cap-apply-tt')?.checked;
-    const applyS=document.getElementById('cap-apply-samples')?.checked;
-    const applyDesc=document.getElementById('cap-apply-desc')?.checked;
-    const body={};
-    if(applyTT)body.task_types=tt;
-    if(applyS)body.samples=samples;
-    if(applyDesc){body.description_suggestion=desc;body.refresh_description=true}
-    if(!Object.keys(body).length){close();return}
-    try{
-      const r=await fetch(`${API}/corpora/${corpusId}/manifest/apply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(!r.ok)throw new Error('apply failed');
-      close();toast('Capability card updated');
-      const hash=location.hash;location.hash='#/';setTimeout(()=>location.hash=hash,10);
-    }catch(e){toast('Failed to apply','error')}
-  };
-}
+// ── Manifest identity card (agent-facing capability card) ──────────────
+// Per-KB manifest fields live on the corpus row: task_types, samples,
+// description, calibration_policy. LLM-refreshed via manifest_autofill on
+// corpus creation; /describe endpoint serves them to discovery agents.
+// Creator-facing: rendered as a pinned "manifest" doc at the top of the
+// Wiki section (the KB's README.md). No hand-editable UI for task_types /
+// samples — the fields auto-derive from content via backend auto-apply.
 
-async function capEdit(corpusId){
-  let cap=null;try{const r=await fetch(`${API}/corpora/${corpusId}/describe`);if(r.ok)cap=await r.json()}catch(e){}
-  if(!cap)return toast('Could not load capability card','error');
-  const tt=Array.isArray(cap.task_types)?cap.task_types.join(', '):'';
-  const samples=Array.isArray(cap.samples)?cap.samples:[];
-  const samplesText=samples.map(s=>`${s.question||''} | ${s.answer_preview||''}`).join('\n');
-  const wrap=document.createElement('div');wrap.className='acm-overlay';
-  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Edit capability card</div><div class="acm-sub">Task types: comma-separated. Samples: one per line, format <code>question | answer preview</code>.</div><div style="margin:14px 0"><label style="display:block;font-size:12px;color:var(--tx2);margin-bottom:4px">Task types (valid: ${CAP_TASK_TYPES.join(', ')})</label><input type="text" id="cap-edit-tt" class="cv-desc-input" value="${esc(tt)}" placeholder="advice, synthesis"/></div><div style="margin:14px 0"><label style="display:block;font-size:12px;color:var(--tx2);margin-bottom:4px">Samples</label><textarea id="cap-edit-samples" class="cv-desc-input" rows="5" placeholder="How do I stir-fry? | Use high heat and peanut oil.">${esc(samplesText)}</textarea></div><div class="acm-actions"><button class="btn-sm-ghost" id="cap-edit-cancel">Cancel</button><button class="btn-sm" id="cap-edit-save">Save</button></div></div>`;
-  document.body.appendChild(wrap);
-  const close=()=>wrap.remove();
-  wrap.querySelector('#cap-edit-cancel').onclick=close;
-  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
-  wrap.querySelector('#cap-edit-save').onclick=async()=>{
-    const ttRaw=document.getElementById('cap-edit-tt').value;
-    const ttArr=ttRaw.split(',').map(s=>s.trim().toLowerCase()).filter(s=>CAP_TASK_TYPES.includes(s)).slice(0,4);
-    const sLines=document.getElementById('cap-edit-samples').value.split('\n').map(l=>l.trim()).filter(Boolean);
-    const sArr=sLines.map(l=>{const idx=l.indexOf('|');if(idx<0)return null;return{question:l.slice(0,idx).trim(),answer_preview:l.slice(idx+1).trim()}}).filter(s=>s&&s.question&&s.answer_preview).slice(0,3);
-    try{
-      const r=await fetch(`${API}/corpora/${corpusId}/manifest/apply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_types:ttArr,samples:sArr})});
-      if(!r.ok)throw new Error('save failed');
-      close();toast('Capability card saved');
-      const hash=location.hash;location.hash='#/';setTimeout(()=>location.hash=hash,10);
-    }catch(e){toast('Failed to save','error')}
-  };
-}
+// Licensing defaults derived from access_level. Plain-English labels —
+// every label names who pays and how much.
+const LIC_DEFAULTS={
+  public:'Free for any agent to query',
+  token:'Free after you issue a token',
+  paid:'Agents pay per query',
+  private:'Not licensed — private'
+};
+const LIC_HINTS={
+  public:'Any external agent can query this KB at no cost. By convention agents cite the KB when they use an answer, but nothing is enforced.',
+  token:'Agents can only query after you hand them an access token. Queries are free once a token is granted — the token itself is the license.',
+  paid:'Each query costs the agent the fee you set in Pricing below. Noosphere bills via Stripe Connect and routes 90% to you.',
+  private:'This KB is not exposed to external agents at all. Licensing does not apply because nothing is licensed out.'
+};
 
 async function loadCorpusEntities(corpusId){
   const list=document.getElementById('cv-entities-list');if(!list)return;
@@ -2407,6 +2543,106 @@ async function loadCorpusEntities(corpusId){
       return `<div class="cv-ent-group"><div class="cv-ent-kind">${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}" title="${e.mention_count} mention${e.mention_count===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
     }).join('');
   }catch(e){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>'}
+}
+
+function showAddSubscriptionModal(c,onSaved){
+  // Minimal Phase-1 subscribe flow: pick a local peer corpus, a mode, and a
+  // cadence. Remote (network) peers + budget/token auth are Phase 2+.
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:520px">
+    <div class="acm-title">Subscribe to a peer KB</div>
+    <div class="acm-sub">Periodically poll another corpus and absorb its updates as new source documents (source_kind=peer_subscription).</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+      <label style="font-size:11px;color:var(--tx3)">Peer corpus
+        <select id="asm-peer" class="fi" style="width:100%;margin-top:4px"><option value="">Loading…</option></select>
+      </label>
+      <label style="font-size:11px;color:var(--tx3)">Mode
+        <select id="asm-mode" class="fi" style="width:100%;margin-top:4px">
+          <option value="new_documents">Pull new documents</option>
+          <option value="ask">Ask a recurring question</option>
+          <option value="describe">Refresh capability card</option>
+        </select>
+      </label>
+      <label id="asm-query-wrap" style="font-size:11px;color:var(--tx3);display:none">Question to ask each cycle
+        <input type="text" id="asm-query" class="fi" style="width:100%;margin-top:4px" placeholder="e.g. What's new in AI alignment this week?" />
+      </label>
+      <label id="asm-topic-wrap" style="font-size:11px;color:var(--tx3)">Topic filter (optional — matches title/tags)
+        <input type="text" id="asm-topic" class="fi" style="width:100%;margin-top:4px" placeholder="e.g. embeddings" />
+      </label>
+      <label style="font-size:11px;color:var(--tx3)">Cadence
+        <select id="asm-cadence" class="fi" style="width:100%;margin-top:4px">
+          <option value="60">Every hour</option>
+          <option value="360">Every 6 hours</option>
+          <option value="1440" selected>Daily</option>
+          <option value="10080">Weekly</option>
+        </select>
+      </label>
+      <label style="font-size:11px;color:var(--tx3)">Max docs per cycle
+        <input type="number" id="asm-maxdocs" class="fi" value="5" min="1" max="50" style="width:100%;margin-top:4px" />
+      </label>
+    </div>
+    <div class="acm-actions" style="margin-top:14px"><button class="btn-sm-ghost" id="asm-cancel">Cancel</button><button class="btn-sm" id="asm-save">Subscribe</button></div>
+  </div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#asm-cancel').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+
+  const modeSel=wrap.querySelector('#asm-mode');
+  const queryWrap=wrap.querySelector('#asm-query-wrap');
+  const topicWrap=wrap.querySelector('#asm-topic-wrap');
+  const syncModeFields=()=>{
+    const m=modeSel.value;
+    queryWrap.style.display=m==='ask'?'':'none';
+    topicWrap.style.display=m==='new_documents'?'':'none';
+  };
+  modeSel.onchange=syncModeFields;syncModeFields();
+
+  (async()=>{
+    const peerSel=wrap.querySelector('#asm-peer');
+    try{
+      const r=await fetch(`${API}/corpora`);
+      const corpora=await r.json();
+      const opts=(Array.isArray(corpora)?corpora:corpora.corpora||[]).filter(x=>x.id!==c.id);
+      if(!opts.length){peerSel.innerHTML='<option value="">No other corpora available</option>';return}
+      peerSel.innerHTML=opts.map(x=>`<option value="${esc(x.id)}" data-slug="${esc(x.slug||'')}">${esc(x.name||x.slug||x.id)}</option>`).join('');
+    }catch(e){peerSel.innerHTML='<option value="">Failed to load</option>'}
+  })();
+
+  wrap.querySelector('#asm-save').onclick=async()=>{
+    const btn=wrap.querySelector('#asm-save');
+    const peerSel=wrap.querySelector('#asm-peer');
+    const target_corpus_id=peerSel.value;
+    if(!target_corpus_id){toast('Pick a peer corpus','error');return}
+    const target_slug=peerSel.options[peerSel.selectedIndex]?.dataset.slug||'';
+    const mode=modeSel.value;
+    const payload={
+      mode,
+      target_corpus_id,
+      target_slug,
+      auth_mode:'public',
+      cadence_minutes:parseInt(wrap.querySelector('#asm-cadence').value,10)||1440,
+      max_docs_per_cycle:parseInt(wrap.querySelector('#asm-maxdocs').value,10)||5,
+    };
+    if(mode==='ask'){
+      const q=wrap.querySelector('#asm-query').value.trim();
+      if(!q){toast('Ask mode needs a question','error');return}
+      payload.query=q;
+    }
+    if(mode==='new_documents'){
+      const t=wrap.querySelector('#asm-topic').value.trim();
+      if(t)payload.topic_filter=t;
+    }
+    btn.disabled=true;btn.textContent='Subscribing…';
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/subscriptions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const body=await r.json().catch(()=>({}));
+      if(!r.ok){toast(body.detail||'Failed to subscribe','error');btn.disabled=false;btn.textContent='Subscribe';return}
+      toast('Subscription created — will run on its cadence','success');
+      close();
+      if(typeof onSaved==='function')onSaved();
+    }catch(e){toast('Failed: '+e.message,'error');btn.disabled=false;btn.textContent='Subscribe'}
+  };
 }
 
 function showEntitiesModal(corpusId,entities){
@@ -2590,6 +2826,24 @@ async function setupCorpusInteract(id,sessionId){
 
 const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query or subscribe. Set pricing below.'};
 
+/* Reputation formula explainer modal. Weights match KBR_WEIGHTS in
+   noosphere/core/citations.py — keep in sync if the formula changes. */
+function showKbrFormulaModal(corpusId,currentScore){
+  const terms=[
+    {w:0.4,name:'Citation PageRank',dc:'How often other KBs cite this one, weighted by the citing KB\u2019s own score. Canonical cross-KB authority signal.'},
+    {w:0.3,name:'Query retention',dc:'Fraction of external agents that return to query this KB again within 30 days. Proxy for answer usefulness.'},
+    {w:0.2,name:'Calibration accuracy',dc:'Agreement between the confidence this KB reports and observed answer correctness. Currently stubbed at 0.5 while feedback data accumulates.'},
+    {w:0.1,name:'Satisfaction rate',dc:'Thumbs-up / thumbs-down feedback on ask responses.'},
+  ];
+  const rowsHTML=terms.map(t=>`<div class="kbr-f-row"><div class="kbr-f-w">${(t.w*100|0)}%</div><div class="kbr-f-body"><div class="kbr-f-nm">${esc(t.name)}</div><div class="kbr-f-dc">${esc(t.dc)}</div></div></div>`).join('');
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:520px"><div class="acm-title">How Reputation is computed</div><div class="acm-sub">Current score: <strong>${currentScore.toFixed(2)}</strong>. Reputation is a weighted blend of four signals agents use to weigh this KB against others.</div><div class="kbr-f-list">${rowsHTML}</div><div class="kbr-f-formula"><code>KBR = 0.4·citation + 0.3·retention + 0.2·calibration + 0.1·satisfaction</code></div><div class="acm-expl">All four terms range 0–1. The weighted sum is recomputed on each inbound query and cached in the corpus row.</div><div class="acm-actions"><button class="btn-sm" id="kbr-f-close">Got it</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.querySelector('#kbr-f-close').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+}
+
 function showAccessConfirmModal(newLevel, summary){
   // summary: { total, originals, by_source_kind, visibility: {owner, external} }
   return new Promise(resolve=>{
@@ -2614,17 +2868,104 @@ function showAccessConfirmModal(newLevel, summary){
 }
 
 async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const al=c.access_level||'public';
-  let regStatus='';
-  try{const hr=await fetch(`${API}/health`);const h=await hr.json();regStatus=al!=='private'&&h.registry_connected?'<div class="rp-reg ok">Registered in the Noosphere</div>':'<div class="rp-reg local">Local only</div>'}catch(e){regStatus='<div class="rp-reg local">Local only</div>'}
+  // Pull capability describe once — Autonomy stage, Reputation, Content mix
+  // all live here (creator-facing controls + derived metrics). If /describe
+  // fails we still render the panel; capability-specific rows empty-state.
+  let cap=null;try{const dr=await fetch(`${API}/corpora/${c.id}/describe`);if(dr.ok)cap=await dr.json()}catch(e){}
+  const showProUI=shouldShowProUI();
+  const userTier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
+  const isProUser=_cloudMode?(userTier==='pro'):true;
+  // Autonomy — three capabilities listed equally. No "current stage"
+  // highlight (it was reading as a tier ladder). The access model is:
+  //   Self-hosted (!_cloudMode):      all three available (user brings own API key)
+  //   Cloud Pro:                      all three available, no badges
+  //   Cloud Free:                     Static free; Living + Networked show
+  //                                   a clickable Upgrade badge that opens
+  //                                   the paywall modal
+  const stages=[
+    {key:'static',    label:'Static',    desc:'Manual sources · manual compile. Answers queries on demand.',                                                   pro:false},
+    {key:'living',    label:'Living',    desc:'Auto-ingests from connected feeds and keeps compiled Wiki in sync with your sources.',                          pro:true},
+    {key:'networked', label:'Networked', desc:'Subscribes to peer KBs, absorbs their updates, and exposes its own compiled pages for them to subscribe back.', pro:true},
+  ];
+  const autonomyHTML=stages.map(s=>{
+    let badge='';
+    if(showProUI && s.pro && !isProUser){
+      // Cloud Free — clickable upgrade pill. Cloud Pro sees no badge
+      // (they already have access). Self-hosted sees no badge at all.
+      badge=`<button type="button" class="rp-auto-tag rp-auto-tag--pro rp-auto-tag--link" data-pro-upsell="${esc(s.label)} autonomy is a Pro feature">Upgrade</button>`;
+    }
+    return `<div class="rp-stage"><div class="rp-stage-hd"><span class="rp-stage-nm">${s.label}</span>${badge}</div><div class="rp-stage-dc">${s.desc}</div></div>`;
+  }).join('');
 
-  rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl">Connect Agents</div><div class="rp-ep"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">API</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Stats</div><div class="rp-stats"><div><div class="rp-sv">${fmtN(c.document_count||0)}</div><div class="rp-sl">documents</div></div><div><div class="rp-sv">${fmtN(c.chunk_count||0)}</div><div class="rp-sl">chunks</div></div><div><div class="rp-sv">${fmtN(c.word_count||0)}</div><div class="rp-sl">words</div></div><div><div class="rp-sv">${fmtN(an.total_queries||0)}</div><div class="rp-sl">queries</div></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div>${regStatus}</div>
-    <div id="rp-tokens" class="rp-sec" style="display:${al==='token'?'block':'none'}"><div class="rp-lbl">Access Tokens</div><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate Token</button><div id="rp-tk-list"></div></div>
-    <div id="rp-pricing" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Pricing</div><div id="rp-pricing-body"></div></div>
-    <div id="rp-revenue" class="rp-sec" style="display:${al==='paid'?'block':'none'}"><div class="rp-lbl">Revenue</div><div id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading...</div></div>
-    <div class="rp-sec"><div class="rp-lbl">Your handles</div><div class="rp-handles-body" id="rp-handles-view">${(Array.isArray(c.owned_handles)&&c.owned_handles.length)?c.owned_handles.map(h=>`<span class="cv-handle-tag">${esc(h)}</span>`).join(' '):'<span style="font-size:12px;color:var(--tx3);font-style:italic">none set</span>'} <a href="#" class="rp-subtle-link" id="rp-handles-edit">edit</a></div><div class="rp-hint">URLs from these default to your original content.</div></div>
-    <div class="rp-sec"><div class="rp-lbl">Entities</div><div class="rp-entities-row" id="rp-entities-row"><span style="font-size:12px;color:var(--tx3)">Loading…</span></div></div>
+  const kbr=cap?Number(cap.kb_reputation||0):0;
+  const kbrTier=kbr>=0.5?'high':kbr>=0.2?'mid':'low';
+  // Fold Confidence into the Reputation row — a single trust line.
+  // Possible suffixes: "calibrated" (third-party), "self-assessed", or "no
+  // confidence reported". Calibration policy is low-churn; a separate row
+  // was overkill.
+  const calib=cap&&cap.calibration_policy;
+  let confSuffix='no confidence reported',confHint='This KB does not report confidence scores on its answers.';
+  if(calib&&typeof calib==='object'&&calib.reports_confidence){
+    if((calib.confidence_source||'self')==='self'){
+      confSuffix='self-assessed';confHint='This KB reports its own confidence — weaker signal than third-party calibration.';
+    }else{
+      confSuffix='calibrated';confHint='Confidence scores verified by an external calibrator — stronger trust signal.';
+    }
+  }
+  // Content mix — now also carries the doc count (absorbs the old Stats section).
+  const sc=(cap&&cap.source_composition)||{};
+  const scEntries=Object.entries(sc).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const docCount=c.document_count||0;
+  const mixHTML=scEntries.length
+    ? `<div class="rp-mix-bar">${scEntries.map(([k,v])=>{const cls=k==='user_original'?'orig':k==='user_capture'?'cap':'ext';return `<div class="rp-mix-seg rp-mix-seg--${cls}" style="width:${(v*100).toFixed(1)}%" title="${esc(k)}: ${(v*100).toFixed(0)}%"></div>`}).join('')}</div><div class="rp-mix-leg">${scEntries.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))} ${(v*100).toFixed(0)}%</span>`).join('')}</div>`
+    : '<span class="rp-sub-empty">no docs yet</span>';
+  const licStr=LIC_DEFAULTS[al]||LIC_DEFAULTS.public;
+  const licHint=LIC_HINTS[al]||LIC_HINTS.public;
+  // Registry status — self-hosted and cloud nodes share the SAME Noosphere
+  // network. Default config (NOOSPHERE_REGISTRY env var) points every node
+  // to the shared registry automatically; opt-out via NOOSPHERE_REGISTRY=none.
+  // So there's no "cloud-only" vs "self-hosted" distinction here — only
+  // whether this node is participating in the shared discovery network.
+  //   Private                              → "Private — not registered"
+  //   Registered & reachable               → "Registered · discoverable"
+  //   Configured but registry unreachable  → "Registering… (retrying)"
+  //   Explicit opt-out (=none)             → "Standalone — not registered"
+  let regStatus='',regHint='';
+  if(al==='private'){
+    regStatus='Private — not registered';
+    regHint='Private corpora never publish to the discovery registry.';
+  }else{
+    let registryConnected=false,registryConfigured=false;
+    try{const hr=await fetch(`${API}/health`);const h=await hr.json();registryConnected=!!h.registry_connected;registryConfigured=!!h.registry_configured}catch(e){}
+    if(registryConnected){
+      regStatus='Registered · discoverable';
+      regHint='This KB is listed in the shared Noosphere registry — any agent on the network can discover and query it.';
+    }else if(!registryConfigured){
+      regStatus='Standalone — not registered';
+      regHint='This node has opted out of the shared Noosphere registry (NOOSPHERE_REGISTRY=none). Agents with the direct endpoint URL can still query this KB, but it won\u2019t show up in network-wide discovery.';
+    }else{
+      regStatus='Registering… (retrying)';
+      regHint='The Noosphere registry is configured but not currently reachable. This KB will register automatically when the connection comes back. Agents with the direct endpoint URL can still query now.';
+    }
+  }
+
+  // Right-rail — slimmed. Six sections instead of seven; Stats gone (docs
+  // count folded into Content mix; chunks/words/queries were internal or
+  // duplicated); Trust collapsed to one row (KBR · calibration). Handles
+  // moved out (now a per-URL "This is mine" checkbox on ingest).
+  //
+  //   Connect  — agent-facing endpoints (MCP + more via expand)
+  //   Access   — who can query + licensing + discovery status + conditional
+  //              tokens/pricing/revenue blocks
+  //   Autonomy — single current stage badge + preview of other stages
+  //   Trust    — KBR + calibration suffix
+  //   Content  — doc count + source mix + entities
+  //   Maintenance — owner-only ops (tiny strip at bottom)
+  rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl">Connect</div><div class="rp-ep rp-ep-primary"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><details class="rp-ep-more"><summary>All agent endpoints</summary><div class="rp-ep"><span class="rp-epl">describe</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/describe</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/describe',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">ask</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/ask</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/ask',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">preview_ask</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/preview_ask</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/preview_ask',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">search</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></details></div>
+    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
+    <div class="rp-sec"><div class="rp-lbl" title="What this KB can do on its own.">Autonomy</div><div class="rp-stages">${autonomyHTML}</div><div class="rp-sub rp-sub--block"><div class="rp-sub-hd"><span class="rp-sub-lbl">Subscriptions <span class="rp-sub-cnt" id="rp-subs-count">(0)</span></span><button class="btn-xs" id="rp-subs-add" title="Subscribe to a peer KB">+ Add</button></div><div class="rp-subs-list" id="rp-subs-list"><span class="rp-sub-empty">Loading…</span></div></div></div>
+    <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span></div></div></div>
+    <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Entities</span><div class="rp-entities-row" id="rp-entities-row"><span class="rp-sub-empty">Loading…</span></div></div></div>
     <div class="rp-sec rp-sec-maint"><div class="rp-lbl">Maintenance</div><div class="rp-maint-row"><a href="#" class="rp-subtle-link" id="rp-reindex" title="Re-embed all documents — use this if a recent upload didn't become searchable">Re-embed</a><a href="#" class="rp-subtle-link" id="rp-export">Export</a><a href="#" class="rp-subtle-link rp-danger" id="rp-delete">Delete corpus</a></div></div>`;
 
   document.getElementById('rp-acc').onchange=()=>{
@@ -2633,6 +2974,15 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     document.getElementById('rp-tokens').style.display=v==='token'?'block':'none';
     document.getElementById('rp-pricing').style.display=v==='paid'?'block':'none';
     document.getElementById('rp-revenue').style.display=v==='paid'?'block':'none';
+    // Keep licensing + discovery previews in sync so users see the effect
+    // before they commit with Save.
+    const licEl=document.getElementById('rp-licensing');
+    if(licEl){
+      licEl.textContent=LIC_DEFAULTS[v]||LIC_DEFAULTS.public;
+      licEl.title=LIC_HINTS[v]||LIC_HINTS.public;
+    }
+    const discEl=document.getElementById('rp-discovery');
+    if(discEl)discEl.textContent=v==='private'?'Private — not registered':'Will register in Noosphere registry after Save';
     if(v==='paid')loadPricingUI(c);
   };
   document.getElementById('rp-sv').onclick=async()=>{
@@ -2659,33 +3009,90 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     }catch(e){toast('Failed: '+e.message,'error')}
   };
 
-  /* Handles edit (moved from main view) */
-  document.getElementById('rp-handles-edit').onclick=(e)=>{
+  /* Reputation formula explainer — the score is a weighted blend; users kept
+     asking "what goes into this?", so surface the full formula + each term's
+     current value on demand. Values are the same ones the backend feeds into
+     compute_kb_reputation() in core/citations.py. */
+  const kbrInfoBtn=document.getElementById('rp-kbr-info');
+  if(kbrInfoBtn)kbrInfoBtn.onclick=(e)=>{
     e.preventDefault();
-    const view=document.getElementById('rp-handles-view');
-    const cur=(Array.isArray(c.owned_handles)?c.owned_handles:[]).join('\n');
-    view.innerHTML=`<textarea class="cv-handles-input" id="rp-handles-inp" rows="3" placeholder="One per line — e.g. twitter.com/steve, stevesayao.com">${esc(cur)}</textarea><div class="cv-handles-actions"><button class="btn-sm" id="rp-handles-sv">Save</button><button class="btn-sm-ghost" id="rp-handles-cc">Cancel</button></div>`;
-    document.getElementById('rp-handles-inp').focus();
-    document.getElementById('rp-handles-cc').onclick=()=>renderCorpus(c.id);
-    document.getElementById('rp-handles-sv').onclick=async()=>{
-      const list=document.getElementById('rp-handles-inp').value.split('\n').map(s=>s.trim()).filter(Boolean);
-      try{await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({owned_handles:list})});await loadC();renderCorpus(c.id)}catch(e){toast('Failed to save handles')}
-    };
+    showKbrFormulaModal(c.id,kbr);
   };
+
+  /* Pro badge clicks → open upgrade modal, not a page nav. Matches the
+     self-hosted paywall pattern (Feynman-style): stay in flow, modal
+     communicates value without yanking the user off the corpus page. */
+  rp.querySelectorAll('[data-pro-upsell]').forEach(btn=>{
+    btn.onclick=(e)=>{e.preventDefault();e.stopPropagation();showProModal(btn.dataset.proUpsell||'')};
+  });
+
+  /* Subscriptions — L3 Networked (docs/l3-networked.md).
+     Pulls the current list; inline row per peer with status dot + cadence
+     + revoke. "+ Add" opens a modal that lets the owner pick a peer corpus
+     (local only in Phase 1), a mode, and a cadence. */
+  async function loadSubs(){
+    const list=document.getElementById('rp-subs-list');
+    const cnt=document.getElementById('rp-subs-count');
+    if(!list)return;
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/subscriptions`);
+      if(!r.ok){list.innerHTML='<span class="rp-sub-empty">Unavailable</span>';return}
+      const d=await r.json();const subs=d.subscriptions||[];
+      if(cnt)cnt.textContent=`(${subs.length})`;
+      if(!subs.length){list.innerHTML='<span class="rp-sub-empty">None yet — subscribe to absorb updates from a peer KB.</span>';return}
+      list.innerHTML=subs.map(s=>{
+        const name=esc(s.target_slug||s.target_endpoint||s.target_corpus_id||'peer');
+        const mode=esc(s.mode||'');
+        const cad=Number(s.cadence_minutes||0);
+        const cadTxt=cad>=10080?`${Math.round(cad/10080)}w`:cad>=1440?`${Math.round(cad/1440)}d`:`${cad}m`;
+        const status=s.status||'active';
+        return `<div class="rp-sub-row" data-sub-id="${esc(s.id)}"><span class="rp-sub-dot rp-sub-dot--${status}" title="${esc(status)}"></span><span class="rp-sub-peer">${name}</span><span class="rp-sub-meta">${mode} · ${cadTxt}</span><button class="rp-sub-act" data-sub-run="${esc(s.id)}" title="Run now">▶</button><button class="rp-sub-act rp-sub-act--rm" data-sub-rm="${esc(s.id)}" title="Revoke">×</button></div>`;
+      }).join('');
+      list.querySelectorAll('[data-sub-run]').forEach(b=>{
+        b.onclick=async(ev)=>{
+          ev.preventDefault();
+          const id=b.dataset.subRun;b.disabled=true;b.textContent='…';
+          try{
+            const rr=await fetch(`${API}/corpora/${c.id}/subscriptions/${id}/run`,{method:'POST'});
+            const body=await rr.json().catch(()=>({}));
+            if(!rr.ok){toast(body.detail||'Run failed','error');b.disabled=false;b.textContent='▶';return}
+            const ing=body.docs_ingested||0;
+            toast(ing?`Ingested ${ing} doc${ing===1?'':'s'} (${body.outcome})`:`No new content (${body.outcome})`,ing?'success':'info');
+            loadSubs();if(ing)renderCorpus(c.id);
+          }catch(e){toast('Run failed: '+e.message,'error');b.disabled=false;b.textContent='▶'}
+        };
+      });
+      list.querySelectorAll('[data-sub-rm]').forEach(b=>{
+        b.onclick=async(ev)=>{
+          ev.preventDefault();
+          if(!confirm('Revoke this subscription? Its run history will be deleted too.'))return;
+          const id=b.dataset.subRm;
+          try{
+            const rr=await fetch(`${API}/corpora/${c.id}/subscriptions/${id}`,{method:'DELETE'});
+            if(!rr.ok){toast('Revoke failed','error');return}
+            toast('Subscription revoked','success');loadSubs();
+          }catch(e){toast('Revoke failed: '+e.message,'error')}
+        };
+      });
+    }catch(e){list.innerHTML='<span class="rp-sub-empty">Failed to load</span>'}
+  }
+  document.getElementById('rp-subs-add').onclick=(e)=>{e.preventDefault();showAddSubscriptionModal(c,loadSubs)};
+  loadSubs();
 
   /* Entities: count + extract / browse */
   (async()=>{
     const row=document.getElementById('rp-entities-row');if(!row)return;
     try{
       const r=await fetch(`${API}/corpora/${c.id}/entities`);
-      const d=await r.json();
-      const ents=(d.entities||[]);
+      const d=await r.json();const ents=(d.entities||[]);
       const total=ents.length;
       const shown=ents.filter(e=>e.mention_count>0).length;
       if(total===0){
-        row.innerHTML=`<span style="font-size:12px;color:var(--tx3)">None yet</span> <a href="#" class="rp-subtle-link" id="rp-extract-btn">Extract with AI</a>`;
+        // Button variant so the action reads as clickable — a plain text
+        // link blended into the label and failed the "is this an action?" test.
+        row.innerHTML=`<span class="rp-sub-empty">none yet</span> <button class="btn-xs" id="rp-extract-btn">Extract with AI</button>`;
       }else{
-        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> entities</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <a href="#" class="rp-subtle-link" id="rp-extract-btn">Re-extract</a>`;
+        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> extracted</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <button class="btn-xs" id="rp-extract-btn">Re-extract</button>`;
       }
       const extractBtn=document.getElementById('rp-extract-btn');
       if(extractBtn)extractBtn.onclick=async(ev)=>{
@@ -2851,6 +3258,8 @@ function _tierCardsHTML(currentTier){
         <li><strong>Add sources</strong> manually — files (PDF · DOCX · MD · TXT · CSV · JSON), URLs, RSS (1 RSS/day). Noos normalizes any format into clean, agent-readable text.</li>
         <li><strong>Embed</strong> — Noos turns every passage into a semantic vector, so chat finds and cites the exact source for your question</li>
         <li><strong>Chat</strong> — ground answers in your knowledge network; build new knowledge through conversation (20 msgs/day)</li>
+        <li><strong>Compile manually</strong> — one-off synthesis of Wiki concept notes on a topic you pick</li>
+        <li><strong>Autonomy L0–L1</strong> — Responsive (answers queries) + Subscribing (auto-ingests from connected feeds)</li>
       </ul>
       ${currentTier==='free'?'<div class="pg-badge">Current plan</div>':''}
     </div>
@@ -2864,7 +3273,8 @@ function _tierCardsHTML(currentTier){
         <li><strong>Auto-add</strong> — connect a feed once, Noos pulls in new posts as they publish. Higher daily caps on manual uploads.</li>
         <li><strong>Embed at scale</strong> — no document cap; your entire growing library stays searchable</li>
         <li><strong>Chat</strong> — higher daily cap, enough for sustained building sessions</li>
-        <li><strong>Compile</strong> — Noos turns your corpus into Wiki articles, Entity profiles, and Timelines, and keeps them evolving as your sources change.</li>
+        <li><strong>Auto-Compile</strong> — Noos keeps Wiki articles, Entity profiles, and Timelines evolving automatically as your sources change.</li>
+        <li><strong>Autonomy L2–L3</strong> — Synthesizing (auto-compiles Wiki from sources) + Proactive (queries peer KBs to learn &amp; publishes reports outward).</li>
         <li><strong>Monetize</strong> — charge per query on your corpora. Noos collects via Stripe Connect; you keep the revenue.</li>
         <li>Priority access</li>
       </ul>
@@ -2894,9 +3304,22 @@ function renderPricing(){
   const isAuth=!!_authUser;
   const currentTier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
   const email=_authUser?.email||'';
+  // Payouts card: only relevant to Pro users running paid corpora. Shown
+  // on the Pricing page (not just Account) so users evaluating the Pro
+  // tier can see the monetization half of what they're buying before
+  // upgrading. Click → POST /cloud/connect/onboard → Stripe-hosted onboarding.
+  const payoutsHTML=(isAuth&&currentTier==='pro')?`
+    <div class="pg-payouts">
+      <div class="pg-payouts-hd">
+        <h2 class="pg-payouts-title">Payouts</h2>
+        <span class="pg-payouts-sub">Earn from paid corpora — Noos bills via Stripe Connect and routes 90% to you.</span>
+      </div>
+      <button class="pg-payouts-cta" id="pg-connect-btn">Set up payouts with Stripe</button>
+    </div>`:'';
   ct.innerHTML=`<div class="pg-page">
     <div class="pg-hd"><h1 class="pg-title">Plans</h1><p class="pg-sub">Static corpus or living knowledge base.<br>Start free, upgrade when Noos should grow with you.</p></div>
     ${_tierCardsHTML(currentTier)}
+    ${payoutsHTML}
     <div class="pg-self-host">
       <strong>Self-hosted?</strong> All features are free and unlimited. No cloud account needed. <code>pip install noosphere && noosphere serve</code>
     </div>
@@ -2904,6 +3327,16 @@ function renderPricing(){
   </div>`;
   _wireTierCardButtons(ct);
   document.getElementById('pg-signout-btn')?.addEventListener('click',signOut);
+  document.getElementById('pg-connect-btn')?.addEventListener('click',async function(){
+    this.disabled=true;const prev=this.textContent;this.textContent='Loading…';
+    try{
+      const r=await fetch(`${API}/cloud/connect/onboard`,{method:'POST'});
+      const d=await r.json();
+      if(d.url){window.location.href=d.url;return}
+      toast(d.detail||'Failed to start Stripe onboarding','error');
+      this.disabled=false;this.textContent=prev;
+    }catch(e){toast('Failed to reach Stripe Connect','error');this.disabled=false;this.textContent=prev}
+  });
 }
 
 /* Paywall modal — opens when a Free user hits a Pro-gated feature, either

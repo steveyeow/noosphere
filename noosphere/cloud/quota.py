@@ -25,7 +25,9 @@ QUOTA_LIMITS = {
         "search": 50,            # queries per day
         "ingest_url": 5,         # URL ingestions per day
         "ingest_feed": 1,        # feed ingestions per day
-        "compile": 0,            # compile is Pro-only — synthesis is the paid surface
+        "compile": 2,            # manual one-off compile: Free tier gets a small allowance to
+                                 # try synthesis. Continuous / auto-refresh compile is Pro
+                                 # (front-end gates the auto-refresh checkbox).
         "chat": 20,              # chat messages per day
         "ask": 20,               # KB-as-agent synthesized answers — same LLM cost as chat
         "preview_ask": 100,      # free evaluation query; generous to support discovery

@@ -345,7 +345,85 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .rp-entities-row{font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .rp-maint-row{display:flex;gap:14px;flex-wrap:wrap;font-size:12px}
 .rp-handles-body{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:12px;margin-bottom:6px}
+.rp-sub{margin-top:14px}
+.rp-sub-lbl{display:block;font-size:11px;color:var(--tx3);margin-bottom:6px}
+.rp-sub-empty{font-size:12px;color:var(--tx3);font-style:italic}
+.rp-sub-val{font-size:12px;color:var(--tx2);line-height:1.5}
+/* Block variant: sub-rows that contain nested controls (e.g. token list,
+   pricing form, revenue panel) and need more visual separation. */
+.rp-sub--block{margin-top:18px;padding-top:14px;border-top:1px dashed var(--brd)}
 .rp-hint{font-size:11px;color:var(--tx3);line-height:1.5;font-style:italic}
+
+/* Peer subscriptions — L3 Networked autonomy. Sits inside the Autonomy
+   section under the three stage rows. Each row is one subscription: a
+   status dot, the peer name, mode + cadence meta, then inline actions. */
+.rp-sub-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.rp-sub-cnt{color:var(--tx3);font-weight:400;margin-left:2px}
+.rp-subs-list{display:flex;flex-direction:column;gap:4px}
+.rp-sub-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0}
+.rp-sub-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--tx3)}
+.rp-sub-dot--active{background:#22c55e}
+.rp-sub-dot--paused{background:#f59e0b}
+.rp-sub-dot--failed{background:#ef4444}
+.rp-sub-peer{color:var(--tx);flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
+.rp-sub-meta{color:var(--tx3);font-size:11px;margin-left:auto}
+.rp-sub-act{background:transparent;border:0;color:var(--tx3);cursor:pointer;font-size:11px;padding:0 4px;line-height:1}
+.rp-sub-act:hover{color:var(--tx)}
+.rp-sub-act--rm:hover{color:#ef4444}
+
+/* Autonomy ladder — 4 rows showing L0..L3, highlighting the active tier and
+   dimming Pro tiers for free users with an inline Upgrade affordance. */
+.rp-autonomy{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+/* Autonomy rows are cumulative. A corpus at L2 already *includes* L0 and L1
+   behavior, so every tier at or below the current level reads as "on".
+   Three visual states:
+     --cur  — the current tier; strong left accent + bold name
+     --inc  — tiers below current; muted left accent (included, but not the
+              headline number); keeps the ladder legible instead of making
+              L0 look skipped when current is L1.
+     --locked — Pro-gated future tiers for Free users; dimmed + Pro tag. */
+.rp-auto-row{padding:4px 0 4px 10px;border-left:2px solid transparent}
+.rp-auto-row--cur{border-left-color:var(--tx)}
+.rp-auto-row--cur .rp-auto-nm{font-weight:600}
+.rp-auto-row--inc{border-left-color:var(--brd)}
+.rp-auto-row--inc .rp-auto-nm{color:var(--tx2)}
+.rp-auto-row--locked{opacity:.55}
+.rp-auto-main{display:flex;align-items:center;gap:8px;font-size:12px}
+.rp-auto-nm{font-weight:500;color:var(--tx)}
+.rp-auto-row--locked .rp-auto-nm{color:var(--tx2)}
+/* Pro pill: button-reset + rp-auto-tag base — used as a button now (not a
+   link) because click opens the upgrade modal, not a page nav. */
+.rp-auto-tag{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:8px;font-weight:500;font-family:inherit}
+.rp-auto-tag--pro{background:var(--bgH);color:var(--tx3);border:1px solid var(--brd)}
+.rp-auto-tag--link{cursor:pointer;text-decoration:none;transition:background .12s,color .12s,border-color .12s}
+.rp-auto-tag--link:hover{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.rp-auto-dc{font-size:11.5px;color:var(--tx3);line-height:1.5;margin-top:2px}
+
+/* Reputation sub-row — colored number + lightweight tier label. */
+.rp-kbr{font-variant-numeric:tabular-nums;font-weight:500;display:inline-flex;align-items:baseline;gap:6px}
+.rp-kbr--high{color:#22a06b}
+.rp-kbr--mid{color:#b5721a}
+.rp-kbr--low{color:var(--tx3)}
+.rp-kbr-tier{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);font-weight:400}
+/* Info icon — next to Reputation label, opens the formula modal. */
+.rp-info-icon{display:inline-block;margin-left:4px;font-size:12px;color:var(--tx3);text-decoration:none;cursor:pointer;transition:color .12s}
+.rp-info-icon:hover{color:var(--tx)}
+/* KBR formula modal — piggybacks on .acm-overlay / .acm-panel. */
+.kbr-f-list{display:flex;flex-direction:column;gap:10px;margin:14px 0 12px}
+.kbr-f-row{display:flex;gap:12px;padding:10px 12px;background:var(--bg2);border-radius:8px}
+.kbr-f-w{flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--tx);min-width:40px}
+.kbr-f-nm{font-size:13px;font-weight:500;color:var(--tx);margin-bottom:2px}
+.kbr-f-dc{font-size:12px;color:var(--tx3);line-height:1.5}
+.kbr-f-formula{padding:10px 12px;background:var(--bgH);border-radius:8px;margin-bottom:12px;overflow-x:auto}
+.kbr-f-formula code{font-family:var(--mono);font-size:11.5px;color:var(--tx);white-space:nowrap}
+
+/* Content-mix bar — mini version of the capability-card bar, inlined in rail. */
+.rp-mix-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg);margin:2px 0}
+.rp-mix-seg{height:100%}
+.rp-mix-seg--orig{background:#4a90e2}
+.rp-mix-seg--cap{background:#8b62d9}
+.rp-mix-seg--ext{background:#b8b8bd}
+.rp-mix-leg{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--tx3);margin-top:4px}
 
 /* ── Entity list (corpus detail page) ── */
 .cv-ent-group{margin-bottom:10px}
@@ -462,6 +540,28 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cv-header:has(.cv-tags){padding-bottom:0;border-bottom:none}
 .cv-header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .cv-header-actions{display:flex;align-items:center;gap:8px}
+/* Floating bottom chat dock — proxy composer for the New Chat flow. Lives
+   inside .cv-layout so it only appears on the corpus page. Typing + Enter
+   (or Send) routes to #/main with corpus scope pre-selected and the draft
+   auto-sent, making the UX identical to picking this corpus in New Chat
+   and typing there. Bottom gap + shadow give it subtle floating presence
+   without the heavy frame of the previous bottom-chat. */
+.cv-chat-dock{position:absolute;left:0;right:0;bottom:0;padding:12px 24px 16px;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,var(--bg) 50%);pointer-events:none;z-index:4}
+.cv-chat-dock>*{pointer-events:auto}
+/* The corpus dock reuses the home composer shell verbatim — same +/textarea/▲
+   layout, same chip row underneath. The only delta is the chip is locked
+   (read-only) since the corpus is determined by the page itself. */
+.cv-chat-dock .home-composer{max-width:620px;margin:0 auto}
+.home-chip-locked{cursor:default;pointer-events:none;background:transparent;color:var(--tx3)}
+.home-chip-locked:hover{background:transparent}
+/* Inline attach panel host — sits between the Sources header and the doc list,
+   so upload/url/rss panels render inside the corpus content, not in a popover. */
+.cv-attach-host{display:flex;flex-direction:column}
+.cv-attach-host:empty{display:none}
+/* Scroll spacer so the last source doesn't hide behind the floating dock. */
+.cv-scroll-end{height:120px}
+/* The .cv-layout needs to be the positioning parent of the dock. */
+.cv-layout{position:relative}
 .cv-act-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx2);font-size:12px;font-weight:500;cursor:pointer;transition:background .12s,color .12s,border-color .12s}.cv-act-btn:hover{background:var(--bgH);color:var(--tx);border-color:var(--tx3)}.cv-act-btn:disabled{opacity:.5;cursor:default}
 .cv-identity{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap}
 .cv-name{font-family:'Libre Baskerville',Georgia,serif;font-size:22px;font-weight:700;line-height:1.3;margin:0}
@@ -485,6 +585,9 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .cv-handles-input:focus{border-color:var(--tx3)}
 .cv-handles-actions{display:flex;gap:8px;margin-top:8px}
 .cv-sec{padding:16px 24px;border-bottom:1px solid var(--brd)}
+/* Sources is the last section before the floating chat dock + scroll spacer.
+   A trailing divider below it just doubles up with the page edge, so kill it. */
+.cv-sec-raw{border-bottom:none}
 .cv-st{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
 
 /* ── Composer sliders button (sources toggle, bottom-left) ── */
@@ -622,15 +725,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .rp-row select{padding:5px 8px;border-radius:7px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:12px;flex:1}
 .rp-msg{font-size:11px;padding:8px 10px;border-radius:8px;margin-top:8px;line-height:1.4}.rp-msg.info{background:var(--accBg);color:var(--tx2)}
 
-/* ── Inline add-document panel ── */
-.cv-add-panel{background:var(--bg2);border:1px solid var(--brd);border-radius:10px;padding:12px 14px;margin-bottom:10px}
-.cv-add-tabs{display:flex;gap:4px;margin-bottom:10px}
-.cv-add-tab{padding:4px 10px;font-size:12px;border-radius:6px;border:1px solid var(--brd);background:transparent;color:var(--tx2);cursor:pointer;transition:all .12s}
-.cv-add-tab.active{background:var(--tx);color:var(--bg);border-color:var(--tx)}
-.cv-add-dz{border:1.5px dashed var(--brd);border-radius:8px;padding:20px;text-align:center;transition:border-color .15s,background .15s}
-.cv-add-dz:hover,.cv-add-dz.drag-over{border-color:var(--tx3);background:var(--bgH)}
-.cv-add-actions{display:flex;gap:6px;margin-top:8px}
-
 /* ── Document items ── */
 .doc-item{padding:10px 14px;border-radius:10px;background:var(--bg2);border:1px solid var(--brd);margin-bottom:6px;cursor:pointer;transition:background .12s}.doc-item:hover{background:var(--bgH)}
 .doc-hd{display:flex;align-items:center;justify-content:space-between}.doc-tt{font-size:14px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -671,6 +765,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .btn-ghost{padding:7px 16px;border-radius:20px;border:1px solid var(--brd);background:transparent;color:var(--tx2);font-size:13px;cursor:pointer;transition:background .12s,color .12s}.btn-ghost:hover{background:var(--bgH);color:var(--tx)}
 .btn-sm{padding:5px 14px;border-radius:16px;border:none;background:var(--btnBg);color:var(--btnC);font-size:12px;font-weight:500;cursor:pointer;transition:opacity .15s}.btn-sm:hover{opacity:.8}.btn-sm:disabled{opacity:.35;cursor:default}
 .btn-sm-ghost{padding:5px 14px;border-radius:16px;border:1px solid var(--brd);background:transparent;color:var(--tx2);font-size:12px;cursor:pointer;transition:background .12s,color .12s}.btn-sm-ghost:hover{background:var(--bgH);color:var(--tx)}
+/* Extra-small action button — for sub-row inline actions (e.g. "Extract with
+   AI", "Re-extract") where a text link read as ambiguous. Outlined chip. */
+.btn-xs{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;border:1px solid var(--brd);background:transparent;color:var(--tx2);font-size:11px;font-weight:500;font-family:inherit;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+.btn-xs:hover{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.btn-xs:disabled{opacity:.4;cursor:default}
 .btn-add{display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;border:1px solid var(--brd);background:transparent;color:var(--tx2);font-size:11px;font-weight:500;cursor:pointer;transition:background .12s,color .12s}.btn-add:hover{background:var(--bgH);color:var(--tx)}
 .empty{text-align:center;padding:30px 16px;color:var(--tx3);font-size:13px}
 
@@ -695,9 +794,9 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .sr-meta{font-size:11px;color:var(--tx3);margin-top:8px;text-align:right}
 
 /* ── Registry status ── */
-.rp-reg{font-size:11px;padding:6px 10px;border-radius:6px;margin-top:8px}
-.rp-reg.ok{color:var(--grn);background:var(--grnBg)}
-.rp-reg.local{color:var(--tx3);background:var(--bg)}
+/* (rp-reg removed — registry/discovery status now renders as a plain
+   rp-sub row inside Access so it reads as one of the derived Access facts
+   rather than a floating callout. Old classes kept nowhere.) */
 
 /* ── Token management ── */
 .rp-tk-item{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--brd)}
@@ -816,6 +915,17 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .pg-footer-signout{padding:8px 24px;border:1px solid var(--brd);border-radius:8px;background:transparent;color:var(--tx3);font-size:13px;cursor:pointer;transition:color .12s,border-color .12s}.pg-footer-signout:hover{color:var(--tx);border-color:var(--tx3)}
 .pg-self-host{padding:16px 20px;background:var(--accBg);border-radius:10px;font-size:13px;color:var(--tx2);line-height:1.6;margin-bottom:32px}
 .pg-self-host code{background:var(--bgH);padding:2px 6px;border-radius:4px;font-size:12px;font-family:var(--mono)}
+/* Payouts block on /pricing — shown to Pro users so they can reach Stripe
+   Connect onboarding without detouring through Account. Visual weight is
+   between a tier card and the self-host notice: an owned action, not a
+   pitch. */
+.pg-payouts{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;border:1px solid var(--brd);border-radius:12px;background:var(--bg);margin:0 0 22px;flex-wrap:wrap}
+.pg-payouts-hd{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.pg-payouts-title{font-family:'Libre Baskerville',Georgia,serif;font-size:16px;font-weight:700;color:var(--tx);margin:0}
+.pg-payouts-sub{font-size:12.5px;color:var(--tx3);line-height:1.55}
+.pg-payouts-cta{padding:10px 18px;border:none;border-radius:8px;background:var(--btnBg);color:var(--btnC);font-size:13px;font-weight:600;cursor:pointer;transition:opacity .12s;flex-shrink:0}
+.pg-payouts-cta:hover{opacity:.85}
+.pg-payouts-cta:disabled{opacity:.6;cursor:default}
 
 /* ── Paywall Modal ── Opens when a Free user hits a Pro-gated feature,
    either proactively (gateProFeature) or reactively (429 quota_exceeded). */
@@ -940,38 +1050,90 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 
 @media(max-width:900px){.cmp{grid-template-columns:1fr}.cmp-canvas{padding:20px 20px 120px}.cmp-chat{border-left:none;border-top:1px solid var(--brd);height:auto;max-height:50vh}}
 
-/* Capability card — the KB's agent-media identity panel (below cv-header) */
-.cap-card{margin:12px 0 20px;padding:16px 20px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px}
-.cap-card__top{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.cap-card__title{font-family:'Libre Baskerville',Georgia,serif;font-size:14px;font-weight:700;color:var(--tx)}
-.cap-card__subtitle{color:var(--tx3);font-size:12px}
-.cap-card__badges{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
-.cap-card__kbr{padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.02em}
-.cap-card__kbr--high{background:var(--grnBg,rgba(52,211,153,.15));color:#22a06b}
-.cap-card__kbr--mid{background:var(--orgBg,rgba(245,158,11,.15));color:#b5721a}
-.cap-card__kbr--low{background:var(--accBg,rgba(0,0,0,.05));color:var(--tx3)}
-.cap-card__autonomy{padding:3px 10px;border-radius:10px;background:var(--bg);color:var(--tx2);font-size:11px;font-weight:500;border:1px solid var(--brd)}
-.cap-card__body{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;align-items:baseline}
-.cap-card__label{color:var(--tx3);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:500;white-space:nowrap}
-.cap-card__value{font-size:13px;line-height:1.5;color:var(--tx)}
-.cap-card__pill{display:inline-block;padding:2px 10px;margin:0 4px 4px 0;background:var(--bg);border:1px solid var(--brd);border-radius:12px;font-size:11px;color:var(--tx2);font-weight:500}
-.cap-card__comp-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg);margin:4px 0;max-width:260px}
-.cap-card__comp-seg{height:100%}
-.cap-card__comp-seg--orig{background:#4a90e2}
-.cap-card__comp-seg--cap{background:#8b62d9}
-.cap-card__comp-seg--ext{background:#b8b8bd}
-.cap-card__comp-leg{display:flex;gap:14px;font-size:11px;color:var(--tx3);margin-top:5px;flex-wrap:wrap}
-.cap-card__sample{padding:6px 0;border-top:1px dashed var(--brd);cursor:pointer}
-.cap-card__sample:first-child{border-top:none;padding-top:0}
-.cap-card__sample-q{font-size:12px;color:var(--tx2)}
-.cap-card__sample-q::before{content:'▸ ';color:var(--tx3);font-size:10px}
-.cap-card__sample.open .cap-card__sample-q::before{content:'▾ '}
-.cap-card__sample-a{font-size:12px;color:var(--tx3);margin-top:4px;padding-left:16px;display:none;line-height:1.5}
-.cap-card__sample.open .cap-card__sample-a{display:block}
-.cap-card__empty{color:var(--tx3);font-size:12px;font-style:italic}
-.cap-card__actions{margin-top:14px;display:flex;gap:8px}
-.cap-card__btn{padding:5px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--brd);color:var(--tx);font-size:12px;font-weight:500;cursor:pointer;transition:background .1s}
-.cap-card__btn:hover:not(:disabled){background:var(--bgH)}
-.cap-card__btn:disabled{opacity:.55;cursor:not-allowed}
-.cap-card__btn--ghost{background:transparent}
+/* ── Corpus page tabs (Overview / Insights) ──
+   Mirror's GitHub's repo-level tabs: below the name/description header,
+   above the content sections. Single line of text-underline tabs, minimal
+   chrome so the header stays the focus. */
+.cv-tabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--brd);margin-bottom:4px}
+.cv-tab{padding:10px 14px;font-size:13px;color:var(--tx3);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .12s,border-color .12s}
+.cv-tab:hover{color:var(--tx2)}
+.cv-tab--active{color:var(--tx);border-bottom-color:var(--tx);font-weight:500}
+
+/* Manifest doc renders as a normal .doc-item — same title font, same meta
+   layout, same click-to-expand. The only visual distinguisher is the
+   `system generated` source-kind pill (see .doc-sk.sk-system below). */
+
+/* `system generated` source-kind pill — for auto-maintained docs (manifest
+   today; any future auto-generated wiki pages too). Muted neutral styling
+   that reads as "metadata, not content" — distinct from user/external
+   source kinds which carry trust signal. */
+.doc-sk.sk-system{background:var(--bgH);color:var(--tx3)}
+.ep-doc-sk.sk-system{background:var(--bgH);color:var(--tx3)}
+
+/* ── Insights tab — agent activity metrics ── */
+.cv-layout--full .cv-scroll{padding-right:0}
+.cv-ins-wrap{padding:28px 24px 60px;max-width:960px}
+.cv-ins-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.cv-ins-title{font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:700;color:var(--tx)}
+.cv-ins-winbar{display:flex;gap:2px;border:1px solid var(--brd);border-radius:8px;padding:2px;background:var(--bg2)}
+.cv-ins-win{padding:5px 10px;font-size:11.5px;color:var(--tx3);text-decoration:none;border-radius:6px;transition:background .12s,color .12s}
+.cv-ins-win:hover{color:var(--tx2)}
+.cv-ins-win--active{background:var(--bg);color:var(--tx);font-weight:500}
+.cv-ins-body{min-height:200px}
+.cv-ins-loading,.cv-ins-empty{padding:40px 0;text-align:center;color:var(--tx3);font-size:13px}
+.cv-ins-empty-sm{padding:14px 0;color:var(--tx3);font-size:12.5px}
+.cv-ins-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:28px}
+.cv-ins-card{padding:16px 14px;border:1px solid var(--brd);border-radius:10px;background:var(--bg2)}
+.cv-ins-card-val{font-family:'Libre Baskerville',Georgia,serif;font-size:22px;font-weight:700;color:var(--tx);line-height:1.1;margin-bottom:4px}
+.cv-ins-card-lbl{font-size:12px;color:var(--tx2);font-weight:500}
+.cv-ins-card-hint{font-size:11px;color:var(--tx3);margin-top:2px}
+.cv-ins-section{margin-bottom:28px}
+.cv-ins-section-hd{font-size:12px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.cv-ins-fn{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--brd);border-radius:10px;background:var(--bg2)}
+.cv-ins-fn-row{display:grid;grid-template-columns:120px 1fr 48px;align-items:center;gap:12px;font-size:12.5px}
+.cv-ins-fn-lbl{color:var(--tx2);font-family:var(--mono);font-size:12px}
+.cv-ins-fn-bar{height:8px;background:var(--brd);border-radius:4px;overflow:hidden}
+.cv-ins-fn-fill{height:100%;border-radius:4px;transition:width .3s}
+.cv-ins-fn-fill--d{background:var(--tx3)}
+.cv-ins-fn-fill--p{background:var(--tx2)}
+.cv-ins-fn-fill--a{background:var(--tx)}
+.cv-ins-fn-n{text-align:right;color:var(--tx2);font-family:var(--mono);font-size:12px}
+.cv-ins-citing{list-style:none;margin:0;padding:0;border:1px solid var(--brd);border-radius:10px;background:var(--bg2);overflow:hidden}
+.cv-ins-citing li{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--brd);font-size:13px}
+.cv-ins-citing li:last-child{border-bottom:none}
+.cv-ins-citing-nm{color:var(--tx);text-decoration:none}
+.cv-ins-citing-nm:hover{text-decoration:underline}
+.cv-ins-citing-nm--remote{color:var(--tx2);font-family:var(--mono);font-size:12px}
+.cv-ins-citing-n{color:var(--tx3);font-family:var(--mono);font-size:12px}
+
+/* ── Autonomy (three capabilities, equal weight) ──
+   All three stages are always listed. No "current" accent — the access
+   model is purely subscription-driven in cloud (Upgrade pill on gated
+   stages) and all-available in self-hosted. Visual parity across rows so
+   it reads as a capability inventory, not a tier ladder. */
+.rp-stages{display:flex;flex-direction:column;gap:10px;margin-top:2px}
+.rp-stage{display:flex;flex-direction:column;gap:3px}
+.rp-stage-hd{display:flex;align-items:center;gap:8px;font-size:13px}
+.rp-stage-nm{font-weight:600;color:var(--tx)}
+.rp-stage-dc{font-size:11.5px;color:var(--tx3);line-height:1.5}
+
+/* ── Connect section — primary endpoint + collapsible "all endpoints" ── */
+.rp-ep-primary{margin-bottom:6px}
+.rp-ep-more{margin-top:4px}
+.rp-ep-more summary{font-size:11.5px;color:var(--tx3);cursor:pointer;padding:4px 0;list-style:none;outline:none;transition:color .12s}
+.rp-ep-more summary::-webkit-details-marker{display:none}
+.rp-ep-more summary::before{content:'▸';display:inline-block;margin-right:4px;font-size:9px;transition:transform .15s}
+.rp-ep-more[open] summary::before{transform:rotate(90deg)}
+.rp-ep-more summary:hover{color:var(--tx2)}
+.rp-ep-more .rp-ep{margin-top:6px}
+
+/* ── Reputation suffix (folded-in calibration signal) ── */
+.rp-kbr-conf{color:var(--tx3);font-size:11px;font-weight:400;margin-left:2px}
+
+/* ── "This URL is mine" checkbox + compile auto-refresh checkbox ──
+   Default browser checkboxes render dark-filled on some themes/OSes, which
+   looks like a checked state even when they're not. `accent-color` gives a
+   theme-consistent fill when the box is actually checked, and the explicit
+   sizing keeps alignment with the adjacent label text. */
+input[type="checkbox"]{accent-color:var(--tx);width:13px;height:13px;cursor:pointer;flex-shrink:0}
 @media(max-width:720px){.cap-card__body{grid-template-columns:1fr;gap:6px 0}.cap-card__label{margin-top:8px}}
