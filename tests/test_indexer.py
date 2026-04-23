@@ -67,8 +67,13 @@ def test_content_hash_stored(mock_get_embedder, corpus_with_docs):
 
     index_corpus(corpus_with_docs["id"])
     conn = get_conn()
+    # Filter out source_kind='system' — the auto-generated manifest doc is
+    # intentionally skipped by the indexer (it's not retrieval fodder), so
+    # it has indexed_at=NULL. The test is about the indexer's behavior for
+    # user content; system docs are out of scope here.
     docs = conn.execute(
-        "SELECT content_hash, indexed_at FROM documents WHERE corpus_id=?",
+        "SELECT content_hash, indexed_at FROM documents "
+        "WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system'",
         (corpus_with_docs["id"],),
     ).fetchall()
     for doc in docs:

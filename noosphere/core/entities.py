@@ -526,8 +526,12 @@ def enrich_corpus(corpus_id: str, *, only_unenriched: bool = True, limit: int = 
            callers can re-invoke until "remaining" reaches 0.
     """
     conn = get_conn()
+    # Exclude source_kind='system' — the auto-generated manifest doc has
+    # no people/places/works to extract; running the LLM on it just wastes
+    # a call and surfaces the KB's own description as "entities".
     rows = conn.execute(
-        "SELECT id, metadata_json FROM documents WHERE corpus_id=?",
+        "SELECT id, metadata_json FROM documents "
+        "WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system'",
         (corpus_id,),
     ).fetchall()
 

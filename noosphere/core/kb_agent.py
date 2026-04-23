@@ -44,6 +44,7 @@ def ask(
     caller: str = "external",
     agent_id: str = "",
     token_id: str | None = None,
+    action: str = "ask",
 ) -> dict | None:
     """Synthesize an answer from a corpus, with inline [N] citations and capability context.
 
@@ -57,7 +58,7 @@ def ask(
 
     retrieval = search_corpus(
         corpus_id, question, top_k=top_k, caller=caller,
-        agent_id=agent_id, token_id=token_id,
+        agent_id=agent_id, token_id=token_id, action=action,
     )
     chunks = retrieval.get("results", [])
 
@@ -142,7 +143,7 @@ def describe(corpus_id: str) -> dict | None:
     }
 
 
-def preview_ask(corpus_id: str, question: str) -> dict | None:
+def preview_ask(corpus_id: str, question: str, *, agent_id: str = "") -> dict | None:
     """Low-cost evaluation query — a truncated `ask` that bypasses access gating.
 
     Designed for agents deciding whether to pay for full access. Returns the
@@ -152,7 +153,10 @@ def preview_ask(corpus_id: str, question: str) -> dict | None:
     Callers MUST still apply rate limiting (via _check_quota in the route).
     """
     # Smaller top_k + caller="external" to mirror a generic agent view.
-    result = ask(corpus_id, question, top_k=3, caller="external")
+    result = ask(
+        corpus_id, question, top_k=3, caller="external",
+        agent_id=agent_id, action="preview_ask",
+    )
     if result is None:
         return None
 

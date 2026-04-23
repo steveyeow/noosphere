@@ -355,9 +355,17 @@ def ingest_url(
 
 
 def _update_corpus_counts(corpus_id: str):
+    """Recompute user-visible document/word counts for the corpus row.
+
+    Excludes `source_kind='system'` (auto-generated manifest doc) so
+    document_count reflects user-authored + imported content only. The
+    manifest is still visible in listings and the Wiki pin, but it
+    shouldn't inflate "you have N documents" stats shown to the owner.
+    """
     conn = get_conn()
     row = conn.execute(
-        "SELECT COUNT(*) as cnt, COALESCE(SUM(word_count),0) as wc FROM documents WHERE corpus_id=?",
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(word_count),0) as wc FROM documents "
+        "WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system'",
         (corpus_id,),
     ).fetchone()
     conn.execute(

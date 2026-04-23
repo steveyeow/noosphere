@@ -628,8 +628,12 @@ def test_import_twitter_archive_marks_user_original(client, corpus, tmp_path):
 
     r_docs = client.get(f"/api/v1/corpora/{corpus['id']}/documents")
     docs = r_docs.json()
-    assert len(docs) == 2
-    for d in docs:
+    # Filter out the auto-generated manifest doc (source_kind='system') —
+    # /documents returns it as a pinned first item, but this test cares
+    # about the tweet import specifically.
+    tweet_docs = [d for d in docs if d.get("source_kind") != "system"]
+    assert len(tweet_docs) == 2
+    for d in tweet_docs:
         assert d["doc_type"] == "tweet"
         assert d["source_kind"] == "user_original"
 

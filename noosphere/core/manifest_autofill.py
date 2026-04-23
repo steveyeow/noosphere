@@ -51,9 +51,12 @@ Rules:
 
 
 def _load_sampled_docs(corpus_id: str) -> list[dict]:
+    # Exclude source_kind='system' — the auto-generated manifest doc would
+    # feed its own rendered content back into the LLM ("KB is about: the
+    # manifest") and corrupt suggestions.
     rows = get_conn().execute(
         """SELECT title, content, doc_type, tags FROM documents
-           WHERE corpus_id=?
+           WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system'
            ORDER BY created_at DESC
            LIMIT ?""",
         (corpus_id, SAMPLE_DOCS),
@@ -176,7 +179,16 @@ def apply_proposal(corpus_id: str, proposal: dict, *, refresh_description: bool 
         updates["description"] = proposal["description_suggestion"]
     if not updates:
         return get_corpus(corpus_id)
-    return update_corpus(corpus_id, **updates)
+    result = update_corpus(corpus_id, **updates)
+    # Keep the pinned manifest document in sync with the canonical fields.
+    # Missing doc → lazy-create; existing doc → rewrite in place.
+    try:
+        from noosphere.core.manifest_doc import ensure_manifest_doc, refresh_manifest_doc
+        ensure_manifest_doc(corpus_id)
+        refresh_manifest_doc(corpus_id)
+    except Exception as e:  # pragma: no cover — cosmetic sync, don't block edits
+        log.info(f"manifest_doc refresh skipped: {e}")
+    return result
 
 
 def autofill_if_empty(corpus_id: str) -> dict | None:

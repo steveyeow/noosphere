@@ -30,6 +30,9 @@ COMPILED_TRUTH_BOOST = 0.08  # Score boost for compiled concept notes (distilled
 
 # Caller identity gates source_kind filtering (Phase 1a: external callers only see originals).
 # See project_noosphere_ingestion memory Principle 3.
+# Allow-list semantics: anything not listed here is hidden from external callers.
+# That means external_public, external_subscription, and peer_subscription
+# (L3 Networked — can't resell content learned from peer KBs) are all filtered.
 CALLER_OWNER = "owner"
 CALLER_EXTERNAL = "external"
 EXTERNAL_ALLOWED_SOURCE_KINDS = {"user_original", "user_capture"}
@@ -435,6 +438,7 @@ def search_corpus(
     expand: bool = True,
     detail: str = "medium",
     caller: str = CALLER_OWNER,
+    action: str = "ask",
 ) -> dict:
     """Hybrid search over a corpus: keyword + vector + RRF fusion + dedup + freshness.
 
@@ -446,7 +450,8 @@ def search_corpus(
     caller (Phase 1a source_kind filter):
       owner    — full access to all source_kinds (default, backward-compat)
       external — only user_original + user_capture chunks are returned;
-                 external_public and external_subscription are filtered out
+                 external_public, external_subscription, and peer_subscription
+                 (L3 Networked) are filtered out
     """
     start = time.time()
     conn = get_conn()
@@ -487,6 +492,7 @@ def search_corpus(
     ).fetchone()["n"]
 
     if chunk_count == 0:
+        _log_query(corpus_id, query, 0, 0, agent_id=agent_id, token_id=token_id, action=action)
         return {"results": [], "usage": {"latency_ms": 0, "chunks_searched": 0, "detail": detail}}
 
     queries = [query]
@@ -602,7 +608,7 @@ def search_corpus(
         results.append(result)
 
     latency = int((time.time() - start) * 1000)
-    _log_query(corpus_id, query, len(results), latency, agent_id=agent_id, token_id=token_id)
+    _log_query(corpus_id, query, len(results), latency, agent_id=agent_id, token_id=token_id, action=action)
 
     return {
         "results": results,
@@ -657,15 +663,20 @@ def _log_query(
     *,
     agent_id: str = "",
     token_id: str | None = None,
+    action: str = "ask",
 ):
     try:
         conn = get_conn()
         conn.execute(
-            "INSERT INTO query_logs (id, corpus_id, query_text, result_count, token_id, agent_id, latency_ms, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO query_logs (id, corpus_id, query_text, result_count, token_id, agent_id, latency_ms, action, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (uuid.uuid4().hex[:12], corpus_id, query_text, result_count,
-             token_id or "", agent_id or "", latency_ms, datetime.now(timezone.utc).isoformat()),
+             token_id or "", agent_id or "", latency_ms, action,
+             datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
     except Exception:
         logger.warning("Failed to log query for corpus %s", corpus_id, exc_info=True)
+
+
+log_query = _log_query

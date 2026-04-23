@@ -55,8 +55,14 @@ def index_corpus(
         corpus = get_corpus(corpus_id)
         chunk_strategy = (corpus.get("chunk_strategy") if corpus else None) or "paragraph"
 
+    # Skip source_kind='system' — auto-generated metadata (manifest doc)
+    # isn't retrieval fodder; its purpose is display in the Wiki section and
+    # exposure via /describe. Indexing it would surface it in ask/search
+    # results, which pollutes answers with "here's what this KB is about"
+    # text instead of actual content.
     docs = conn.execute(
-        "SELECT id, title, content, doc_type, date, content_hash, indexed_at FROM documents WHERE corpus_id=?",
+        "SELECT id, title, content, doc_type, date, content_hash, indexed_at FROM documents "
+        "WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system'",
         (corpus_id,),
     ).fetchall()
 

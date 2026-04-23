@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS query_logs (
     token_id TEXT,
     agent_id TEXT,
     latency_ms INTEGER,
+    action TEXT DEFAULT 'ask',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_queries_corpus ON query_logs(corpus_id, created_at);
@@ -366,6 +367,44 @@ CREATE TABLE IF NOT EXISTS corpus_citations (
 CREATE INDEX IF NOT EXISTS idx_citations_citing ON corpus_citations(citing_corpus_id);
 CREATE INDEX IF NOT EXISTS idx_citations_cited ON corpus_citations(cited_corpus_id);
 CREATE INDEX IF NOT EXISTS idx_citations_kind ON corpus_citations(kind);
+
+CREATE TABLE IF NOT EXISTS peer_subscriptions (
+    id TEXT PRIMARY KEY,
+    subscriber_corpus_id TEXT NOT NULL REFERENCES corpora(id) ON DELETE CASCADE,
+    target_corpus_id TEXT,
+    target_endpoint TEXT,
+    target_slug TEXT,
+    mode TEXT NOT NULL,
+    query TEXT,
+    topic_filter TEXT,
+    cadence_minutes INTEGER NOT NULL,
+    max_docs_per_cycle INTEGER NOT NULL DEFAULT 5,
+    bearer_token TEXT,
+    auth_mode TEXT NOT NULL,
+    budget_cents_per_month INTEGER,
+    status TEXT NOT NULL,
+    last_run_at TEXT,
+    next_run_at TEXT NOT NULL,
+    last_error TEXT,
+    consecutive_failures INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    approved_by TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_peer_sub_subscriber ON peer_subscriptions(subscriber_corpus_id);
+CREATE INDEX IF NOT EXISTS idx_peer_sub_next_run ON peer_subscriptions(status, next_run_at);
+
+CREATE TABLE IF NOT EXISTS peer_subscription_runs (
+    id TEXT PRIMARY KEY,
+    subscription_id TEXT NOT NULL REFERENCES peer_subscriptions(id) ON DELETE CASCADE,
+    ran_at TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    docs_ingested INTEGER DEFAULT 0,
+    chunks_ingested INTEGER DEFAULT 0,
+    cents_spent INTEGER DEFAULT 0,
+    latency_ms INTEGER,
+    error_detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_peer_run_sub_date ON peer_subscription_runs(subscription_id, ran_at DESC);
 """
 
 # SQLite: FTS5 virtual table for full-text search
@@ -422,11 +461,13 @@ MIGRATION_SQL = [
     "ALTER TABLE registered_corpora ADD COLUMN autonomy_level INTEGER DEFAULT 0",
     "ALTER TABLE registered_corpora ADD COLUMN source_composition TEXT DEFAULT '{}'",
     "ALTER TABLE registered_corpora ADD COLUMN kb_reputation REAL DEFAULT 0.0",
+    "ALTER TABLE query_logs ADD COLUMN action TEXT DEFAULT 'ask'",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations
 POST_MIGRATION_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_documents_source_kind ON documents(corpus_id, source_kind)",
+    "CREATE INDEX IF NOT EXISTS idx_queries_corpus_action ON query_logs(corpus_id, action, created_at)",
 ]
 
 

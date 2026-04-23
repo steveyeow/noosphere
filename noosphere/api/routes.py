@@ -277,6 +277,30 @@ class CreateTokenRequest(BaseModel):
     expires_at: str | None = None
 
 
+class CreatePeerSubscriptionRequest(BaseModel):
+    """Owner-approved subscription intent — see docs/l3-networked.md §3."""
+    mode: str  # 'ask' | 'describe' | 'new_documents'
+    target_corpus_id: Optional[str] = None
+    target_endpoint: Optional[str] = None
+    target_slug: Optional[str] = None
+    query: Optional[str] = None
+    topic_filter: Optional[str] = None
+    cadence_minutes: int = 1440
+    max_docs_per_cycle: int = 5
+    bearer_token: Optional[str] = None
+    auth_mode: str = "public"  # 'public' | 'token' | 'paid'
+    budget_cents_per_month: Optional[int] = None
+
+
+class UpdatePeerSubscriptionRequest(BaseModel):
+    status: Optional[str] = None  # 'active' | 'paused'
+    cadence_minutes: Optional[int] = None
+    query: Optional[str] = None
+    topic_filter: Optional[str] = None
+    max_docs_per_cycle: Optional[int] = None
+    budget_cents_per_month: Optional[int] = None
+
+
 @router.post("/terminal")
 async def api_terminal(req: TerminalRequest, request: Request):
     """Interactive terminal command handler."""
@@ -301,12 +325,39 @@ async def api_health():
         remote_corpora = conn.execute("SELECT COUNT(*) as n FROM registered_corpora").fetchone()["n"]
     except Exception:
         remote_nodes, remote_corpora = 0, 0
+    # Registry status — self-hosted nodes register to the shared Noosphere
+    # network by default (NOOSPHERE_REGISTRY defaults to the cloud registry
+    # URL). Opt-out is via NOOSPHERE_REGISTRY=none. The frontend Discovery
+    # row uses these two flags to render the correct state.
+    #
+    # registry_url      — the configured registry URL ("" = explicit opt-out)
+    # registry_configured — true unless opted out
+    # registry_connected — true if we've successfully registered + the registry
+    #                      is reachable (checked via lightweight HEAD request
+    #                      with a short timeout so /health stays fast)
+    from noosphere.core.config import NOOSPHERE_REGISTRY
+    registry_url = NOOSPHERE_REGISTRY
+    registry_configured = bool(registry_url)
+    registry_connected = False
+    if registry_configured:
+        try:
+            import httpx
+            resp = httpx.head(registry_url.rstrip("/"), timeout=2, follow_redirects=True)
+            # Registry itself answering is enough — don't gate on a 200 since
+            # the root path may redirect or respond 404 while /api/v1/register
+            # still works.
+            registry_connected = resp.status_code < 500
+        except Exception:
+            registry_connected = False
     return {
         "status": "ok",
         "version": __version__,
         "corpus_count": len(corpora),
         "network_nodes": remote_nodes,
         "network_corpora": remote_corpora,
+        "registry_url": registry_url,
+        "registry_configured": registry_configured,
+        "registry_connected": registry_connected,
     }
 
 
@@ -370,6 +421,14 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request):
         tags=req.tags, access_level=req.access_level, language=req.language,
         owner_id=owner_id,
     )
+    # Materialize the manifest doc immediately so it's pinned first in Wiki
+    # from the moment the corpus exists. Auto-fill runs later (after first
+    # ingestion) and will refresh the doc content in place.
+    try:
+        from noosphere.core.manifest_doc import ensure_manifest_doc
+        ensure_manifest_doc(corpus["id"])
+    except Exception:
+        pass
     return corpus
 
 
@@ -423,10 +482,17 @@ async def api_get_corpus(corpus_id: str, request: Request):
 
 
 def _corpus_source_kind_breakdown(corpus_id: str) -> dict[str, int]:
-    """Count documents per source_kind for a corpus."""
+    """Count documents per source_kind for a corpus.
+
+    Excludes `source_kind='system'` — auto-generated metadata (manifest doc)
+    doesn't count as user content for access-gate / pricing logic, and
+    shouldn't show up in access summary totals either.
+    """
     conn = get_conn()
     rows = conn.execute(
-        "SELECT source_kind, COUNT(*) as n FROM documents WHERE corpus_id=? GROUP BY source_kind",
+        "SELECT source_kind, COUNT(*) as n FROM documents "
+        "WHERE corpus_id=? AND COALESCE(source_kind,'user_original') != 'system' "
+        "GROUP BY source_kind",
         (corpus_id,),
     ).fetchall()
     return {r["source_kind"] or "user_original": r["n"] for r in rows}
@@ -493,6 +559,20 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
     if new_access_level and new_access_level != corpus.get("access_level"):
         _require_originals_for_public_access(corpus_id, new_access_level)
     result = update_corpus(corpus_id, **updates)
+    # Keep the pinned manifest doc in sync with the canonical fields so the
+    # README-as-doc view reflects edits immediately (description, tags,
+    # access_level, calibration_policy, etc.).
+    manifest_affecting = {
+        "name", "description", "tags", "access_level",
+        "task_types", "samples", "calibration_policy", "autonomy_level",
+    }
+    if updates.keys() & manifest_affecting:
+        try:
+            from noosphere.core.manifest_doc import ensure_manifest_doc, refresh_manifest_doc
+            ensure_manifest_doc(corpus_id)
+            refresh_manifest_doc(corpus_id)
+        except Exception:
+            pass
     return result
 
 
@@ -510,6 +590,16 @@ async def api_delete_corpus(corpus_id: str, request: Request):
 async def api_list_documents(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
+    # Lazy-backfill the manifest document for corpora that predate the
+    # README-as-doc feature. Only the owner triggers this (creator view);
+    # read-only external callers fetch whatever's already there to avoid
+    # write-on-read races in a hot multi-agent path.
+    try:
+        if _is_owner_request(request):
+            from noosphere.core.manifest_doc import ensure_manifest_doc
+            ensure_manifest_doc(corpus["id"])
+    except Exception:
+        pass
     return get_documents(corpus["id"])
 
 
@@ -1140,7 +1230,7 @@ def _record_inter_kb_query(citing: str, cited: str, context: str = "") -> None:
 
 
 @router.get("/corpora/{corpus_id}/describe")
-async def api_describe(corpus_id: str):
+async def api_describe(corpus_id: str, request: Request):
     """Machine-readable capability card for a corpus.
 
     No authentication required — capability descriptions are discoverable
@@ -1151,6 +1241,15 @@ async def api_describe(corpus_id: str):
     )
     if not result:
         raise HTTPException(status_code=404, detail="Corpus not found")
+    try:
+        from noosphere.core.retrieval import log_query
+        log_query(
+            result["corpus_id"], "", 0, 0,
+            agent_id=request.headers.get("x-agent-id", ""),
+            action="describe",
+        )
+    except Exception:
+        pass
     return result
 
 
@@ -1258,8 +1357,9 @@ async def api_preview_ask(corpus_id: str, req: PreviewAskRequest, request: Reque
     if corpus.get("access_level") == "private":
         raise HTTPException(status_code=403, detail="Private corpus")
     _check_quota(request, "preview_ask")
+    agent_id = request.headers.get("x-agent-id", "")
     try:
-        result = kb_preview_ask(corpus["id"], req.question)
+        result = kb_preview_ask(corpus["id"], req.question, agent_id=agent_id)
     except LLMError as e:
         raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
     if result is None:
@@ -1751,6 +1851,110 @@ async def api_analytics(corpus_id: str, request: Request, limit: int = 50):
     }
 
 
+@router.get("/corpora/{corpus_id}/insights")
+async def api_insights(corpus_id: str, request: Request, window: str = "7d"):
+    """Aggregated agent-activity metrics for the corpus Insights tab.
+
+    Counters break down query_logs by action (describe / preview_ask / ask),
+    and conversion is the share of previewers who went on to a full `ask`.
+    `top_citing` surfaces which other KBs link to this one in the citation
+    graph — incoming edges from `corpus_citations`.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+
+    # Window → cutoff. Default 7 days; 30d supported. Anything else → all-time.
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+    if window == "30d":
+        since = (now - timedelta(days=30)).isoformat()
+    elif window == "all":
+        since = "1970-01-01T00:00:00+00:00"
+    else:
+        window = "7d"
+        since = (now - timedelta(days=7)).isoformat()
+
+    conn = get_conn()
+
+    # Counters by action. COALESCE handles pre-migration rows (NULL action).
+    rows = conn.execute(
+        """SELECT COALESCE(action, 'ask') as action, COUNT(*) as n
+           FROM query_logs
+           WHERE corpus_id=? AND created_at >= ?
+           GROUP BY COALESCE(action, 'ask')""",
+        (corpus["id"], since),
+    ).fetchall()
+    counters = {"describe": 0, "preview_ask": 0, "ask": 0}
+    for r in rows:
+        counters[r["action"]] = r["n"]
+
+    # Unique callers (by agent_id) — rough "how many distinct agents" signal.
+    unique_callers_row = conn.execute(
+        """SELECT COUNT(DISTINCT agent_id) as n
+           FROM query_logs
+           WHERE corpus_id=? AND created_at >= ? AND agent_id != ''""",
+        (corpus["id"], since),
+    ).fetchone()
+    unique_callers = unique_callers_row["n"] if unique_callers_row else 0
+
+    # preview_ask → ask conversion. Defined only when preview_ask > 0.
+    conversion = None
+    if counters["preview_ask"] > 0:
+        conversion = round(counters["ask"] / counters["preview_ask"], 3)
+
+    # Top citing KBs — incoming edges from corpus_citations, joined to local
+    # corpora for display names. Remote citings keep their raw id.
+    top_citing_rows = conn.execute(
+        """SELECT citing_corpus_id, COUNT(*) as n
+           FROM corpus_citations
+           WHERE cited_corpus_id=? AND created_at >= ?
+           GROUP BY citing_corpus_id
+           ORDER BY n DESC
+           LIMIT 10""",
+        (corpus["id"], since),
+    ).fetchall()
+    top_citing = []
+    for r in top_citing_rows:
+        cid = r["citing_corpus_id"]
+        name_row = conn.execute(
+            "SELECT name, slug FROM corpora WHERE id=?", (cid,),
+        ).fetchone()
+        top_citing.append({
+            "corpus_id": cid,
+            "name": name_row["name"] if name_row else cid,
+            "slug": name_row["slug"] if name_row else "",
+            "count": r["n"],
+            "local": bool(name_row),
+        })
+
+    # Revenue (cloud paid corpora only) — paid queries and total amount.
+    revenue = None
+    try:
+        rev_row = conn.execute(
+            """SELECT COUNT(*) as n, COALESCE(SUM(amount_cents), 0) as cents
+               FROM payments
+               WHERE corpus_id=? AND status='completed' AND created_at >= ?""",
+            (corpus["id"], since),
+        ).fetchone()
+        if rev_row:
+            revenue = {
+                "paid_queries": rev_row["n"],
+                "total_cents": rev_row["cents"],
+            }
+    except Exception:
+        pass
+
+    return {
+        "corpus_id": corpus["id"],
+        "window": window,
+        "counters": counters,
+        "unique_callers": unique_callers,
+        "conversion": conversion,
+        "top_citing": top_citing,
+        "revenue": revenue,
+    }
+
+
 # ── Network Discovery (built-in registry) ──
 
 
@@ -1969,6 +2173,132 @@ async def api_network_nodes():
     except Exception:
         rows = []
     return {"nodes": [dict(r) for r in rows], "count": len(rows)}
+
+
+# ── Peer subscriptions (L3 Networked) ──
+
+@router.post("/corpora/{corpus_id}/subscriptions")
+async def api_create_peer_subscription(
+    corpus_id: str, req: CreatePeerSubscriptionRequest, request: Request,
+):
+    """Create a peer subscription — owner-only on the subscriber corpus."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+
+    from noosphere.core.peer_subscriptions import create_subscription
+
+    # Resolve target_corpus_id: accept either a UUID or a slug (UI sends slug).
+    target_id = req.target_corpus_id
+    if target_id:
+        tc = get_corpus(target_id) or get_corpus_by_slug(target_id)
+        target_id = tc["id"] if tc else target_id
+
+    approved_by = _get_user_id(request) or "owner"
+    try:
+        sub = create_subscription(
+            corpus["id"], mode=req.mode,
+            target_corpus_id=target_id, target_endpoint=req.target_endpoint,
+            target_slug=req.target_slug,
+            query=req.query, topic_filter=req.topic_filter,
+            cadence_minutes=req.cadence_minutes,
+            max_docs_per_cycle=req.max_docs_per_cycle,
+            bearer_token=req.bearer_token, auth_mode=req.auth_mode,
+            budget_cents_per_month=req.budget_cents_per_month,
+            approved_by=approved_by,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return sub
+
+
+@router.get("/corpora/{corpus_id}/subscriptions")
+async def api_list_peer_subscriptions(corpus_id: str, request: Request):
+    """List subscriptions for a corpus. Owner-only — exposes outbound intent."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import list_subscriptions
+    return {"subscriptions": list_subscriptions(corpus["id"])}
+
+
+@router.patch("/corpora/{corpus_id}/subscriptions/{sub_id}")
+async def api_patch_peer_subscription(
+    corpus_id: str, sub_id: str, req: UpdatePeerSubscriptionRequest, request: Request,
+):
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import (
+        get_subscription, pause_subscription, resume_subscription, update_subscription,
+    )
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+
+    if req.status == "paused":
+        pause_subscription(sub_id)
+    elif req.status == "active":
+        resume_subscription(sub_id)
+
+    kwargs = {
+        k: v for k, v in {
+            "cadence_minutes": req.cadence_minutes,
+            "query": req.query,
+            "topic_filter": req.topic_filter,
+            "max_docs_per_cycle": req.max_docs_per_cycle,
+            "budget_cents_per_month": req.budget_cents_per_month,
+        }.items() if v is not None
+    }
+    if kwargs:
+        update_subscription(sub_id, **kwargs)
+    return get_subscription(sub_id)
+
+
+@router.delete("/corpora/{corpus_id}/subscriptions/{sub_id}")
+async def api_delete_peer_subscription(corpus_id: str, sub_id: str, request: Request):
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription, revoke_subscription
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    revoke_subscription(sub_id)
+    return {"status": "revoked"}
+
+
+@router.get("/corpora/{corpus_id}/subscriptions/{sub_id}/runs")
+async def api_peer_subscription_runs(corpus_id: str, sub_id: str, request: Request):
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription, list_runs
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return {"runs": list_runs(sub_id)}
+
+
+@router.post("/corpora/{corpus_id}/subscriptions/{sub_id}/run")
+async def api_run_peer_subscription_now(corpus_id: str, sub_id: str, request: Request):
+    """Manual run trigger — useful for testing a new subscription without
+    waiting for the cron tick. Owner-only."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription
+    from noosphere.core.peer_runner import run_subscription
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    return run_subscription(sub_id)
+
+
+@router.post("/cron/run-peer-subscriptions")
+async def api_cron_run_peer_subscriptions(limit: int = 20):
+    """Scheduler tick — execute up to `limit` due subscriptions.
+
+    Safe to call every few minutes; internal picker only returns active subs
+    whose next_run_at has passed. No auth required (cron endpoint).
+    """
+    from noosphere.core.peer_runner import run_due_subscriptions
+    results = run_due_subscriptions(limit=limit)
+    return {"status": "ok", "ran": len(results), "results": results}
 
 
 @router.post("/cron/refresh-kb-reputation")
