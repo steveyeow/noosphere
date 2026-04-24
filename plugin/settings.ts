@@ -65,9 +65,11 @@ export class NoosphereSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    const corpusSetting = new Setting(containerEl)
       .setName("Corpus ID or slug")
-      .setDesc("The knowledge base this vault syncs into. Create it on the Noosphere web UI first.")
+      .setDesc(
+        "The knowledge base this vault syncs into. Create one on the Noosphere web UI, or click 'Create new' to make one for this vault."
+      )
       .addText((text) =>
         text
           .setPlaceholder("my-knowledge")
@@ -77,6 +79,46 @@ export class NoosphereSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    corpusSetting.addButton((btn) =>
+      btn
+        .setButtonText("Create new")
+        .setTooltip(
+          "Create a new corpus on the server with this vault's name, then auto-fill the ID here."
+        )
+        .onClick(async () => {
+          const { serverUrl, apiToken } = this.plugin.settings;
+          if (!serverUrl) {
+            new Notice("Set the server URL first");
+            return;
+          }
+          const defaultName = this.app.vault.getName() || "My Knowledge";
+          // Uses the browser prompt for v0.1 — Obsidian's modal API would
+          // be nicer, but prompt() avoids bundling yet another component
+          // for this one-time action.
+          const name = window.prompt("Name for the new corpus:", defaultName);
+          if (!name) return;
+          btn.setDisabled(true);
+          btn.setButtonText("Creating…");
+          try {
+            const client = new NoosphereClient(serverUrl, apiToken);
+            const c = await client.createCorpus({
+              name: name.trim(),
+              description: "Synced from Obsidian vault: " + defaultName,
+              access_level: "private",
+            });
+            this.plugin.settings.corpusId = c.id;
+            await this.plugin.saveSettings();
+            new Notice(`Created corpus "${c.name}". Click Sync to push your vault.`);
+            this.display(); // re-render so the ID appears in the input
+          } catch (e: any) {
+            new Notice(`Create failed: ${e?.message ?? e}`);
+          } finally {
+            btn.setDisabled(false);
+            btn.setButtonText("Create new");
+          }
+        })
+    );
 
     new Setting(containerEl)
       .setName("API token")

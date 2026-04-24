@@ -125,6 +125,152 @@ def _enrich_obsidian_metadata(metadata: dict, body: str, rel_path: str) -> None:
         metadata.pop("aliases", None)
 
 
+def upsert_document_by_path(
+    corpus_id: str,
+    *,
+    path: str,
+    content: str,
+    format: str = "obsidian",
+) -> dict:
+    """Create or update a document keyed by its vault-relative path.
+
+    This is the single-file counterpart of ``sync_directory`` — used by the
+    HTTP sync API for clients that can't hand the server a filesystem path
+    (primarily the Obsidian plugin talking to cloud Noosphere). Identity
+    is metadata.source_path; content_hash decides created vs updated vs
+    unchanged.
+
+    Returns ``{id, action, title}`` where action is one of
+    ``created | updated | unchanged``. Always commits before returning.
+    """
+    if not path.strip():
+        raise ValueError("path required")
+    rel = path.lstrip("/").strip()
+
+    conn = get_conn()
+    existing_rows = conn.execute(
+        "SELECT id, content_hash, metadata_json FROM documents WHERE corpus_id=?",
+        (corpus_id,),
+    ).fetchall()
+    existing = None
+    for r in existing_rows:
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if meta.get("source_path") == rel:
+            existing = dict(r)
+            break
+
+    new_hash = _content_hash(content)
+
+    # Format-aware parsing so the in-memory metadata matches what
+    # sync_directory would produce for the same file.
+    if format == "obsidian":
+        from noosphere.core.importers import _parse_obsidian_frontmatter
+        metadata, body = _parse_obsidian_frontmatter(content)
+    else:
+        metadata, body = _extract_markdown_metadata(content)
+
+    if not body.strip():
+        return {"id": existing["id"] if existing else None, "action": "skipped", "title": ""}
+
+    title = metadata.get("title") or _extract_markdown_title(body) or Path(rel).stem
+    metadata["source_path"] = rel
+    if format == "obsidian":
+        _enrich_obsidian_metadata(metadata, body, rel)
+
+    if existing and existing.get("content_hash") == new_hash:
+        return {"id": existing["id"], "action": "unchanged", "title": title}
+
+    if existing:
+        conn.execute(
+            "UPDATE documents SET title=?, content=?, word_count=?, content_hash=?, "
+            "metadata_json=?, indexed_at=NULL WHERE id=?",
+            (title, body, _word_count(body), new_hash,
+             json.dumps(metadata), existing["id"]),
+        )
+        conn.execute("DELETE FROM chunks WHERE document_id=?", (existing["id"],))
+        conn.commit()
+        if format == "obsidian":
+            try:
+                from noosphere.core.entities import resolve_wikilinks_for_document
+                resolve_wikilinks_for_document(existing["id"])
+            except Exception as e:
+                logger.warning("Wikilink resolution failed for %s: %s", rel, e)
+        _update_corpus_counts(corpus_id)
+        return {"id": existing["id"], "action": "updated", "title": title}
+
+    # New document
+    doc_id = str(uuid.uuid4())
+    now = _now()
+    conn.execute(
+        "INSERT INTO documents (id, corpus_id, title, content, doc_type, source_kind, "
+        "word_count, content_hash, metadata_json, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (doc_id, corpus_id, title, body, "note", "user_original",
+         _word_count(body), new_hash, json.dumps(metadata), now),
+    )
+    conn.commit()
+    if format == "obsidian":
+        try:
+            from noosphere.core.entities import resolve_wikilinks_for_document
+            resolve_wikilinks_for_document(doc_id)
+        except Exception as e:
+            logger.warning("Wikilink resolution failed for %s: %s", rel, e)
+    _update_corpus_counts(corpus_id)
+    return {"id": doc_id, "action": "created", "title": title}
+
+
+def delete_document_by_path(corpus_id: str, path: str) -> dict:
+    """Delete a document keyed by its source_path. Returns {deleted: bool}."""
+    rel = path.lstrip("/").strip()
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, metadata_json FROM documents WHERE corpus_id=?",
+        (corpus_id,),
+    ).fetchall()
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if meta.get("source_path") == rel:
+            delete_document(r["id"])
+            _update_corpus_counts(corpus_id)
+            return {"deleted": True, "id": r["id"]}
+    return {"deleted": False}
+
+
+def corpus_sync_state(corpus_id: str) -> dict:
+    """Return a client-friendly map of current docs by source_path + hash,
+    so a sync client can compute the diff locally and only upload what
+    changed. Only docs that have a source_path metadata field are listed
+    (those are the syncable ones — hand-created docs from the web UI
+    don't appear here)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, title, content_hash, metadata_json FROM documents WHERE corpus_id=?",
+        (corpus_id,),
+    ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        sp = meta.get("source_path")
+        if not sp:
+            continue
+        out.append({
+            "path": sp,
+            "content_hash": r["content_hash"] or "",
+            "id": r["id"],
+            "title": r["title"],
+        })
+    return {"corpus_id": corpus_id, "docs": out}
+
+
 def _ingest_obsidian_file(
     corpus_id: str, filepath: Path, rel: str, content: str, file_hash: str
 ) -> dict | None:

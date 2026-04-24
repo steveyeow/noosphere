@@ -1,4 +1,12 @@
-"""Registry client — auto-register corpora with a discovery registry."""
+"""Registry client — auto-register corpora with a discovery registry.
+
+The registry endpoint ``/api/v1/register`` takes a full snapshot of a node's
+non-private corpora and reconciles its record (adds new, updates changed,
+deletes missing). Calling this once at ``serve`` startup is not enough —
+if corpora are created, updated, or deleted at runtime, the registry goes
+stale. ``resync_registry()`` is the hook that runs on every mutation so
+``app.noosphere.wiki`` always reflects the live state.
+"""
 
 import logging
 
@@ -9,6 +17,39 @@ from noosphere.core.config import NOOSPHERE_REGISTRY
 from noosphere.core.corpus import list_corpora, source_composition
 
 log = logging.getLogger(__name__)
+
+# Module-level state: the endpoint URL this node was launched with. Set by
+# `serve` on startup via set_node_endpoint(); read by resync_registry() when
+# a corpus mutation needs to push updated state. Stays None in contexts
+# where no server is running (e.g. `noosphere init` in isolation) — resync
+# then quietly no-ops.
+_NODE_ENDPOINT: str | None = None
+
+
+def set_node_endpoint(endpoint: str) -> None:
+    """Remember the node's public endpoint URL so runtime corpus mutations
+    can trigger registry resyncs without re-plumbing it through every call
+    site. Called once from the `serve` command."""
+    global _NODE_ENDPOINT
+    _NODE_ENDPOINT = endpoint.rstrip("/")
+
+
+def resync_registry() -> bool:
+    """Re-push the current non-private corpora snapshot to the discovery
+    registry. Safe to call from any corpus mutation — no-op if the node
+    has no endpoint configured (no `serve` yet), no-op if registry is
+    disabled (``NOOSPHERE_REGISTRY=none``), never raises.
+
+    Use from FastAPI routes as a background task (``background_tasks.add_task``)
+    so the registry round-trip doesn't block the user's mutation response.
+    """
+    if not _NODE_ENDPOINT:
+        return False
+    try:
+        return register_with_registry(_NODE_ENDPOINT)
+    except Exception as e:
+        log.warning("resync_registry failed: %s", e)
+        return False
 
 
 def register_with_registry(

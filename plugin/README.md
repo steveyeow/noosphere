@@ -14,9 +14,9 @@ This plugin is a thin UX layer on top of the `noosphere sync --obsidian` CLI. Sa
 
 ## Requirements
 
-- **Noosphere running** somewhere the plugin can reach. For v0.1 the supported setup is **self-hosted Noosphere on the same machine as Obsidian** — both access the vault folder directly from disk. Cloud Noosphere (where server and Obsidian are on different machines) needs a file-upload variant that's on the roadmap.
-- **Obsidian desktop** — vault filesystem access is required. Mobile is not supported (`isDesktopOnly: true`).
-- **A corpus** — create one via the Noosphere web UI before configuring the plugin.
+- **Noosphere running** somewhere the plugin can reach — either self-hosted locally (`http://localhost:8420`) or cloud (`https://app.noosphere.wiki`). The plugin reads vault files via Obsidian's API and uploads them over HTTP, so co-location is not required.
+- **Obsidian desktop** — the plugin is `isDesktopOnly: true` because vault reads use APIs that require a real filesystem under the hood.
+- **A corpus** — use the "Create new" button in plugin settings (creates one on the fly), or pre-create one in the Noosphere web UI and paste its ID.
 
 ## Install
 
@@ -49,39 +49,23 @@ Planned. When submitted and approved, this plugin will appear in Obsidian's buil
 
 ## How it talks to Noosphere
 
-The plugin makes one HTTP call per sync:
+Each sync is a small HTTP conversation — entirely content-based, no path sharing needed:
 
 ```
-POST {serverUrl}/api/v1/corpora/{corpusId}/sync-local
-Content-Type: application/json
-Authorization: Bearer {apiToken}   # optional for self-hosted
-
-{
-  "path": "/Users/you/Obsidian/my-vault",
-  "format": "obsidian",
-  "prune": false,
-  "writeback": true
-}
+GET  /api/v1/corpora/{id}/sync/state       → server's current path→hash map
+POST /api/v1/corpora/{id}/sync/upsert      → one call per changed file
+DELETE /api/v1/corpora/{id}/sync/doc?path= → one call per deleted file (prune mode)
+GET  /api/v1/corpora/{id}/writeback?since= → synthesized entity/concept pages
 ```
 
-The server runs `sync_directory(..., format="obsidian")` against that path, then (if writeback enabled) computes the writeback payload and writes `__noosphere/` files. The same vault is accessible from both the server process and the plugin process — this is why v0.1 requires a co-located setup.
-
-Response shape:
-
-```json
-{
-  "sync": { "new": 3, "updated": 2, "unchanged": 41, "pruned": 0 },
-  "index": { "chunk_count": 312 },
-  "writeback": { "written": 1, "skipped_conflict": 0 }
-}
-```
+The plugin hashes every local file (SHA-256) and compares against the server's state, only uploading what differs. Writeback is pulled and written into `<vault>/__noosphere/` using Obsidian's adapter API; a per-file hash map in plugin data detects and preserves local edits.
 
 ## Troubleshooting
 
-- **"Corpus lookup failed (404)"** — the corpus ID/slug in settings doesn't exist on the server. Check the Noosphere web UI's Corpora page.
+- **"Corpus lookup failed (404)"** — the corpus ID/slug in settings doesn't exist on the server. Click "Create new" in settings to make one, or check the Noosphere web UI's Corpora page.
 - **"Corpus lookup failed (401)"** — server requires auth. Paste your API token in settings.
-- **"Path is not a readable directory on the server"** — the server is running on a different machine from Obsidian, or the vault path contains a symlink the server can't follow. For remote servers, use the CLI (`noosphere sync`) from a shell on the server's machine, not this plugin.
-- **Syncs succeed but writeback doesn't appear** — check the server logs. Writeback writes to `<vault>/__noosphere/` using the server process's filesystem permissions. If Obsidian and the server run as different users, the server may not have write access.
+- **Writeback files not appearing** — check the "Writeback" toggle is on. The plugin writes to `<vault>/__noosphere/` via Obsidian's adapter, so there's no permission issue with server processes.
+- **Watch mode feels too chatty** — every vault write triggers a debounced sync 1.5s later. For big refactors, toggle watch off via the command palette (`Toggle Noosphere watch mode`), do your work, then toggle back on.
 
 ## License
 

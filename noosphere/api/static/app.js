@@ -1977,11 +1977,13 @@ const _SOURCE_CONNECTORS=[
    methods:[
      {group:'archive',id:'zip',name:'Upload vault (ZIP)',status:'ready',action:'upload_archive',archiveKind:'obsidian',
       desc:'One-shot. Zip your vault folder and upload it. Wikilinks, tags, and folder structure are preserved. Vault and Noosphere diverge after this.'},
+     {group:'archive',id:'path',name:'Connect local vault',status:'ready',action:'connect_local_path',
+      desc:'Point Noosphere at your vault on disk — works when Noosphere is self-hosted on the same machine as Obsidian. Creates a corpus, imports the vault, and returns the corpus ID you can paste into the plugin.'},
      {group:'live',id:'cli',name:'CLI two-way sync',status:'beta',action:'copy_cli',
       cli:'noosphere sync ~/your-vault --corpus {CORPUS} --obsidian --watch',
       desc:'Watches your vault on disk. Every edit in Obsidian flows into Noosphere. Karpathy-style setup: files stay local, Noosphere keeps your index fresh.'},
-     {group:'live',id:'plugin',name:'Obsidian plugin',status:'soon',action:'show_instructions',
-      desc:'UI inside Obsidian showing sync status, peer subscribers, and enrichments. Planned.'},
+     {group:'live',id:'plugin',name:'Obsidian plugin',status:'beta',action:'show_plugin_docs',
+      desc:'One-click sync from inside Obsidian — ribbon icon, watch mode, settings UI. Self-hosted today; build from the repo\'s plugin/ folder.'},
    ]},
   {kind:'notion',name:'Notion',desc:'Your Notion workspace — one-shot export today, live sync coming.',mono:'N',bg:'#000000',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
    methods:[
@@ -2116,7 +2118,46 @@ function _triggerAppMethod(connector,method,ctx){
     toast(`${connector.name} · ${method.name} — coming soon`,'info');
     return;
   }
+  if(method.action==='show_plugin_docs'){
+    // Point users at the plugin folder's README in the repo; cloud-hosted
+    // users will later see a one-click install flow once we publish builds.
+    window.open('https://github.com/steveyeow/noosphere/tree/main/plugin','_blank','noopener');
+    return;
+  }
+  if(method.action==='connect_local_path'){
+    _openConnectLocalPath(connector,ctx);
+    return;
+  }
   toast('Unhandled action','error');
+}
+
+/* "Connect local vault" flow for Obsidian — B in the A/B/C one-click
+   story. Prompts for a vault path (the server must be able to read it,
+   so this only makes sense for self-hosted Noosphere on the same machine
+   as Obsidian), creates a new corpus, runs sync-local against it, and
+   drops the user on the new corpus detail page. Single click from the
+   Obsidian app panel → ready corpus. */
+async function _openConnectLocalPath(connector,ctx){
+  const defaultName=connector.name+' vault';
+  const path=window.prompt('Path to your vault folder on this machine:','');
+  if(!path||!path.trim())return;
+  const name=window.prompt('Name for the new corpus:',defaultName);
+  if(!name||!name.trim())return;
+  toast(`Creating corpus "${name}"...`,'info');
+  try{
+    const r1=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),description:`Synced from ${connector.name} vault at ${path.trim()}`,access_level:'private'})});
+    if(!r1.ok){toast(`Create failed: ${r1.status} ${await r1.text()}`,'error');return}
+    const corpus=await r1.json();
+    toast(`Syncing vault from ${path.trim()}...`,'info');
+    const r2=await fetch(`${API}/corpora/${corpus.id}/sync-local`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path.trim(),format:'obsidian',writeback:true})});
+    if(!r2.ok){toast(`Sync failed: ${r2.status} ${await r2.text()}`,'error');return}
+    const res=await r2.json();
+    await loadC();
+    toast(`${corpus.name}: ${res.sync.new} new, ${res.sync.updated} updated. Corpus ready.`,'success');
+    location.hash=`#/corpus/${corpus.id}`;
+  }catch(e){
+    toast(`Connect failed: ${e.message||e}`,'error');
+  }
 }
 
 /* Open a focused single-archive-kind uploader. No tabs, no radio picker —

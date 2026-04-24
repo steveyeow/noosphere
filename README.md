@@ -254,11 +254,48 @@ your-vault/
 
 ### Obsidian plugin
 
-For one-click sync + watch mode from inside Obsidian, install the plugin that lives in [`plugin/`](plugin/). It's a thin UX layer on top of the same `sync --obsidian` path — ribbon icon, command palette entries, status bar with last-sync summary, settings tab for server URL / corpus / token / writeback toggle.
+For one-click sync + watch mode from inside Obsidian, install the plugin that lives in [`plugin/`](plugin/). It's a thin UX layer with:
+
+- Ribbon icon + command palette entry for "Sync now"
+- **Create new corpus** button in settings — one click creates a corpus named after the vault, auto-fills the plugin config, ready to sync
+- Watch mode with debounced auto-sync
+- Status bar showing last-sync summary
+- Full client-side hash diff: only changed files are uploaded on each sync
+- Client-side writeback: synthesized entity + concept pages land in `<vault>/__noosphere/` with local-edit conflict detection
+
+**Works against both self-hosted and cloud Noosphere.** The plugin reads vault files via Obsidian's API and uploads them over HTTP — no filesystem co-location required. Point `Server URL` at `http://localhost:8420` for self-hosted, or `https://app.noosphere.wiki` for cloud, in plugin settings.
 
 Install: build locally (`cd plugin && npm install && npm run build`) and copy `manifest.json`, `main.js`, `styles.css` into `<your-vault>/.obsidian/plugins/noosphere-sync/`. See [`plugin/README.md`](plugin/README.md) for full instructions.
 
-The plugin requires **self-hosted Noosphere running on the same machine as Obsidian** for v0.1 — both need direct filesystem access to the vault. Cloud Noosphere (where server and Obsidian are on different machines) needs a file-upload variant that's on the roadmap. Community plugin directory submission is a separate step from building — documented in the plugin README.
+Community plugin directory submission is a separate, later step.
+
+### One-click shortcuts summary
+
+There are four ways to bring a vault in, all producing the same corpus + writeback structure:
+
+| Path | Best for | Command / click |
+|---|---|---|
+| **CLI `connect-obsidian`** | automation, terminal users | `noosphere connect-obsidian ~/my-vault [--watch]` |
+| **Obsidian plugin** | users who live in Obsidian | Install plugin → Settings → Create new → Sync |
+| **Web UI "Connect local vault"** | self-hosted GUI users, no plugin | Composer `+` → Add a source → Obsidian → Connect local vault |
+| **ZIP upload** | one-shot data migration, cloud-only users | Composer `+` → Add a source → Obsidian → Upload vault (ZIP) |
+
+The first three create a new corpus AND run the initial sync in one step. ZIP upload requires you to create the corpus first via the web UI.
+
+### How network registration works
+
+When `noosphere serve` starts, it pushes a snapshot of all non-private corpora to the discovery registry at `NOOSPHERE_REGISTRY` (defaults to `app.noosphere.wiki`). The registry stores only metadata — names, descriptions, tags, access levels, the node's endpoint URL. Content stays on your server.
+
+**Live updates**: when you create, update, or delete a corpus at runtime (via web UI, CLI, API), the server re-pushes the snapshot to the registry as a background task. So:
+
+- Flip a corpus from `private` → `public` → it appears in network search within seconds.
+- Flip `public` → `private` → it's removed from the registry (the next snapshot omits it, registry reconciles).
+- Create a new corpus via the plugin's "Create new corpus" button → immediately discoverable if access is non-private.
+- Delete a corpus → removed from registry.
+
+**Private means unlisted**: `private` corpora are never pushed to the registry. Only `public`, `token`, and `paid` corpora are visible to network search. `token` and `paid` corpora are discoverable but gated — agents see them in search results with their access requirements.
+
+Disable network registration entirely with `noosphere serve --no-registry` (keeps your node purely local).
 
 ### Import other archives
 

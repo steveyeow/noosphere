@@ -235,7 +235,11 @@ def serve(port, host, no_registry, registry_url, public_url):
         if registry:
             endpoint = public_url or f"http://{host}:{port}"
             click.echo(f"  Registry:  {registry}")
-            from noosphere.core.registry import register_with_registry
+            from noosphere.core.registry import register_with_registry, set_node_endpoint
+            # Cache the endpoint so runtime corpus mutations (create /
+            # update / delete) can auto-resync the registry without
+            # re-plumbing it everywhere.
+            set_node_endpoint(endpoint)
             ok = register_with_registry(endpoint, registry_url=registry)
             if ok:
                 click.echo("  Registered with the Noosphere registry")
@@ -417,6 +421,112 @@ def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, int
                     click.echo(f"  Sync error: {e}", err=True)
     except KeyboardInterrupt:
         click.echo("\nWatch stopped.")
+
+
+@cli.command("connect-obsidian")
+@click.argument("vault_path")
+@click.option("--name", default="", help="Name for the new corpus (default: vault folder name)")
+@click.option("--access-level", default="private",
+              type=click.Choice(["public", "private", "token", "paid"]),
+              help="Access level for the new corpus (default: private)")
+@click.option("--provider", default="", help="Embedding provider")
+@click.option("--no-writeback", is_flag=True, help="Disable writeback of synthesized pages back to the vault")
+@click.option("--watch", is_flag=True, help="Keep running and re-sync on every file change")
+def connect_obsidian_cmd(vault_path, name, access_level, provider, no_writeback, watch):
+    """Create a new corpus and sync an Obsidian vault into it in one step.
+
+    Shortcut for the usual flow:
+      1. noosphere init <vault> --name "X"    — create corpus
+      2. noosphere sync <vault> --corpus X --obsidian --watch
+           --writeback/--no-writeback
+
+    After the initial sync, the printed corpus ID can be pasted into the
+    Obsidian plugin's "Corpus ID" setting if you want to continue via the
+    in-editor UI instead of the CLI.
+    """
+    from pathlib import Path
+    from noosphere.core.corpus import create_corpus
+    from noosphere.core.ingest import sync_directory
+    from noosphere.core.indexer import index_corpus
+    from noosphere.core.registry import resync_registry
+
+    vault = Path(vault_path).expanduser()
+    if not vault.is_dir():
+        click.echo(f"Vault path is not a directory: {vault}", err=True)
+        raise SystemExit(1)
+
+    corpus_name = name.strip() or vault.name or "My Obsidian Vault"
+    click.echo(f"Creating corpus '{corpus_name}' (access: {access_level})...")
+    corpus = create_corpus(
+        corpus_name,
+        description=f"Synced from Obsidian vault at {vault}",
+        access_level=access_level,
+    )
+    cid = corpus["id"]
+    click.echo(f"  ID: {cid}")
+    click.echo(f"  Slug: {corpus['slug']}")
+
+    click.echo(f"\nSyncing vault {vault} → {corpus_name}...")
+    result = sync_directory(cid, str(vault), format="obsidian", prune=False)
+    click.echo(f"  {result['new']} new, {result['updated']} updated, "
+               f"{result['unchanged']} unchanged")
+
+    if result["new"] or result["updated"]:
+        click.echo("  Indexing...")
+        index_result = index_corpus(cid, provider=provider)
+        click.echo(f"  {index_result['chunk_count']} chunks indexed")
+
+    if not no_writeback:
+        try:
+            wb = _writeback_to_vault(cid, str(vault))
+            if wb["written"] or wb["skipped_conflict"]:
+                click.echo(f"  Writeback: {wb['written']} file(s) written to __noosphere/"
+                           + (f", {wb['skipped_conflict']} skipped (local edits preserved)" if wb["skipped_conflict"] else ""))
+        except Exception as e:
+            click.echo(f"  Writeback error: {e}", err=True)
+
+    # Non-private corpora should be visible in the network immediately.
+    if access_level != "private":
+        resync_registry()
+
+    click.echo(f"\nCorpus ready: {cid}")
+    if watch:
+        click.echo(f"\nEntering watch mode. Ctrl+C to stop.")
+        import time
+        from noosphere.core.ingest import SUPPORTED_FILE_EXTENSIONS as _EXT
+        def list_md():
+            return [
+                f for f in vault.rglob("*.md")
+                if f.is_file()
+                and not any(p.startswith(".") for p in f.relative_to(vault).parts)
+                and not any(p == "__noosphere" for p in f.relative_to(vault).parts)
+            ]
+        def fp():
+            return frozenset(
+                (str(f), f.stat().st_mtime, f.stat().st_size) for f in list_md()
+            )
+        last = fp()
+        try:
+            while True:
+                time.sleep(2.0)
+                cur = fp()
+                if cur != last:
+                    last = cur
+                    click.echo(f"\n[{time.strftime('%H:%M:%S')}] change detected, resyncing")
+                    try:
+                        r = sync_directory(cid, str(vault), format="obsidian", prune=False)
+                        click.echo(f"  {r['new']} new, {r['updated']} upd, {r['unchanged']} same")
+                        if r["new"] or r["updated"]:
+                            index_corpus(cid, provider=provider)
+                        if not no_writeback:
+                            _writeback_to_vault(cid, str(vault))
+                    except Exception as e:
+                        click.echo(f"  sync error: {e}", err=True)
+        except KeyboardInterrupt:
+            click.echo("\nWatch stopped.")
+    else:
+        click.echo(f"\nTo keep syncing as you edit, run:")
+        click.echo(f"  noosphere sync {vault} --corpus {cid} --obsidian --watch")
 
 
 @cli.command("ingest-feed")

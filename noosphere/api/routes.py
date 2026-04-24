@@ -8,7 +8,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel
 
 from noosphere import __version__
@@ -412,7 +412,7 @@ async def api_list_corpora(request: Request):
 
 
 @router.post("/corpora")
-async def api_create_corpus(req: CreateCorpusRequest, request: Request):
+async def api_create_corpus(req: CreateCorpusRequest, request: Request, background_tasks: BackgroundTasks):
     _require_owner(request)
     _check_corpus_limit(request)
     owner_id = _get_user_id(request) if _is_cloud() else ""
@@ -429,6 +429,12 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request):
         ensure_manifest_doc(corpus["id"])
     except Exception:
         pass
+    # Push the new non-private corpus to the registry so it's discoverable
+    # immediately (fixes the stale-registry gap: previously only the serve
+    # startup snapshot was registered, so runtime creates were invisible
+    # until restart). BackgroundTasks keeps the response latency down.
+    if (req.access_level or "public") != "private":
+        background_tasks.add_task(_safe_resync_registry)
     return corpus
 
 
@@ -549,7 +555,7 @@ async def api_access_summary(corpus_id: str, request: Request):
 
 
 @router.patch("/corpora/{corpus_id}")
-async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: Request):
+async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: Request, background_tasks: BackgroundTasks):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -573,15 +579,39 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
             refresh_manifest_doc(corpus_id)
         except Exception:
             pass
+    # Registry resync: any field change touches the registered record. The
+    # registry endpoint reconciles (adds/updates/removes) based on the full
+    # snapshot, so flipping access_level private↔public both work — a now-
+    # private corpus is just absent from the next snapshot.
+    registry_affecting = {
+        "name", "description", "tags", "access_level", "author_name",
+        "task_types", "autonomy_level", "calibration_policy",
+    }
+    if updates.keys() & registry_affecting:
+        background_tasks.add_task(_safe_resync_registry)
     return result
 
 
 @router.delete("/corpora/{corpus_id}")
-async def api_delete_corpus(corpus_id: str, request: Request):
+async def api_delete_corpus(corpus_id: str, request: Request, background_tasks: BackgroundTasks):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
     delete_corpus(corpus_id)
+    # The next snapshot won't include this corpus, so the registry's
+    # reconcile step deletes its record.
+    background_tasks.add_task(_safe_resync_registry)
     return {"status": "deleted"}
+
+
+def _safe_resync_registry() -> None:
+    """Wrap resync_registry so a registry outage never surfaces as an
+    exception in a background task (which would spam logs). Log-only."""
+    try:
+        from noosphere.core.registry import resync_registry
+        resync_registry()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Background registry resync failed: %s", e)
 
 
 # ── Documents ──
@@ -852,6 +882,58 @@ async def api_writeback(corpus_id: str, request: Request, since: str = ""):
     _require_owner(request, corpus)
     from noosphere.core.writeback import compute_writeback
     return compute_writeback(corpus["id"], since=since or None)
+
+
+@router.get("/corpora/{corpus_id}/sync/state")
+async def api_sync_state(corpus_id: str, request: Request):
+    """Return the server's current view of synced documents (path →
+    content_hash). The Obsidian plugin uses this to diff against the
+    local vault and only upload files that differ.
+
+    Owner-only. Works regardless of whether the client and server share
+    a filesystem — that's the whole point of cloud-safe sync.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.ingest import corpus_sync_state
+    return corpus_sync_state(corpus["id"])
+
+
+class SyncUpsertRequest(BaseModel):
+    """Single-document push from an HTTP sync client."""
+    path: str
+    content: str
+    format: str = "obsidian"
+
+
+@router.post("/corpora/{corpus_id}/sync/upsert")
+async def api_sync_upsert(corpus_id: str, request: Request, body: SyncUpsertRequest):
+    """Upload one document. Path-keyed — re-uploading with the same content
+    is a no-op (returns action=unchanged). For initial sync the client
+    calls this once per file; for watch mode, once per change event."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+    from noosphere.core.ingest import upsert_document_by_path
+    try:
+        return upsert_document_by_path(
+            corpus["id"], path=body.path, content=body.content, format=body.format
+        )
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/corpora/{corpus_id}/sync/doc")
+async def api_sync_doc_delete(corpus_id: str, request: Request, path: str = ""):
+    """Delete a synced document by its vault-relative path. Used when the
+    user deletes or renames a file in their vault while the plugin has
+    prune enabled."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    if not path.strip():
+        raise HTTPException(status_code=400, detail="`path` query param required")
+    from noosphere.core.ingest import delete_document_by_path
+    return delete_document_by_path(corpus["id"], path)
 
 
 class SyncLocalRequest(BaseModel):
