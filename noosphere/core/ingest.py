@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from noosphere.core.db import get_conn
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -550,11 +553,15 @@ def sync_directory(
             path_to_doc[sp] = dict(doc)
 
     if format == "obsidian":
-        # Obsidian: only .md files, skip `.obsidian/`, `.trash/`, dotfiles.
+        # Obsidian: only .md files, skip `.obsidian/`, `.trash/`, dotfiles,
+        # and `__noosphere/` (the writeback mirror — if we re-ingested those
+        # we'd create a feedback loop where synthesized pages become "user
+        # content", which would then get re-synthesized, etc.).
         files = sorted(
             f for f in directory.rglob("*.md")
             if f.is_file()
             and not any(part.startswith(".") for part in f.relative_to(directory).parts)
+            and not any(part == "__noosphere" for part in f.relative_to(directory).parts)
         )
     else:
         files = sorted(
@@ -607,9 +614,24 @@ def sync_directory(
             conn.execute("DELETE FROM chunks WHERE document_id=?", (existing["id"],))
             conn.commit()
             updated_count += 1
+            if format == "obsidian":
+                # Resolve wikilinks → entity mentions on the updated doc. Done
+                # outside the UPDATE because resolve_wikilinks_for_document
+                # reads back the current metadata_json.
+                try:
+                    from noosphere.core.entities import resolve_wikilinks_for_document
+                    resolve_wikilinks_for_document(existing["id"])
+                except Exception as e:
+                    logger.warning("Wikilink resolution failed for %s: %s", rel, e)
         else:
             if format == "obsidian":
                 doc = _ingest_obsidian_file(corpus_id, filepath, rel, content, file_hash)
+                if doc:
+                    try:
+                        from noosphere.core.entities import resolve_wikilinks_for_document
+                        resolve_wikilinks_for_document(doc["id"])
+                    except Exception as e:
+                        logger.warning("Wikilink resolution failed for %s: %s", rel, e)
             else:
                 doc = ingest_file(corpus_id, filepath, doc_type=doc_type, base_dir=directory)
             if doc:

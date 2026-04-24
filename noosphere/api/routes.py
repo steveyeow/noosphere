@@ -839,6 +839,21 @@ async def api_import_notion(corpus_id: str, request: Request, file: UploadFile =
             pass
 
 
+@router.get("/corpora/{corpus_id}/writeback")
+async def api_writeback(corpus_id: str, request: Request, since: str = ""):
+    """Return Noosphere-synthesized entity + concept pages as a markdown
+    payload for CLI sync clients to mirror into a user's vault.
+
+    Owner-only. `since` is an optional ISO8601 timestamp for incremental
+    polling — the CLI tracks it in `<vault>/__noosphere/.sync-state.json`
+    between runs so the server only sends what's changed.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.writeback import compute_writeback
+    return compute_writeback(corpus["id"], since=since or None)
+
+
 @router.post("/corpora/{corpus_id}/import/obsidian")
 async def api_import_obsidian(corpus_id: str, request: Request, file: UploadFile = File(...)):
     """Import an Obsidian vault (zipped folder of .md files).

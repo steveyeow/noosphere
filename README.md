@@ -225,11 +225,34 @@ Both methods preserve:
 - **YAML frontmatter** — `tags:`, `aliases:`, `created:`, custom properties flow into document metadata. List syntax (`tags: [a, b]` or block `- a`) is parsed.
 - **Folder structure** — the top-level folder becomes a tag; the full path is stored on the document as `metadata.folder_path`
 - **`#hashtags`** in note bodies → merged into the document's tag list
-- **`[[wikilinks]]`** → captured as `metadata.wikilink_targets` so later entity-resolution passes can map them to canonical entities without losing your explicit intent. `[[Alice|alt]]` and `[[Page#section]]` are both handled.
+- **`[[wikilinks]]`** → captured as `metadata.wikilink_targets` AND immediately resolved to entity mentions. An existing entity whose `canonical_name` or any alias matches the wikilink target (case-insensitive) gets linked; a new `concept`-kind entity is auto-created otherwise. `[[Alice|alt]]`, `[[Page#section]]`, and `[[Folder/Page]]` are all handled. In the web UI, wikilinks render as clickable links that navigate to the entity page.
 
-Skipped: `.obsidian/` config, `.trash/`, dotfiles, and attachments (images, embedded PDFs). Upload important attachments separately via the regular file uploader.
+Skipped: `.obsidian/` config, `.trash/`, dotfiles, `__noosphere/` (the writeback mirror, below), and attachments (images, embedded PDFs). Upload important attachments separately via the regular file uploader.
 
-**Roadmap**: An Obsidian plugin with in-editor UI (sync status, peer subscribers, enrichments written back to the vault as a `__noosphere/` subfolder) is planned. The CLI path already delivers the core Karpathy experience; the plugin will sit on top of it.
+### Writeback — Noosphere-synthesized pages land in your vault
+
+By default, every `sync --obsidian` run mirrors Noosphere's compiled entity and concept pages back into your vault as `__noosphere/` markdown files:
+
+```
+your-vault/
+├── notes/...            # your notes (untouched)
+├── daily/...            # your notes (untouched)
+└── __noosphere/         # written by Noosphere — safe to open in Obsidian
+    ├── entities/
+    │   ├── alice.md     # compiled entity description + aliases + ids
+    │   └── bob.md
+    ├── concepts/
+    │   └── llm-wikis.md # compiled wiki pages from the Compile flow
+    └── .sync-state.json # hash state for conflict detection
+```
+
+**Human always wins.** If you edit any file in `__noosphere/`, the CLI detects the hash drift on the next sync and skips overwriting — your edits are preserved and the server update is dropped with a warning. (The server-side content still evolves; you'll see it again if you delete the locally-edited file.)
+
+**Incremental.** The CLI tracks the last writeback timestamp in `.sync-state.json` and asks the server for only what's changed since.
+
+**Opt out**: pass `--no-writeback` to disable. The vault then stays pristine — nothing Noosphere-generated gets written to disk. Useful if you'd rather view enrichments only in the Noosphere web UI.
+
+**Roadmap**: An Obsidian plugin with in-editor UI (sync status, peer subscribers, browse enrichments) will sit on top of the CLI. The CLI already delivers the core Karpathy + writeback experience; the plugin is a UX layer, not a functional prerequisite.
 
 ### Import other archives
 

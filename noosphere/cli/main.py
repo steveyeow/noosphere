@@ -1,8 +1,75 @@
 """Noosphere CLI — init, ingest, index, serve."""
 
+import hashlib
+import json
+from pathlib import Path
+
 import click
 
 from noosphere.core.config import HOST, PORT
+
+
+def _writeback_to_vault(corpus_id: str, vault_dir: str | Path) -> dict:
+    """Mirror synthesized entity/concept pages from a corpus into
+    ``<vault>/__noosphere/`` on disk. Conflict-safe:
+
+    - Tracks last-written hash per file in
+      ``<vault>/__noosphere/.sync-state.json``.
+    - Before overwriting, compares the current file's hash to the stored
+      "last-written-by-us" hash. If they diverge, the user has edited the
+      file locally — skip the overwrite and surface a count so the caller
+      can warn.
+    - After a successful write, records the new hash.
+
+    The client stores the latest ``generated_at`` from the server so the
+    next call can ask for an incremental diff via ``?since=...``. First
+    call has no ``since`` and fetches everything.
+    """
+    from noosphere.core.writeback import compute_writeback
+
+    vault = Path(vault_dir)
+    out_root = vault / "__noosphere"
+    out_root.mkdir(parents=True, exist_ok=True)
+    state_path = out_root / ".sync-state.json"
+
+    try:
+        state = json.loads(state_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {"last_generated_at": "", "hashes": {}}
+    last_since = state.get("last_generated_at") or None
+
+    payload = compute_writeback(corpus_id, since=last_since)
+    written = 0
+    skipped_conflict = 0
+
+    for f in payload.get("files", []):
+        rel_path = f["path"]
+        target = out_root / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        new_hash = hashlib.sha256(f["content"].encode("utf-8")).hexdigest()
+
+        if target.exists():
+            current_hash = hashlib.sha256(
+                target.read_text(encoding="utf-8", errors="replace").encode("utf-8")
+            ).hexdigest()
+            last_written = state["hashes"].get(rel_path)
+            # If the file on disk doesn't match what we last wrote, the
+            # user has edited it. Respect their edits.
+            if last_written and current_hash != last_written:
+                skipped_conflict += 1
+                continue
+            # Identical content — no-op.
+            if current_hash == new_hash:
+                state["hashes"][rel_path] = new_hash
+                continue
+
+        target.write_text(f["content"], encoding="utf-8")
+        state["hashes"][rel_path] = new_hash
+        written += 1
+
+    state["last_generated_at"] = payload["generated_at"]
+    state_path.write_text(json.dumps(state, indent=2))
+    return {"written": written, "skipped_conflict": skipped_conflict}
 
 
 @click.group()
@@ -238,7 +305,12 @@ def search(corpus, query):
               help="Keep running and re-sync whenever files change. "
                    "Uses a polling loop (no watchdog dependency required).")
 @click.option("--interval", default=2.0, help="Watch polling interval in seconds (default: 2)")
-def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, interval):
+@click.option("--writeback/--no-writeback", default=True,
+              help="Mirror Noosphere-synthesized entity and concept pages into "
+                   "<vault>/__noosphere/ after each sync (default: on). "
+                   "Local edits to these files are preserved — the CLI detects "
+                   "hash drift and skips overwriting.")
+def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, interval, writeback):
     """Sync a directory to an existing corpus (add new, update changed, optionally prune deleted).
 
     Karpathy-style setup (local vault on disk, LLM-maintained wiki):
@@ -246,8 +318,10 @@ def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, int
         noosphere sync ~/my-vault --corpus my-kb --obsidian --watch
 
     The vault stays on your disk; Noosphere mirrors it into the corpus and
-    keeps the index fresh as you edit in Obsidian. Only writes to the vault
-    happen if you enable server-side writeback separately.
+    keeps the index fresh as you edit in Obsidian. By default, Noosphere
+    writes synthesized entity and concept pages back to
+    <vault>/__noosphere/ so enrichments live alongside your sources —
+    pass --no-writeback to disable.
     """
     from noosphere.core.corpus import get_corpus, get_corpus_by_slug
     from noosphere.core.ingest import sync_directory
@@ -277,6 +351,15 @@ def sync(directory, corpus, doc_type, prune, provider, obsidian_mode, watch, int
             idx_result = index_corpus(c["id"], provider=provider, on_progress=progress)
             if idx_result.get("skipped"):
                 click.echo(f"  Skipped (unchanged): {idx_result['skipped']}")
+
+        if writeback:
+            try:
+                wb = _writeback_to_vault(c["id"], directory)
+                if wb["written"] or wb["skipped_conflict"]:
+                    click.echo(f"  Writeback: {wb['written']} file(s) written"
+                               f"{', '+str(wb['skipped_conflict'])+' skipped (local edits preserved)' if wb['skipped_conflict'] else ''}")
+            except Exception as e:
+                click.echo(f"  Writeback error: {e}", err=True)
         return result
 
     mode_label = "Obsidian vault" if obsidian_mode else "directory"

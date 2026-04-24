@@ -394,6 +394,90 @@ def enrich_document(doc_id: str, *, use_llm: bool = True) -> dict | None:
     }
 
 
+def resolve_wikilinks_for_document(doc_id: str, *, default_kind: str = "concept") -> dict | None:
+    """Match `[[wikilinks]]` captured on an Obsidian-imported document to entities.
+
+    The ingest path for an Obsidian vault stores the literal target strings
+    of every `[[wikilink]]` in ``metadata.wikilink_targets``. Those are
+    explicit user intent — treat them as a priority signal, separate from
+    LLM extraction:
+
+      1. Try to find an existing entity whose canonical_name OR any alias
+         matches the target (case-insensitive). If found, link it.
+      2. Otherwise, create a new entity with ``default_kind`` ("concept")
+         and the target as canonical_name. Later LLM passes can reclassify.
+
+    Idempotent: merges resolved ids into ``metadata.mentioned_entity_ids``
+    without duplicating. Safe to run on every sync.
+    """
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, corpus_id, metadata_json FROM documents WHERE id=?",
+        (doc_id,),
+    ).fetchone()
+    if not row:
+        return None
+
+    try:
+        meta = json.loads(row["metadata_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    targets = meta.get("wikilink_targets") or []
+    if not targets:
+        return {"document_id": doc_id, "resolved": 0, "created": 0}
+
+    corpus_id = row["corpus_id"]
+    # Fetch all entities once; O(targets * entities) match in memory.
+    entities = conn.execute(
+        "SELECT id, kind, canonical_name, aliases FROM entities WHERE corpus_id=?",
+        (corpus_id,),
+    ).fetchall()
+    name_to_id: dict[str, str] = {}
+    for e in entities:
+        name_to_id[(e["canonical_name"] or "").lower()] = e["id"]
+        try:
+            aliases = json.loads(e["aliases"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            aliases = []
+        for al in aliases:
+            name_to_id.setdefault(str(al).lower(), e["id"])
+
+    resolved_ids: list[str] = []
+    created = 0
+    for target in targets:
+        # Strip any leading folder path — Obsidian allows [[Folder/Page]]
+        clean = target.split("/")[-1].strip()
+        if not clean:
+            continue
+        key = clean.lower()
+        eid = name_to_id.get(key)
+        if not eid:
+            eid = upsert_entity(corpus_id, default_kind, clean)
+            if eid:
+                name_to_id[key] = eid
+                created += 1
+        if eid:
+            resolved_ids.append(eid)
+
+    existing = meta.get("mentioned_entity_ids") or []
+    merged = list(dict.fromkeys([*existing, *resolved_ids]))
+    if merged != existing:
+        meta["mentioned_entity_ids"] = merged
+        meta["wikilinks_resolved_at"] = _now()
+        conn.execute(
+            "UPDATE documents SET metadata_json=? WHERE id=?",
+            (json.dumps(meta), doc_id),
+        )
+        conn.commit()
+
+    return {
+        "document_id": doc_id,
+        "resolved": len(resolved_ids),
+        "created": created,
+        "mentioned_entity_ids": merged,
+    }
+
+
 def compile_entity_note(entity_id: str, *, max_docs: int = 20, max_chars_per_doc: int = 1500) -> dict | None:
     """LLM-synthesize a 'compiled truth' summary about an entity from all its
     related documents.

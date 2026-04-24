@@ -1080,7 +1080,51 @@ function _inline(s){
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*]+)\*/g,'$1<em>$2</em>')
+    // Obsidian-style wikilinks — [[target]], [[target#section]], [[target|display]].
+    // esc() above already encoded `[` and `]` as entities, so match those.
+    // Click handler in _bindWikilinks resolves to an entity page or search.
+    .replace(/\[\[([^\[\]|#]+?)(#[^\[\]|]+)?(?:\|([^\[\]]+))?\]\]/g,(_m,target,_frag,display)=>{
+      const t=(target||'').trim();
+      const d=(display||target||'').trim();
+      return `<a href="#" class="wikilink" data-target="${esc(t)}">${esc(d)}</a>`;
+    })
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+
+/* Bind wikilink click handlers inside a container after it's rendered.
+   Attempts to resolve `[[target]]` to an entity in the given corpus (by
+   canonical_name or alias, case-insensitive). On match, navigate to the
+   entity page. On miss, fall back to corpus-scoped search for the target
+   so users never hit a dead link. Kept out of _mdToHtml so the renderer
+   stays pure and sync. */
+function _bindWikilinks(container,corpusId){
+  if(!container)return;
+  container.querySelectorAll('a.wikilink').forEach(a=>{
+    a.onclick=async(e)=>{
+      e.preventDefault();
+      const t=a.dataset.target;if(!t)return;
+      if(corpusId){
+        try{
+          const r=await fetch(`${API}/corpora/${corpusId}/entities`);
+          if(r.ok){
+            const body=await r.json();
+            const ents=Array.isArray(body)?body:(body.entities||[]);
+            const lc=t.toLowerCase();
+            const hit=ents.find(en=>{
+              if((en.canonical_name||'').toLowerCase()===lc)return true;
+              const aliases=Array.isArray(en.aliases)?en.aliases:[];
+              return aliases.some(al=>String(al).toLowerCase()===lc);
+            });
+            if(hit){location.hash=`#/corpus/${corpusId}/entity/${hit.id}`;return}
+          }
+        }catch(_e){/* fall through to search */}
+        // Fallback: corpus-scoped search for the target text
+        location.hash=`#/corpus/${corpusId}?q=${encodeURIComponent(t)}`;
+        return;
+      }
+      toast(`No entity for "${t}" — open a corpus to resolve`,'info');
+    };
+  });
 }
 
 // Split concept doc content into (compiledTruth, timelineLines). Mirrors
@@ -1187,7 +1231,7 @@ async function renderCompile(params){
     const when=meta.last_compiled_at?' · '+_fmtRel(meta.last_compiled_at):'';
     document.getElementById('cmp-meta').innerHTML=`<span class="cmp-meta-pill">${ver?ver:'v1'}${when}</span>${state.sources.length?`<span class="cmp-meta-pill">${state.sources.length} source${state.sources.length===1?'':'s'}</span>`:''}`;
     document.getElementById('cmp-status').textContent='';
-    _revealMarkdown(document.getElementById('cmp-body'),state.truth,()=>renderSources());
+    _revealMarkdown(document.getElementById('cmp-body'),state.truth,()=>{renderSources();_bindWikilinks(document.getElementById('cmp-body'),state.corpusId)});
   }
   function applyEntity(ent){
     state.entityId=ent.id;state.title=ent.canonical_name||'Entity';
@@ -1195,7 +1239,7 @@ async function renderCompile(params){
     document.getElementById('cmp-title').textContent=state.title;
     document.getElementById('cmp-meta').innerHTML=`<span class="cmp-meta-pill">${esc(ent.kind||'entity')}</span>${ent.mention_count?`<span class="cmp-meta-pill">${ent.mention_count} mentions</span>`:''}`;
     document.getElementById('cmp-status').textContent='';
-    _revealMarkdown(document.getElementById('cmp-body'),state.truth,()=>{});
+    _revealMarkdown(document.getElementById('cmp-body'),state.truth,()=>{_bindWikilinks(document.getElementById('cmp-body'),state.corpusId)});
   }
   function renderSources(){
     const el=document.getElementById('cmp-sources');if(!el)return;
@@ -2670,7 +2714,19 @@ async function renderCorpus(id,sessionId){
     if(item.classList.contains('editing'))return;
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
-  ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{if(e.target.closest('.doc-actions')||item.classList.contains('editing'))return;if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}item.classList.add('expanded');try{const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);const d=await r.json();const b=document.createElement('div');b.className='doc-bd';b.textContent=d.content||'';item.appendChild(b)}catch(e){}})});
+  ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{
+    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||item.classList.contains('editing'))return;
+    if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
+    item.classList.add('expanded');
+    try{
+      const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
+      const d=await r.json();
+      const b=document.createElement('div');b.className='doc-bd doc-bd-md';
+      b.innerHTML=_mdToHtml(d.content||'');
+      _bindWikilinks(b,id);
+      item.appendChild(b);
+    }catch(e){}
+  })});
 }
 
 /* ══════ INSIGHTS TAB — Agent activity ══════ */
