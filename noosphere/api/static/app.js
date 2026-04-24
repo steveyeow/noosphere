@@ -2106,22 +2106,52 @@ function _triggerAppMethod(connector,method,ctx){
     return;
   }
   if(method.action==='copy_cli'){
-    // Copy the CLI command (with corpus slug substituted if known) to the clipboard.
+    // Show the command in a modal with a Copy button. More discoverable
+    // than a silent clipboard write + toast, and works inside sandboxed
+    // preview environments where navigator.clipboard might be blocked —
+    // the modal's Copy button has an execCommand fallback, and the
+    // command itself is visible/selectable even if copy fails.
     const corpusId=ctx.corpusId||_homeScope||'your-corpus';
     const slug=_corpora.find(c=>c.id===corpusId)?.slug||corpusId;
     const cmd=(method.cli||'').replace('{CORPUS}',slug);
-    if(navigator.clipboard){navigator.clipboard.writeText(cmd).then(()=>toast('CLI command copied — paste into your terminal','success'))}
-    else{toast(`Run: ${cmd}`,'success')}
+    _showInfoModal({
+      title:`${connector.name} · ${method.name}`,
+      subtitle:method.desc||'',
+      bodyHTML:`<p style="color:var(--tx3);font-size:12px;margin:0 0 10px">Run this in your terminal:</p>`,
+      copyText:cmd,
+    });
     return;
   }
   if(method.action==='show_instructions'){
-    toast(`${connector.name} · ${method.name} — coming soon`,'info');
+    _showInfoModal({
+      title:`${connector.name} · ${method.name}`,
+      subtitle:'This integration is on the roadmap but not yet wired up.',
+      bodyHTML:`<p style="font-size:13px;line-height:1.55">${esc(method.desc||'')}</p>`,
+    });
     return;
   }
   if(method.action==='show_plugin_docs'){
-    // Point users at the plugin folder's README in the repo; cloud-hosted
-    // users will later see a one-click install flow once we publish builds.
-    window.open('https://github.com/steveyeow/noosphere/tree/main/plugin','_blank','noopener');
+    // Inline instructions — external navigation is blocked in sandboxed
+    // preview environments, and anyway the three-step install is short
+    // enough to show directly. Copy button gives users the exact path to
+    // the build artifact.
+    _showInfoModal({
+      title:'Obsidian plugin — install',
+      subtitle:'One-click sync + watch mode from inside Obsidian. Build once, copy into your vault, enable in Obsidian settings.',
+      bodyHTML:`
+        <ol style="padding-left:20px;font-size:13px;line-height:1.6;margin:0 0 10px">
+          <li>Build the plugin:
+            <pre style="background:var(--bg2);padding:8px 12px;border-radius:5px;font-size:12px;margin:6px 0">cd plugin && npm install && npm run build</pre>
+          </li>
+          <li>Copy <code>manifest.json</code>, <code>main.js</code>, <code>styles.css</code> into
+            <code style="word-break:break-all">&lt;your-vault&gt;/.obsidian/plugins/noosphere-sync/</code>
+          </li>
+          <li>In Obsidian → Settings → Community plugins → enable <b>Noosphere</b></li>
+          <li>Open the Noosphere settings tab → fill Server URL + click <b>Create new</b> next to Corpus ID → click Sync ribbon icon</li>
+        </ol>
+        <p style="font-size:12px;color:var(--tx3);margin:0">Full docs: <code>plugin/README.md</code> in the repo.</p>
+      `,
+    });
     return;
   }
   if(method.action==='connect_local_path'){
@@ -2131,33 +2161,119 @@ function _triggerAppMethod(connector,method,ctx){
   toast('Unhandled action','error');
 }
 
+/* In-page modal helpers — replace native window.prompt / window.alert
+   / window.open usage. Native dialogs are (a) inconsistent across
+   browsers, (b) blocked inside sandboxed preview environments like
+   Claude Preview, and (c) worse UX than a proper dialog we style
+   ourselves. One generic dialog renderer handles all three shapes:
+     - Input form  (fields[] + Submit)   → _showFormModal
+     - Info-only with Copy (CLI snippet) → _showInfoModal (reuses)
+     - Install instructions (markdown)   → _showInfoModal with html body */
+function _closeModal(){const p=document.getElementById('generic-modal');if(p)p.remove()}
+function _showModalShell(innerHTML){
+  _closeModal();
+  const ov=document.createElement('div');ov.id='generic-modal';ov.className='srcs-pick-overlay';
+  ov.innerHTML=`<div class="srcs-pick app-panel" style="position:relative;max-width:520px"><button class="srcs-pick-close" id="generic-modal-close" title="Close">×</button>${innerHTML}</div>`;
+  document.body.appendChild(ov);
+  document.getElementById('generic-modal-close').onclick=_closeModal;
+  ov.addEventListener('click',e=>{if(e.target===ov)_closeModal()});
+  const esc=(e)=>{if(e.key==='Escape'){_closeModal();document.removeEventListener('keydown',esc)}};
+  document.addEventListener('keydown',esc);
+  return ov;
+}
+/* fields: [{id, label, placeholder?, value?, hint?}]
+   onSubmit: (values) => void | Promise<void> (close modal on success) */
+function _showFormModal(opts){
+  const fieldsHTML=opts.fields.map(f=>`
+    <div class="gm-field">
+      <label class="gm-label" for="gm-${esc(f.id)}">${esc(f.label)}</label>
+      <input type="text" class="gm-input" id="gm-${esc(f.id)}" placeholder="${esc(f.placeholder||'')}" value="${esc(f.value||'')}" />
+      ${f.hint?`<div class="gm-hint">${esc(f.hint)}</div>`:''}
+    </div>`).join('');
+  const ov=_showModalShell(`
+    <div class="app-panel-hd"><div class="app-panel-hd-text"><h2 class="srcs-pick-ttl">${esc(opts.title||'')}</h2>${opts.subtitle?`<p class="srcs-pick-sub">${esc(opts.subtitle)}</p>`:''}</div></div>
+    <div class="app-panel-body"><form id="gm-form" class="gm-form">${fieldsHTML}<div class="gm-actions"><button type="button" class="btn-sm-ghost" id="gm-cancel">Cancel</button><button type="submit" class="btn-sm">${esc(opts.submitLabel||'Submit')}</button></div></form></div>
+  `);
+  document.getElementById('gm-cancel').onclick=_closeModal;
+  const form=document.getElementById('gm-form');
+  form.onsubmit=async(e)=>{
+    e.preventDefault();
+    const values={};
+    for(const f of opts.fields){values[f.id]=(document.getElementById('gm-'+f.id)?.value||'').trim()}
+    try{await opts.onSubmit(values)}
+    catch(err){toast('Error: '+(err.message||err),'error')}
+  };
+  // Focus first field for immediate typing
+  const first=opts.fields[0];if(first)setTimeout(()=>document.getElementById('gm-'+first.id)?.focus(),30);
+  return ov;
+}
+/* Info-only modal with optional Copy button and freeform HTML body. */
+function _showInfoModal(opts){
+  const copyHTML=opts.copyText
+    ? `<div class="gm-copy-row"><code class="gm-copy-code">${esc(opts.copyText)}</code><button class="btn-sm" id="gm-copy">Copy</button></div>`
+    : '';
+  const ov=_showModalShell(`
+    <div class="app-panel-hd"><div class="app-panel-hd-text"><h2 class="srcs-pick-ttl">${esc(opts.title||'')}</h2>${opts.subtitle?`<p class="srcs-pick-sub">${esc(opts.subtitle)}</p>`:''}</div></div>
+    <div class="app-panel-body">${opts.bodyHTML||''}${copyHTML}<div class="gm-actions" style="margin-top:14px"><button type="button" class="btn-sm-ghost" id="gm-close-btn">Close</button></div></div>
+  `);
+  document.getElementById('gm-close-btn').onclick=_closeModal;
+  if(opts.copyText){
+    document.getElementById('gm-copy').onclick=async()=>{
+      try{
+        // Try the modern API first. If the sandbox blocks it, fall back to
+        // a hidden-textarea + execCommand('copy') trick which works even
+        // when clipboard permissions aren't available.
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(opts.copyText);
+          toast('Copied','success');
+          return;
+        }
+        const ta=document.createElement('textarea');ta.value=opts.copyText;
+        ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);
+        ta.select();document.execCommand('copy');document.body.removeChild(ta);
+        toast('Copied','success');
+      }catch(e){toast('Copy failed — select the text manually','error')}
+    };
+  }
+  return ov;
+}
+
 /* "Connect local vault" flow for Obsidian — B in the A/B/C one-click
-   story. Prompts for a vault path (the server must be able to read it,
-   so this only makes sense for self-hosted Noosphere on the same machine
-   as Obsidian), creates a new corpus, runs sync-local against it, and
-   drops the user on the new corpus detail page. Single click from the
-   Obsidian app panel → ready corpus. */
+   story. Uses an in-page modal so it works regardless of whether the
+   host environment sandboxes native window.prompt. Creates a new
+   corpus, runs sync-local against the given path, and navigates to
+   the new corpus detail page on success. */
 async function _openConnectLocalPath(connector,ctx){
   const defaultName=connector.name+' vault';
-  const path=window.prompt('Path to your vault folder on this machine:','');
-  if(!path||!path.trim())return;
-  const name=window.prompt('Name for the new corpus:',defaultName);
-  if(!name||!name.trim())return;
-  toast(`Creating corpus "${name}"...`,'info');
-  try{
-    const r1=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),description:`Synced from ${connector.name} vault at ${path.trim()}`,access_level:'private'})});
-    if(!r1.ok){toast(`Create failed: ${r1.status} ${await r1.text()}`,'error');return}
-    const corpus=await r1.json();
-    toast(`Syncing vault from ${path.trim()}...`,'info');
-    const r2=await fetch(`${API}/corpora/${corpus.id}/sync-local`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:path.trim(),format:'obsidian',writeback:true})});
-    if(!r2.ok){toast(`Sync failed: ${r2.status} ${await r2.text()}`,'error');return}
-    const res=await r2.json();
-    await loadC();
-    toast(`${corpus.name}: ${res.sync.new} new, ${res.sync.updated} updated. Corpus ready.`,'success');
-    location.hash=`#/corpus/${corpus.id}`;
-  }catch(e){
-    toast(`Connect failed: ${e.message||e}`,'error');
-  }
+  _showFormModal({
+    title:`Connect a local ${connector.name} vault`,
+    subtitle:`Self-hosted only — Noosphere reads the folder directly from this machine. Cloud Noosphere can't see your local disk; use the Obsidian plugin or CLI for cloud.`,
+    submitLabel:'Connect and sync',
+    fields:[
+      {id:'path',label:'Vault folder path',placeholder:'/Users/you/Documents/my-vault',hint:'Absolute path — the Noosphere server must be able to read this folder.'},
+      {id:'name',label:'Corpus name',value:defaultName,hint:'Shown in Noosphere UI and (if non-private) in network discovery.'},
+    ],
+    onSubmit:async(v)=>{
+      if(!v.path){toast('Vault path is required','error');return}
+      if(!v.name){toast('Corpus name is required','error');return}
+      _closeModal();
+      toast(`Creating corpus "${v.name}"…`,'info');
+      try{
+        const r1=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.name,description:`Synced from ${connector.name} vault at ${v.path}`,access_level:'private'})});
+        if(!r1.ok){toast(`Create failed: ${r1.status} ${await r1.text()}`,'error');return}
+        const corpus=await r1.json();
+        toast(`Syncing vault from ${v.path}…`,'info');
+        const r2=await fetch(`${API}/corpora/${corpus.id}/sync-local`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:v.path,format:'obsidian',writeback:true})});
+        if(!r2.ok){toast(`Sync failed: ${r2.status} ${await r2.text()}`,'error');return}
+        const res=await r2.json();
+        await loadC();
+        toast(`${corpus.name}: ${res.sync.new} new, ${res.sync.updated} updated. Corpus ready.`,'success');
+        location.hash=`#/corpus/${corpus.id}`;
+      }catch(e){
+        toast(`Connect failed: ${e.message||e}`,'error');
+      }
+    },
+  });
 }
 
 /* Open a focused single-archive-kind uploader. No tabs, no radio picker —

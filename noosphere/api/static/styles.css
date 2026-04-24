@@ -1173,6 +1173,17 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .doc-bd-md pre{background:var(--bg2);padding:10px 12px;border-radius:5px;overflow-x:auto;font-size:12px}
 .doc-bd-md pre code{background:transparent;padding:0}
 
+/* ── Generic modal form (used by Connect local vault, CLI instructions, plugin docs) ── */
+.gm-form{display:flex;flex-direction:column;gap:14px}
+.gm-field{display:flex;flex-direction:column;gap:5px}
+.gm-label{font-size:12px;font-weight:600;color:var(--tx2)}
+.gm-input{padding:8px 10px;border:1px solid var(--bd);border-radius:5px;background:var(--bg2);color:var(--tx);font-size:13px;font-family:inherit;outline:none;transition:border-color .12s}
+.gm-input:focus{border-color:var(--tx3)}
+.gm-hint{font-size:11px;color:var(--tx3);line-height:1.4}
+.gm-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.gm-copy-row{display:flex;gap:8px;align-items:center;background:var(--bg2);padding:10px 12px;border-radius:6px;margin:8px 0}
+.gm-copy-code{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--tx);overflow-x:auto;white-space:nowrap;background:transparent;padding:0}
+
 /* ── Mode picker (the sliders toggle) ── */
 .srcs-pop-hd{padding:8px 12px 4px;font-size:10.5px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
 .srcs-pop-mode{display:flex;gap:10px;padding:8px 12px;background:transparent;border:0;text-align:left;cursor:pointer;font-family:inherit;color:var(--tx);border-radius:5px;margin:0 4px}
