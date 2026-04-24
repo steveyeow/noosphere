@@ -724,10 +724,13 @@ function renderHome(){
     const action=_pendingHomeAttachAction;
     _pendingHomeAttachAction=null;
     setTimeout(()=>{
-      const home=document.getElementById('home');if(home)home.classList.add('home--active');
-      if(action==='upload'){showTermUpload(output,input,_homeScope)}
-      else if(action==='url'){showTermUpload(output,input,_homeScope);setTimeout(()=>{document.querySelector('.term-upload-tab[data-tab="url"]')?.click()},50)}
-      else if(action==='rss'){showTermConnectRSS(output,input,_homeScope)}
+      // Only collapse home for actions that render INTO term-output.
+      // add-source opens an overlay; the observer would eventually clear
+      // a premature collapse, but skipping it avoids a flash.
+      const collapseHome=()=>{const h=document.getElementById('home');if(h)h.classList.add('home--active')};
+      if(action==='upload'){collapseHome();showTermUpload(output,input,_homeScope)}
+      else if(action==='url'){collapseHome();showTermUpload(output,input,_homeScope);setTimeout(()=>{document.querySelector('.term-upload-tab[data-tab="url"]')?.click()},50)}
+      else if(action==='rss'){collapseHome();showTermConnectRSS(output,input,_homeScope)}
       else if(action==='add-source'){showAddSourcePicker({corpusId:null})}
     },0);
   }
