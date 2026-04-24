@@ -252,7 +252,13 @@ your-vault/
 
 **Opt out**: pass `--no-writeback` to disable. The vault then stays pristine — nothing Noosphere-generated gets written to disk. Useful if you'd rather view enrichments only in the Noosphere web UI.
 
-**Roadmap**: An Obsidian plugin with in-editor UI (sync status, peer subscribers, browse enrichments) will sit on top of the CLI. The CLI already delivers the core Karpathy + writeback experience; the plugin is a UX layer, not a functional prerequisite.
+### Obsidian plugin
+
+For one-click sync + watch mode from inside Obsidian, install the plugin that lives in [`plugin/`](plugin/). It's a thin UX layer on top of the same `sync --obsidian` path — ribbon icon, command palette entries, status bar with last-sync summary, settings tab for server URL / corpus / token / writeback toggle.
+
+Install: build locally (`cd plugin && npm install && npm run build`) and copy `manifest.json`, `main.js`, `styles.css` into `<your-vault>/.obsidian/plugins/noosphere-sync/`. See [`plugin/README.md`](plugin/README.md) for full instructions.
+
+The plugin requires **self-hosted Noosphere running on the same machine as Obsidian** for v0.1 — both need direct filesystem access to the vault. Cloud Noosphere (where server and Obsidian are on different machines) needs a file-upload variant that's on the roadmap. Community plugin directory submission is a separate step from building — documented in the plugin README.
 
 ### Import other archives
 
@@ -282,7 +288,7 @@ The composer's source picker lists the full catalog. Shipping one at a time:
 
 | Connector       | Status         | Notes                                                             |
 | --------------- | -------------- | ----------------------------------------------------------------- |
-| Obsidian        | **Available**  | ZIP import + CLI two-way sync (`--obsidian --watch`). Plugin planned. |
+| Obsidian        | **Available**  | ZIP import + CLI two-way sync (`--obsidian --watch`) + Obsidian plugin ([`plugin/`](plugin/))|
 | Notion          | **Available**  | ZIP import today; live-sync OAuth planned                         |
 | Twitter / X     | **Available**  | One-shot archive import                                           |
 | RSS / Atom      | **Available**  | Manual feed add today; auto-polling on Pro planned                |

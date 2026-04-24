@@ -1,0 +1,27 @@
+/* Noosphere plugin styles. Scoped to classes we own so we don't
+   accidentally style core Obsidian surfaces. */
+
+.noos-intro {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.noos-bullets {
+  margin-left: 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.noos-bullets li {
+  margin-bottom: 4px;
+}
+
+/* Status bar states */
+.noos-status-syncing {
+  color: var(--text-accent);
+}
+.noos-status-err {
+  color: var(--text-error);
+}

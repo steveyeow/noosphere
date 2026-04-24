@@ -1,0 +1,10 @@
+{
+  "id": "noosphere-sync",
+  "name": "Noosphere",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Sync your vault with a Noosphere knowledge base — agents can query your notes, you get writeback of synthesized entity and concept pages.",
+  "author": "Noosphere",
+  "authorUrl": "https://github.com/steveyeow/noosphere",
+  "isDesktopOnly": true
+}

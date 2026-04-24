@@ -854,6 +854,73 @@ async def api_writeback(corpus_id: str, request: Request, since: str = ""):
     return compute_writeback(corpus["id"], since=since or None)
 
 
+class SyncLocalRequest(BaseModel):
+    """Drive sync_directory from an HTTP caller (the Obsidian plugin).
+
+    ``path`` is a filesystem path the server can read — for the plugin's
+    primary use case the user runs Noosphere self-hosted on the same
+    machine as Obsidian so both share the vault folder. Cloud Noosphere
+    would need a file-upload variant; scoped out for v0.1.
+    """
+    path: str
+    format: str = "obsidian"
+    prune: bool = False
+    writeback: bool = True
+
+
+@router.post("/corpora/{corpus_id}/sync-local")
+async def api_sync_local(corpus_id: str, request: Request, body: SyncLocalRequest):
+    """Trigger a sync of a local-filesystem directory into this corpus.
+
+    Mirrors what the ``noosphere sync`` CLI does, but exposed as an HTTP
+    endpoint so the Obsidian plugin can kick it off with one click. The
+    server must have read access to ``body.path`` — this is the
+    self-hosted co-located setup (Obsidian + Noosphere on the same
+    machine). For cloud Noosphere, a file-upload variant is planned.
+
+    Owner-only. Returns sync counts + writeback result when enabled.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+
+    from pathlib import Path
+    vault = Path(body.path).expanduser()
+    if not vault.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a readable directory on the server: {body.path}")
+
+    from noosphere.core.ingest import sync_directory
+    from noosphere.core.indexer import index_corpus
+
+    try:
+        result = sync_directory(corpus["id"], str(vault), prune=body.prune, format=body.format)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    index_result = None
+    if result.get("new") or result.get("updated"):
+        try:
+            index_result = index_corpus(corpus["id"])
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Index after sync-local failed: %s", e)
+
+    writeback_result = None
+    if body.writeback:
+        try:
+            from noosphere.cli.main import _writeback_to_vault
+            writeback_result = _writeback_to_vault(corpus["id"], str(vault))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Writeback after sync-local failed: %s", e)
+
+    return {
+        "sync": result,
+        "index": {"chunk_count": index_result.get("chunk_count")} if index_result else None,
+        "writeback": writeback_result,
+    }
+
+
 @router.post("/corpora/{corpus_id}/import/obsidian")
 async def api_import_obsidian(corpus_id: str, request: Request, file: UploadFile = File(...)):
     """Import an Obsidian vault (zipped folder of .md files).
