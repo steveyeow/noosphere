@@ -112,6 +112,26 @@ function errMsg(body,fallback){
    incremental indexing makes this safe — no-op runs are already cheap,
    but collapsing them is cheaper still. */
 const _indexTimers={};
+/* home--active safety net. Any panel that renders into term-output can
+   ask the home wrapper to collapse (adds `home--active` so the composer
+   moves to the top). When the panel is removed and term-output is empty,
+   this observer un-collapses automatically — so new connectors don't
+   have to remember the cleanup step in their cancel handler. Installed
+   once per home mount (see renderHome). */
+function _installHomeActiveWatcher(output){
+  if(!output||output._hActiveWatch)return;
+  output._hActiveWatch=true;
+  const obs=new MutationObserver(()=>{
+    if(!output.children.length){
+      const home=document.getElementById('home');
+      if(home&&home.classList.contains('home--active')){
+        home.classList.remove('home--active');
+      }
+    }
+  });
+  obs.observe(output,{childList:true});
+}
+
 const _indexInFlight={};
 function ensureIndexed(corpusId,delayMs=1200){
   if(!corpusId)return;
@@ -583,6 +603,12 @@ function renderHome(){
   const sendBtn=document.getElementById('home-send');
   const attachBtn=document.getElementById('home-attach');
   if(attachBtn)attachBtn.onclick=(e)=>showAttachPopover(e.currentTarget,output,input);
+  // Safety net — whenever term-output becomes empty, clear home--active.
+  // Every panel that collapses the home greeting must render into
+  // term-output; every panel's removal hits this observer. If a future
+  // connector/panel forgets to remove home--active in its cancel handler,
+  // the composer still recovers here. Install once per home mount.
+  _installHomeActiveWatcher(output);
   // Mode label is the sole entry point for the mode picker now — the
   // separate sliders toggle was removed because the popover only controls
   // mode (sources moved into the + menu).
@@ -2084,6 +2110,10 @@ function showTermArchiveUpload(output,input,defaultCorpus,archiveKind,opts){
   const reportErr=(msg)=>{if(onComplete)toast(msg,'error');else addLine(output,'resp',msg)};
   const fi=wrap.querySelector('#tu-fi'),goBtn=wrap.querySelector('#tu-go'),cancelBtn=wrap.querySelector('#tu-cancel');
   fi.onchange=()=>{goBtn.disabled=!fi.files.length};
+  // Cancel just removes the panel. The home--active collapse added by
+  // _openArchiveUpload is cleared automatically by _installHomeActiveWatcher
+  // once term-output is empty — no bespoke cleanup needed here, and any
+  // future connector that wants a panel gets the same guarantee for free.
   cancelBtn.onclick=()=>{wrap.remove();if(input&&!onComplete)input.focus()};
   async function resolveCorpus(){
     if(lockCorpus)return defaultCorpus;
@@ -2217,13 +2247,14 @@ function showAttachPopover(anchor,output,input,opts){
       // /main and re-fires the panel there). Skips the local panel render so
       // we don't double up with whatever the caller's about to show.
       if(opts.onAction){opts.onAction(action);return}
-      if(!lockedCorpus){
-        // Collapse home to chat mode so the injected panel has room.
-        const home=document.getElementById('home');if(home)home.classList.add('home--active');
-      }
-      if(action==='upload'){showTermUpload(output,input,targetCorpus,panelOpts)}
-      else if(action==='url'){showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
-      else if(action==='rss'){showTermConnectRSS(output,input,targetCorpus,panelOpts)}
+      // Only collapse home for actions that render a panel INTO term-output
+      // (upload / url / rss). `add-source` opens an overlay — leaving
+      // home--active on would pin the composer to the top with nothing
+      // under it after the overlay is dismissed.
+      const collapseHome=()=>{if(!lockedCorpus){const h=document.getElementById('home');if(h)h.classList.add('home--active')}};
+      if(action==='upload'){collapseHome();showTermUpload(output,input,targetCorpus,panelOpts)}
+      else if(action==='url'){collapseHome();showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
+      else if(action==='rss'){collapseHome();showTermConnectRSS(output,input,targetCorpus,panelOpts)}
       else if(action==='add-source'){showAddSourcePicker(appCtx)}
     };
   });
