@@ -953,7 +953,11 @@ function renderHome(){
   const output=document.getElementById('term-output');
   const sendBtn=document.getElementById('home-send');
   const attachBtn=document.getElementById('home-attach');
-  if(attachBtn)attachBtn.onclick=(e)=>showAttachPopover(e.currentTarget,output,input);
+  // Pass enterWrite as onWrite so the popover's "Write a note" item can flip
+  // the composer into note-editor mode. Defined further down in this same
+  // closure, but JS hoisting via the function declaration makes the
+  // reference resolve at click time.
+  if(attachBtn)attachBtn.onclick=(e)=>showAttachPopover(e.currentTarget,output,input,{onWrite:()=>enterWrite()});
   // Safety net — whenever term-output becomes empty, clear home--active.
   // Every panel that collapses the home greeting must render into
   // term-output; every panel's removal hits this observer. If a future
@@ -1083,6 +1087,9 @@ function renderHome(){
       else if(action==='url'){collapseHome();showTermUpload(output,input,_homeScope);setTimeout(()=>{document.querySelector('.term-upload-tab[data-tab="url"]')?.click()},50)}
       else if(action==='rss'){collapseHome();showTermConnectRSS(output,input,_homeScope)}
       else if(action==='add-source'){showAddSourcePicker({corpusId:null})}
+      // Write coming back from the corpus page — _homeScope was pre-set so
+      // saveNote() on commit drops the note into the right KB.
+      else if(action==='write'){enterWrite()}
     },0);
   }
   function enterWrite(seedTitle){
@@ -2755,6 +2762,7 @@ function showAttachPopover(anchor,output,input,opts){
   if(document.getElementById('attach-pop')){_closeAttachPopover();return}
   anchor.classList.add('active');
   // Icon set — minimal line glyphs matching the rest of the popover family.
+  const ICO_WRITE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
   const ICO_FILE=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
   const ICO_LINK=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72"/></svg>`;
   const ICO_FEED_LOCAL=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>`;
@@ -2775,7 +2783,13 @@ function showAttachPopover(anchor,output,input,opts){
   const addLogos=_SOURCE_CONNECTORS.slice(0,4).map(c=>`<span class="srcs-mini-logo" style="background:${c.bg};color:${c.fg}">${c.mono}</span>`).join('');
 
   const pop=document.createElement('div');pop.id='attach-pop';pop.className='srcs-pop';
-  pop.innerHTML=`<button class="srcs-pop-item" data-action="upload"><span class="srcs-pop-ico">${ICO_FILE}</span><span class="srcs-pop-nm">Upload file</span><span class="srcs-pop-aside"><span class="srcs-pop-val">PDF · MD · DOCX</span></span></button>` +
+  // Write goes first — for a freshly-created KB the most natural next step
+  // is jotting your own thinking, not hunting for a URL or file. enterWrite()
+  // transforms the home composer in-place: on the empty greeting it feels
+  // like a write page (greeting hides via home--writing); mid-chat it sits
+  // below the existing transcript so context is preserved.
+  pop.innerHTML=`<button class="srcs-pop-item" data-action="write"><span class="srcs-pop-ico">${ICO_WRITE}</span><span class="srcs-pop-nm">Write a note</span><span class="srcs-pop-aside"><span class="srcs-pop-val">Markdown</span></span></button>` +
+    `<button class="srcs-pop-item" data-action="upload"><span class="srcs-pop-ico">${ICO_FILE}</span><span class="srcs-pop-nm">Upload file</span><span class="srcs-pop-aside"><span class="srcs-pop-val">PDF · MD · DOCX</span></span></button>` +
     `<button class="srcs-pop-item" data-action="url"><span class="srcs-pop-ico">${ICO_LINK}</span><span class="srcs-pop-nm">Import a page</span><span class="srcs-pop-aside"><span class="srcs-pop-val">URL or paste</span></span></button>` +
     `<button class="srcs-pop-item" data-action="rss"><span class="srcs-pop-ico">${ICO_FEED_LOCAL}</span><span class="srcs-pop-nm">Add RSS feed</span><span class="srcs-pop-aside"><span class="srcs-pop-val">living source</span></span></button>` +
     `<div class="srcs-pop-sep"></div>` +
@@ -2844,7 +2858,15 @@ function showAttachPopover(anchor,output,input,opts){
       // home--active on would pin the composer to the top with nothing
       // under it after the overlay is dismissed.
       const collapseHome=()=>{if(!lockedCorpus){const h=document.getElementById('home');if(h)h.classList.add('home--active')}};
-      if(action==='upload'){collapseHome();showTermUpload(output,input,targetCorpus,panelOpts)}
+      if(action==='write'){
+        // enterWrite is closure-scoped to renderHome — caller passes it via
+        // opts.onWrite. On the corpus page no onWrite is set, but onAction
+        // above already short-circuited that path (navigates to /main with
+        // _pendingHomeAttachAction='write'), so we never get here in that
+        // mode.
+        if(opts.onWrite)opts.onWrite();
+      }
+      else if(action==='upload'){collapseHome();showTermUpload(output,input,targetCorpus,panelOpts)}
       else if(action==='url'){collapseHome();showTermUpload(output,input,targetCorpus,panelOpts);setTimeout(()=>{const urlTab=document.querySelector('.term-upload-tab[data-tab="url"]');urlTab?.click()},50)}
       else if(action==='rss'){collapseHome();showTermConnectRSS(output,input,targetCorpus,panelOpts)}
       else if(action==='add-source'){showAddSourcePicker(appCtx)}

@@ -292,9 +292,14 @@ Rules:
 - Strip filler from names: "create me a corpus on harness engineering" → name "Harness Engineering".
 - Output ONLY the JSON object — no preamble, no markdown fences, no trailing text.
 
+Rules for the topic-intent reply: lead with WRITING — the user just named
+a topic with intent on their mind, so the lowest-friction next step is
+jotting a note. URL paste and file drop come after, since those require
+having external material at hand. Keep this order in any language.
+
 Examples:
-"AI product designing" → {"intent":"topic","name":"AI Product Design","reply":"Spinning up your AI Product Design knowledge base — paste a URL, drop a file, or write a note to add the first source."}
-"创建一个产品设计的知识库" → {"intent":"topic","name":"产品设计","reply":"已经为你建好「产品设计」知识库 —— 贴一个链接、上传文件，或写一条笔记来添加第一个来源。"}
+"AI product designing" → {"intent":"topic","name":"AI Product Design","reply":"Spinning up your AI Product Design knowledge base — write a note, paste a URL, or drop a file to add the first source."}
+"创建一个产品设计的知识库" → {"intent":"topic","name":"产品设计","reply":"已经为你建好「产品设计」知识库 —— 写一条笔记、贴一个链接，或上传文件来添加第一个来源。"}
 "create this corpus for me" → {"intent":"chat","reply":"Tell me what topic you'd like — for example 'founder playbook' or 'design systems' — and I'll spin up the knowledge base."}
 "what can you do" → {"intent":"chat","reply":"You're in Create mode — name a topic and I'll start a knowledge base on it. Switch to Enrich to chat with what's already inside, or Compile to synthesize a wiki page from your sources."}"""
 
@@ -303,7 +308,7 @@ _CONCIERGE_PROMPT = """You are Noos, the in-app guide for Noosphere — a person
 
 The user has no indexed sources yet, so you cannot cite anything. Your job:
 - Plainly explain what they can do here when asked.
-- If they name a topic, suggest creating a knowledge base on it: switch the composer to Create mode, or paste a URL / drop a file to seed one.
+- If they name a topic, suggest creating a knowledge base on it: switch the composer to Create mode, or seed it directly — write a note, paste a URL, or drop a file (in that order — writing is the lowest-friction starter).
 - Never invent facts about external topics. If they ask a factual question, say you can answer it once they add sources, and ask what kind of sources they have.
 - Match the user's language. Keep it 2-4 sentences."""
 
@@ -408,7 +413,7 @@ def _handle_concierge(text: str, *, has_corpora: bool) -> dict:
     try:
         reply = call_llm(msgs).strip()
     except Exception:
-        reply = "Nothing indexed yet — switch to Create mode and name a topic, paste a URL, or drop a file to start."
+        reply = "Nothing indexed yet — switch to Create mode and name a topic, or seed a knowledge base now: write a note, paste a URL, or drop a file."
 
     return {
         "lines": [{"type": "resp", "text": reply}],
