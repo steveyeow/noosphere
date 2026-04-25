@@ -1,0 +1,75 @@
+name: Plugin release
+
+# Publish a pre-built Obsidian plugin as a GitHub Release whenever a tag
+# of the form `plugin-vX.Y.Z` is pushed. Users download the three
+# artifacts (manifest.json, main.js, styles.css) directly from the
+# Releases page and drop them into their vault — no Node.js needed on
+# the user side.
+#
+# To ship a new plugin version:
+#   1. Bump the version field in plugin/manifest.json and plugin/package.json
+#   2. git commit, git tag plugin-v0.1.1, git push origin main --tags
+#   3. The workflow builds and creates the Release automatically.
+#
+# The `main` workflow (test.yml) stays independent — this file runs only
+# on plugin-v* tags, not on every push.
+
+on:
+  push:
+    tags:
+      - "plugin-v*"
+
+permissions:
+  contents: write  # needed to create a Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: Install plugin deps
+        working-directory: plugin
+        run: npm ci
+
+      - name: Build plugin
+        working-directory: plugin
+        run: npm run build
+
+      - name: Verify artifacts exist
+        working-directory: plugin
+        run: |
+          test -f manifest.json || { echo "missing manifest.json"; exit 1; }
+          test -f main.js        || { echo "missing main.js";        exit 1; }
+          test -f styles.css     || { echo "missing styles.css";     exit 1; }
+          ls -la manifest.json main.js styles.css
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          # The GitHub ref will be "refs/tags/plugin-vX.Y.Z" — tag_name
+          # strips the prefix automatically.
+          name: "Obsidian plugin ${{ github.ref_name }}"
+          body: |
+            Obsidian plugin build for Noosphere.
+
+            **Install**:
+            1. Download `manifest.json`, `main.js`, and `styles.css` from the Assets below
+            2. Put them in `<your-vault>/.obsidian/plugins/noosphere-sync/`
+            3. In Obsidian → Settings → Community plugins → enable **Noosphere**
+            4. Fill Server URL (`http://localhost:8420` for self-hosted, `https://app.noosphere.wiki` for cloud) → click **Create new** next to Corpus ID → click the Sync ribbon icon
+
+            Full docs: [`plugin/README.md`](../blob/main/plugin/README.md)
+          files: |
+            plugin/manifest.json
+            plugin/main.js
+            plugin/styles.css
+          draft: false
+          prerelease: false
