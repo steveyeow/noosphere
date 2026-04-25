@@ -6,12 +6,13 @@ from noosphere.core.ingest import ingest_url, ingest_text
 from noosphere.core.indexer import index_corpus
 
 
-def handle_terminal_input(text: str, context: dict | None = None) -> dict:
+def handle_terminal_input(text: str, context: dict | None = None, mode: str = "enrich") -> dict:
     """Process terminal input and return structured response.
 
     Home terminal is chat-first (you're talking to Noos). Routing:
       - URL → ingest into a corpus (with inline corpus picker)
       - /command → slash-command handler
+      - mode='create' → spin up a new knowledge base named after the topic
       - anything else → chat with Noos across all your corpora
 
     State tracks mid-flow interactions (e.g. waiting for corpus choice).
@@ -28,6 +29,9 @@ def handle_terminal_input(text: str, context: dict | None = None) -> dict:
 
     if text.startswith("/"):
         return _handle_slash(text)
+
+    if mode == "create":
+        return _handle_create(text)
 
     # Default: chat with Noos.
     return _handle_question(text)
@@ -209,10 +213,7 @@ def _handle_question(text: str) -> dict:
     ready = [c for c in corpora if c.get("status") == "ready" and c.get("access_level") == "public"]
 
     if not ready:
-        return {
-            "lines": [{"type": "resp", "text": "Nothing indexed yet — paste a URL or drop a file to start."}],
-            "context": {"state": "idle"},
-        }
+        return _handle_concierge(text, has_corpora=bool(corpora))
 
     from noosphere.core.chat import chat_with_noosphere
 
@@ -274,3 +275,142 @@ def _handle_question(text: str) -> dict:
         if source_names:
             lines.append({"type": "hint", "text": "Sources: " + " · ".join(source_names[:4])})
     return {"lines": lines, "context": {"state": "idle"}}
+
+
+_CREATE_INTENT_PROMPT = """The user is in 'Create knowledge base' composer mode in Noosphere — a personal knowledge OS where each knowledge base is a corpus of URLs, files, and notes the user can chat with like a wiki.
+
+Read the user's input and decide what they want. Output ONE LINE of valid JSON:
+
+  {"intent":"topic","name":"<2-5 word title>","reply":"<short confirmation in user's language>"}
+    — they named a clear subject for a new knowledge base. The reply will be shown alongside a 'Created' card; keep it to one sentence inviting them to add a first source.
+
+  {"intent":"chat","reply":"<conversational response in user's language>"}
+    — they're asking what the app does, asking for help, or sent a vague request without a clear topic. Reply in 2-3 sentences. If they seem to want to create one but didn't name a topic, ask what topic. If they're asking about app capability, explain Create vs Enrich vs Compile mode briefly and invite them to name a topic.
+
+Rules:
+- Match the user's language (English, Chinese, etc.). Title-case English names; preserve case for other languages.
+- Strip filler from names: "create me a corpus on harness engineering" → name "Harness Engineering".
+- Output ONLY the JSON object — no preamble, no markdown fences, no trailing text.
+
+Examples:
+"AI product designing" → {"intent":"topic","name":"AI Product Design","reply":"Spinning up your AI Product Design knowledge base — paste a URL, drop a file, or write a note to add the first source."}
+"创建一个产品设计的知识库" → {"intent":"topic","name":"产品设计","reply":"已经为你建好「产品设计」知识库 —— 贴一个链接、上传文件，或写一条笔记来添加第一个来源。"}
+"create this corpus for me" → {"intent":"chat","reply":"Tell me what topic you'd like — for example 'founder playbook' or 'design systems' — and I'll spin up the knowledge base."}
+"what can you do" → {"intent":"chat","reply":"You're in Create mode — name a topic and I'll start a knowledge base on it. Switch to Enrich to chat with what's already inside, or Compile to synthesize a wiki page from your sources."}"""
+
+
+_CONCIERGE_PROMPT = """You are Noos, the in-app guide for Noosphere — a personal knowledge OS where users build a corpus of sources (URLs, files, notes) and chat with it like a wiki.
+
+The user has no indexed sources yet, so you cannot cite anything. Your job:
+- Plainly explain what they can do here when asked.
+- If they name a topic, suggest creating a knowledge base on it: switch the composer to Create mode, or paste a URL / drop a file to seed one.
+- Never invent facts about external topics. If they ask a factual question, say you can answer it once they add sources, and ask what kind of sources they have.
+- Match the user's language. Keep it 2-4 sentences."""
+
+
+def _classify_create_intent(text: str) -> dict | None:
+    """Single LLM call: classify the input and emit a response. Returns
+    {"intent": "topic"|"chat", ...} on success, or None if the LLM is
+    unconfigured / errors / returns malformed JSON."""
+    from noosphere.core.llm import call_llm
+    import json as _json
+
+    msgs = [
+        {"role": "system", "content": _CREATE_INTENT_PROMPT},
+        {"role": "user", "content": text.strip()},
+    ]
+    try:
+        out = call_llm(msgs).strip()
+    except Exception:
+        return None
+    # Strip markdown fences some providers wrap JSON in.
+    out = re.sub(r"^```(?:json)?\s*", "", out).strip()
+    out = re.sub(r"\s*```$", "", out).strip()
+    try:
+        data = _json.loads(out)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    intent = data.get("intent")
+    if intent not in ("topic", "chat"):
+        return None
+    return data
+
+
+def _handle_create(text: str) -> dict:
+    """Create mode: ask the LLM to classify intent and respond.
+
+    - intent='topic'  → create the corpus with the LLM-extracted name
+    - intent='chat'   → return the LLM's conversational reply (no corpus)
+    - LLM unavailable → graceful fallback so the user isn't dead-ended"""
+    if not text:
+        return _handle_concierge("", has_corpora=False)
+
+    decision = _classify_create_intent(text)
+
+    if decision and decision.get("intent") == "topic" and decision.get("name"):
+        name = decision["name"][:60].rstrip()
+        reply = (decision.get("reply") or "").strip()
+        try:
+            corpus = create_corpus(name, access_level="public")
+        except Exception as e:
+            return {
+                "lines": [{"type": "resp", "text": f"Couldn't create that knowledge base: {str(e)[:120]}"}],
+                "context": {"state": "idle"},
+            }
+        cid = corpus["id"]
+        lines = [{"type": "card", "label": name, "status": "CREATED",
+                  "detail": "New knowledge base — empty", "corpus_id": cid}]
+        if reply:
+            lines.append({"type": "resp", "text": reply})
+        return {
+            "lines": lines,
+            "context": {
+                "state": "idle",
+                "action": "corpus_created",
+                "corpus_id": cid,
+                "corpus_name": name,
+            },
+        }
+
+    if decision and decision.get("intent") == "chat" and decision.get("reply"):
+        return {
+            "lines": [{"type": "resp", "text": decision["reply"].strip()}],
+            "context": {"state": "idle"},
+        }
+
+    # LLM completely unavailable. Defer to the concierge (also LLM-driven,
+    # different prompt) — and if that also fails it has its own minimal
+    # fallback. We never auto-create a corpus from raw text on this path,
+    # because the input may well be a question, not a topic.
+    return _handle_concierge(text, has_corpora=False)
+
+
+def _handle_concierge(text: str, *, has_corpora: bool) -> dict:
+    """Empty-state chat: respond conversationally instead of dead-ending.
+
+    With no ready corpora the regular RAG path has nothing to retrieve, so
+    we route the user's message to the LLM with an onboarding system prompt
+    that explains capabilities and offers concrete next steps. If no LLM
+    provider is configured we fall back to a one-line static hint."""
+    from noosphere.core.llm import call_llm
+
+    note = (
+        " The user has at least one corpus, but none are ready yet (still indexing)."
+        if has_corpora
+        else " The user has not created any corpus yet."
+    )
+    msgs = [
+        {"role": "system", "content": _CONCIERGE_PROMPT + note},
+        {"role": "user", "content": text.strip()},
+    ]
+    try:
+        reply = call_llm(msgs).strip()
+    except Exception:
+        reply = "Nothing indexed yet — switch to Create mode and name a topic, paste a URL, or drop a file to start."
+
+    return {
+        "lines": [{"type": "resp", "text": reply}],
+        "context": {"state": "idle"},
+    }

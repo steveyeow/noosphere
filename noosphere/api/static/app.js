@@ -1278,13 +1278,25 @@ function renderHome(){
     const loadId='ld-'+Date.now();
     addLine(output,'thinking','Thinking…',loadId);
     try{
-      const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx})});
+      const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx,mode:_composerMode})});
       const d=await r.json();
       document.getElementById(loadId)?.remove();
       _termCtx=d.context||{};
       for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
       if(d.context?.action==='open_write'){enterWrite()}
       if(d.context?.action==='open_upload'){showTermUpload(output,input,_homeScope)}
+      // Create-mode result: backend just spun up a new KB. Drop the user
+      // back into Enrich with that KB pre-selected on the chip — so their
+      // very next URL/file/note flows straight into the new corpus without
+      // them having to manually pick it. Mirrors the post-create UX of the
+      // /new slash flow above so the two paths feel consistent.
+      if(d.context?.action==='corpus_created' && d.context.corpus_id){
+        _composerMode='enrich';
+        _homeScope=d.context.corpus_id;
+        await loadC();
+        updateChip();
+        renderSBChats();
+      }
     }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+err.message)}
     input.disabled=false;input.focus();
     _sending=false;

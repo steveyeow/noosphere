@@ -192,6 +192,13 @@ class ChatRequest(BaseModel):
 class TerminalRequest(BaseModel):
     input: str
     context: dict = {}
+    # Composer mode the home terminal is in when this request fires.
+    # 'enrich' = chat with existing corpora (default); 'create' = LLM
+    # extracts a topic from the input and spins up a new KB. 'compile'
+    # is handled client-side (it navigates straight to the canvas) and
+    # never reaches /terminal, but we accept it here defensively so a
+    # future move of that logic to the backend doesn't break the schema.
+    mode: str = "enrich"
 
 
 class CreateCorpusRequest(BaseModel):
@@ -306,7 +313,7 @@ async def api_terminal(req: TerminalRequest, request: Request):
     """Interactive terminal command handler."""
     _require_owner(request)
     from noosphere.core.terminal import handle_terminal_input
-    return handle_terminal_input(req.input, req.context)
+    return handle_terminal_input(req.input, req.context, mode=req.mode)
 
 
 def _resolve_corpus(corpus_id: str) -> dict:
