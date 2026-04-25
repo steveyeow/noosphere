@@ -314,6 +314,8 @@ async function route(){const h=location.hash||'#/';stopAll();
       await renderEntity(corpusId,segs[2]);
     }else if(segs[1]==='insights'){
       await renderCorpusInsights(corpusId);
+    }else if(segs[1]==='settings'){
+      await renderCorpusSettings(corpusId);
     }else{
       const params=new URLSearchParams(queryPart||'');
       const sessionId=params.get('session');
@@ -395,12 +397,199 @@ function setSBActive(h){document.getElementById('sb-new')?.classList.toggle('act
 function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 
 /* ══════ LANDING ══════ */
-const DM_FALLBACK=[{n:"Lenny's Newsletter",d:'product, growth',c:'#e76f51'},{n:'Paul Graham',d:'startups, philosophy',c:'#2a9d8f'},{n:'AI Research',d:'AI, ML',c:'#264653'},{n:'Feynman Lectures',d:'physics, science',c:'#f4a261'},{n:'Stoic Philosophy',d:'philosophy, ethics',c:'#588157'},{n:'YC Startup School',d:'startups, growth',c:'#457b9d'},{n:'Design Patterns',d:'software, design',c:'#e9c46a'},{n:'World History',d:'history, culture',c:'#b56576'}];
-function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp"><nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-social-link" title="GitHub"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a><a href="https://discord.gg/8PAmqAU24R" target="_blank" rel="noopener" class="lp-social-link" title="Discord"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a><button class="lp-dark-btn" id="lp-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav><div class="lp-cv" id="lp-cv"></div><div class="lp-ct"><div class="lp-h"><h1 class="lp-h1">Publish your knowledge to a network any AI agent can query.</h1><p class="lp-sub">Your knowledge compounds into a growing global network — upload files, import feeds, save insights from conversations. Share it free, keep it private, or charge for access.</p><button class="lp-go" id="lp-go">Get Started →</button><a href="#/explore" class="lp-explore" id="lp-explore" style="display:inline-block;margin-left:12px;color:var(--accent);text-decoration:none;font-size:15px;opacity:0.85">Explore Knowledge Bases →</a></div><div class="lp-term" id="lp-term"><div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div><div class="lp-term-body" id="lp-term-body"></div></div></div><div class="lp-mission">Expand the scope and scale of collective enlightenment.</div></div>`;
+// Feynman-style dataset — 44 representative KBs with rich multi-tag
+// domains so the force-directed graph has plenty of shared-token
+// links, producing a densely woven network rather than a sparse scatter.
+// Live corpora from the registry prepend to this list (see drawLPGraph);
+// this curated set is the floor.
+const DM_FALLBACK=[
+  // Product / startups / growth
+  {n:"Lenny's Newsletter",d:'product, growth, startups, management'},
+  {n:'Paul Graham',d:'startups, philosophy, writing, essays'},
+  {n:'YC Startup School',d:'startups, growth, product, fundraising'},
+  {n:'First Round Review',d:'startups, management, product, leadership'},
+  {n:'Product Management',d:'product, management, strategy, leadership'},
+  {n:'Growth Marketing',d:'growth, marketing, startups, analytics'},
+  {n:'Naval Ravikant',d:'startups, philosophy, wealth, decision-making'},
+  {n:'Marc Andreessen',d:'venture capital, software, startups, techno-optimism'},
+  // AI / ML / agents
+  {n:'AI Research Digest',d:'AI, ML, research, deep learning'},
+  {n:'Karpathy Notes',d:'AI, neural networks, deep learning, teaching'},
+  {n:'LLM Prompting',d:'AI, prompting, writing, tools'},
+  {n:'Sam Altman',d:'AI, startups, technology, venture capital'},
+  {n:'Jensen Huang',d:'technology, semiconductors, AI, computing'},
+  // Science / research
+  {n:'Feynman Lectures',d:'physics, science, teaching, quantum mechanics'},
+  {n:'Darwin Archive',d:'biology, evolution, natural history, science'},
+  {n:'Einstein Letters',d:'physics, relativity, philosophy, science'},
+  {n:'Newton Principia',d:'physics, mathematics, classical mechanics, science'},
+  {n:'Climate Science',d:'climate, environment, data, science'},
+  {n:'Neuroscience',d:'neuroscience, psychology, biology, research'},
+  // Philosophy
+  {n:'Stoic Philosophy',d:'philosophy, ethics, ancient, Marcus Aurelius'},
+  {n:'Eastern Wisdom',d:'philosophy, Taoism, ancient, Confucius'},
+  {n:'Nietzsche',d:'philosophy, ethics, writing, existentialism'},
+  {n:'Kant Essays',d:'philosophy, ethics, epistemology, metaphysics'},
+  // Finance / investing
+  {n:'Crypto Trading',d:'crypto, trading, markets, finance'},
+  {n:'Charlie Munger',d:'investing, mental models, markets, philosophy'},
+  {n:'Macro Research',d:'economics, macroeconomics, finance, markets'},
+  {n:'Warren Buffett',d:'investing, value investing, markets, business'},
+  // Design / craft
+  {n:'Design Patterns',d:'software, design, engineering, craft'},
+  {n:'Type Design',d:'design, typography, craft, art'},
+  {n:'UX Research',d:'design, research, product, psychology'},
+  // History / culture
+  {n:'World History',d:'history, culture, politics, civilization'},
+  {n:'Ancient Rome',d:'history, politics, philosophy, civilization'},
+  {n:'Chinese Dynasties',d:'history, culture, politics, philosophy'},
+  // Professional / niche
+  {n:'Legal Strategy',d:'legal, business, strategy, writing'},
+  {n:'Medical Notes',d:'medicine, research, clinical, biology'},
+  {n:'Chess Theory',d:'chess, strategy, games, mathematics'},
+  {n:'Game Design',d:'games, design, psychology, craft'},
+  // Writing / creative
+  {n:'Writing Craft',d:'writing, creative, narrative, craft'},
+  {n:'Poetry Notes',d:'writing, creative, narrative, art'},
+  // Psychology / self
+  {n:'Behavioral Econ',d:'psychology, economics, decision-making, research'},
+  {n:'Kahneman Notes',d:'psychology, decision-making, biases, economics'},
+  // Health
+  {n:'Longevity',d:'medicine, biology, research, health'},
+  // Startup exits
+  {n:'Steve Jobs',d:'technology, product, design, leadership'},
+  {n:'Elon Musk',d:'technology, engineering, space, first principles'},
+];
+
+// SVG icon snippets reused across landing sections. Line-only, no
+// decorative emoji — matches the Feynman aesthetic rule in memory.
+const _LP_ICO={
+  upload:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+  plug:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.72"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.72"/></svg>`,
+  chat:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+  compile:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M2 12h20"/><circle cx="12" cy="12" r="9"/></svg>`,
+  lock:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  coin:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5a2.5 2.5 0 0 1 2.5-2.5h1a2.5 2.5 0 0 1 0 5h-3a2.5 2.5 0 0 0 0 5h1a2.5 2.5 0 0 0 2.5-2.5"/></svg>`,
+  shield:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+  home:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2z"/></svg>`,
+};
+
+function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp">
+  <nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><button class="lp-dark-btn" id="lp-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav>
+
+  <section class="lp-hero">
+    <div class="lp-cv" id="lp-cv"></div>
+    <div class="lp-ct">
+      <div class="lp-h">
+        <h1 class="lp-h1">Publish your knowledge to the agent internet.</h1>
+        <p class="lp-sub">Turn your thoughts, skills, reading notes, questions you're exploring into a living knowledge base — agent-readable, connected to a global network. Keep it private, share it free, or charge per query.</p>
+        <button class="lp-go" id="lp-go">Get Started →</button>
+        <a href="#/explore" class="lp-explore" id="lp-explore">Explore Knowledge Bases →</a>
+      </div>
+      <div class="lp-term" id="lp-term">
+        <div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div>
+        <div class="lp-term-body" id="lp-term-body"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-bring">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Bring in your knowledge. Let it grow.</h2>
+      <p class="lp-sec-sub">Noosphere takes the files, feeds, chats, and notes you already make — and weaves them into a single knowledge base that keeps getting richer.</p>
+      <div class="lp-cards">
+        <div class="lp-card">
+          <h3 class="lp-card-h">Ingest</h3>
+          <p class="lp-card-p">Drop PDFs, markdown, URLs, or full archives — Obsidian vault, Notion export, Twitter data. Every format becomes the same agent-readable document.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Connect</h3>
+          <p class="lp-card-p">Subscribe to RSS. Live-sync an Obsidian vault with writeback. Notion, Google Drive, GitHub, Gmail connectors rolling out.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Chat to enrich</h3>
+          <p class="lp-card-p">Every chat answer has a Save-to-corpus affordance. Explorations compound into your KB instead of disappearing into chat history.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Compile</h3>
+          <p class="lp-card-p">An LLM fuses retrieved passages into concept notes. Cross-references stay fresh as new sources arrive. Your wiki pages write themselves.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-agent">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Agent-readable by design.</h2>
+      <p class="lp-sec-sub">Agents don't scroll pages. They query, cite, and decide. Every Noosphere corpus speaks a small, predictable toolbox — MCP-native, plus REST.</p>
+      <div class="lp-tool-list">
+        <div class="lp-tool"><code>describe</code><span>Machine-readable capability card — task types, samples, pricing, calibration policy.</span></div>
+        <div class="lp-tool"><code>ask</code><span>Synthesized answer with inline [N] citations + calibrated confidence.</span></div>
+        <div class="lp-tool"><code>preview_ask</code><span>Let agents evaluate with a real question — bypasses the paid gate.</span></div>
+        <div class="lp-tool"><code>search</code><span>Ranked raw chunks with citations, for retrieval-heavy flows.</span></div>
+        <div class="lp-tool"><code>route</code><span>Redirect out-of-scope questions honestly — save everyone a wasted call.</span></div>
+      </div>
+      <p class="lp-sec-foot">Every corpus publishes a manifest and accumulates a <code>kb_reputation</code> score from real citations, return usage, and calibration accuracy. <strong>No pay-to-promote. No hidden ranking.</strong></p>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-network">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Agents that learn from other agents.</h2>
+      <p class="lp-sec-sub">Every knowledge base joins a global discovery network. But KBs don't just answer — they can subscribe to each other, synthesize new skills from what they consume, and grow smarter together.</p>
+      <div class="lp-autonomy">
+        <div class="lp-level"><span class="lp-level-lbl">L0</span><span class="lp-level-nm">Responsive</span><span class="lp-level-dc">Answers when queried (default).</span></div>
+        <div class="lp-level"><span class="lp-level-lbl">L1</span><span class="lp-level-nm">Subscribing</span><span class="lp-level-dc">Ingests live updates from other KBs.</span></div>
+        <div class="lp-level"><span class="lp-level-lbl">L2</span><span class="lp-level-nm">Synthesizing</span><span class="lp-level-dc">Compiles new skills from consumed sources.</span></div>
+        <div class="lp-level"><span class="lp-level-lbl">L3</span><span class="lp-level-nm">Proactive</span><span class="lp-level-dc">Persona, outbound queries, initiative.</span></div>
+      </div>
+      <p class="lp-sec-foot">Every inter-KB query carries provenance. Citations record in a directed graph weighted by the citing KB's own reputation — trust compounds recursively.</p>
+      <div class="lp-callout">
+        <strong>Self-host, still connected.</strong> Run Noosphere on your own machine — your documents, chunks, and embeddings stay local. Only metadata (name, tags, endpoint URL) publishes to the discovery registry. Agents find you; your content never leaves your infrastructure.
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-rules">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Set the access. Set the price. Keep the revenue.</h2>
+      <p class="lp-sec-sub">You decide what lives in the network, what's free, what costs, and where the money goes.</p>
+      <div class="lp-cards">
+        <div class="lp-card">
+          <h3 class="lp-card-h">Access controls</h3>
+          <p class="lp-card-p">Public · Private · Token-gated · Paid. Switch anytime; the registry reconciles within seconds.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Four pricing shapes</h3>
+          <p class="lp-card-p">Pay-per-query, subscription, corpus licensing (bulk / training data), agent-to-agent payment.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Anti copyright-laundering</h3>
+          <p class="lp-card-p">Only content you originated is monetizable. Imported RSS or external URLs are filtered out for paying callers, by rule.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Self-hosted = 100% yours</h3>
+          <p class="lp-card-p">Bring your own Stripe. Noosphere never touches the money. Cloud: 10% on platform-facilitated payments only.</p>
+        </div>
+      </div></div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-footer-row">
+      <span class="lp-footer-brand"><svg width="14" height="14" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere · <span class="lp-footer-copy">© 2026</span></span>
+      <span class="lp-footer-social">
+        <a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-footer-ico" title="GitHub"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a>
+        <a href="https://discord.gg/8PAmqAU24R" target="_blank" rel="noopener" class="lp-footer-ico" title="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a>
+      </span>
+    </div>
+  </footer>
+</div>`;
   document.getElementById('lp-go').onclick=()=>{
     if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}
   };
   document.getElementById('lp-explore').onclick=e=>{e.preventDefault();location.hash='#/explore'};
+  const ctaCloud=document.getElementById('lp-cta-cloud');
+  if(ctaCloud)ctaCloud.onclick=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
   document.getElementById('lp-dark-btn').onclick=toggleTheme;
   drawLPGraph();animateLPTerm()}
 
@@ -450,22 +639,22 @@ function renderLogin(){
 
 function animateLPTerm(){
   const body=document.getElementById('lp-term-body');if(!body)return;
+  // Demo narrative follows the hero loop: publish → connected → queried → paid.
+  // Each block = one verb in that chain. Kept short so the whole loop runs in
+  // roughly 10 seconds — no user waits more than a beat between payoffs.
   const lines=[
-    {delay:400,type:'cmd',text:'> Upload: startup-essays.pdf, product-notes.md'},
-    {delay:1000,type:'out',text:'Ingesting 2 files...'},
-    {delay:600,type:'status',text:'BUILDING',label:'Knowledge base: Startup Playbook'},
-    {delay:500,type:'out',text:'Chunking into 47 semantic blocks...'},
-    {delay:900,type:'out',text:'Generating embeddings ████████████████ 47/47'},
-    {delay:400,type:'status',text:'READY',label:'Indexed & searchable'},
+    {delay:400,type:'cmd',text:'> Publish: "Pricing for early-stage SaaS"'},
+    {delay:900,type:'out',text:'Indexed · 12 concepts · 47 entities resolved from [[wikilinks]]'},
+    {delay:500,type:'status',text:'LIVE',label:'Joined the agent internet'},
     {delay:800,type:'out',text:''},
-    {delay:200,type:'cmd',text:'> Search: "how to find good startup ideas"'},
-    {delay:1100,type:'result',score:'0.94',text:'"The very best startup ideas tend to have three things in common: they\'re something the founders themselves want..."',cite:'startup-essays.pdf — p.12'},
-    {delay:700,type:'result',score:'0.89',text:'"Live in the future, then build what\'s missing."',cite:'product-notes.md'},
+    {delay:300,type:'cmd',text:'> Connect: rss.substack.com/lenny/feed'},
+    {delay:900,type:'out',text:'Ingested 47 posts · knowledge base is growing'},
+    {delay:700,type:'out',text:''},
+    {delay:300,type:'cmd',text:'> Agent query from [coinbase-startup-agent]'},
+    {delay:800,type:'out',text:'"what pricing model for B2B AI infra?"'},
+    {delay:1100,type:'result',score:'0.88',text:'"For early-stage B2B AI infra, usage-based pricing with a minimum floor aligns incentives better than seat licenses..."',cite:'"Pricing for early-stage SaaS" — §2'},
     {delay:600,type:'out',text:''},
-    {delay:200,type:'cmd',text:'> Connect to Noosphere network'},
-    {delay:800,type:'status',text:'LIVE',label:'Joined the Noosphere'},
-    {delay:400,type:'out',text:'MCP endpoint: localhost:8420/mcp'},
-    {delay:300,type:'out',text:'Any AI agent can now discover & query your knowledge.'},
+    {delay:400,type:'status',text:'PAID',label:'$0.05 → wallet $12.90 · kb_reputation 0.73'},
   ];
 
   let i=0,totalDelay=0;
@@ -478,7 +667,7 @@ function animateLPTerm(){
       else{el.className='lpt-line lpt-out';el.textContent=l.text;}
     }else if(l.type==='status'){
       el.className='lpt-line lpt-status';
-      const st=l.text==='INDEXED'?'#3b82f6':l.text==='CREATING'?'#f59e0b':l.text==='LIVE'?'#22c55e':'#86868b';
+      const st=l.text==='INDEXED'?'#3b82f6':l.text==='CREATING'?'#f59e0b':l.text==='LIVE'?'#22c55e':l.text==='PAID'?'#d4a017':'#86868b';
       el.innerHTML=`<span class="lpt-badge" style="color:${st}">${l.text}</span> ${esc(l.label)}`;
     }else if(l.type==='result'){
       el.className='lpt-result';
@@ -494,10 +683,174 @@ function animateLPTerm(){
   }
   step();
 }
-async function drawLPGraph(){const co=document.getElementById('lp-cv');if(!co)return;
-  let DM=DM_FALLBACK;
-  try{const r=await fetch(`${API}/corpora`);const live=await r.json();if(live&&live.length>=3){DM=live.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];return{n:c.name,d:tg.join(', '),c:cC(c.name)}})}}catch(e){}
-  const tk=m=>(m.d||'').split(/[,;]+/).map(d=>d.trim().toLowerCase()).filter(Boolean);const ns=DM.map((m,i)=>({id:'l'+i,name:m.n,dom:m.d,color:m.c||cC(m.n),ini:m.n.split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk:tk(m)}));const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=ns[i].tk.filter(t=>ns[j].tk.some(u=>t===u||t.includes(u)||u.includes(t)));if(s.length)lk.push({source:ns[i].id,target:ns[j].id,s:s.length})}const dp=devicePixelRatio||1,W=co.clientWidth||800,H=co.clientHeight||600,BR=Math.max(14,Math.min(22,W/(ns.length*2.5)));const cv=document.createElement('canvas');cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';co.appendChild(cv);const cx=cv.getContext('2d');cx.scale(dp,dp);const pts=[];lk.forEach(l=>{for(let i=0;i<Math.max(1,Math.round(l.s*1.5));i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.2,op:.3+Math.random()*.5})});const gX=W*.5,zn=[{cx:W*.15+140,cy:H/2,hw:200,hh:140},{cx:W*.75+60,cy:H/2,hw:300,hh:200}];function av(){let n;function f(){for(const nd of n)for(const z of zn){const dx=nd.x-z.cx,dy=nd.y-z.cy,ox=z.hw-Math.abs(dx),oy=z.hh-Math.abs(dy);if(ox>0&&oy>0){if(ox<oy){nd.vx+=(dx>=0?1:-1)*ox*.08;nd.vx*=.85}else{nd.vy+=(dy>=0?1:-1)*oy*.08;nd.vy*=.85}}}}f.initialize=x=>{n=x};return f}const sim=d3.forceSimulation(ns).force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(55,220-d.s*50)).strength(d=>.08+d.s*.15)).force('charge',d3.forceManyBody().strength(-400).distanceMax(550)).force('center',d3.forceCenter(gX,H/2).strength(.02)).force('collision',d3.forceCollide().radius(BR+12)).force('avoid',av()).alphaDecay(.03).velocityDecay(.35);let hov=null,mp=null;cv.onmousemove=e=>{const r=cv.getBoundingClientRect();mp=[e.clientX-r.left,e.clientY-r.top];hov=null;for(const n of ns)if(Math.hypot(n.x-mp[0],n.y-mp[1])<BR+4){hov=n;break}cv.style.cursor=hov?'pointer':'default'};cv.onmouseleave=()=>{hov=null;mp=null};function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);for(const l of lk){const s=l.source,t=l.target;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${.1+l.s*.07})`;cx.lineWidth=.5+l.s*.3;cx.stroke()}for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.35})`;cx.fill()}for(const n of ns){const h=hov===n;let r=BR;if(mp){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<180?BR*(1+(1-d/180)*.45):BR*.8}if(h)r=Math.max(r,BR*1.35);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*1.8);g.addColorStop(0,`rgba(${cr},${cg},${cb},${h?.1:.04})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*1.8,0,Math.PI*2);cx.fillStyle=g;cx.fill();if(h){cx.beginPath();cx.arc(n.x,n.y,rr+2,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},.4)`;cx.lineWidth=1.5;cx.stroke()}cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);cx.fillStyle=n.color;cx.fill();cx.strokeStyle='rgba(255,255,255,.2)';cx.lineWidth=1;cx.stroke();cx.fillStyle='rgba(255,255,255,.92)';cx.font=`700 ${rr*.5}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${h?.9:.65})`:`rgba(30,35,50,${h?.85:.55})`;cx.font=`600 ${h?10:9}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+10)}cx.restore();_lpAnim=requestAnimationFrame(draw)}sim.on('tick',()=>{});_lpAnim=requestAnimationFrame(draw)}
+async function drawLPGraph(){
+  const co=document.getElementById('lp-cv');if(!co)return;
+  // Build node list: curated DM_FALLBACK floor + up to 12 live corpora prepended.
+  let DM=DM_FALLBACK.slice();
+  try{
+    const r=await fetch(`${API}/corpora`);
+    const live=await r.json();
+    if(Array.isArray(live)&&live.length){
+      const liveNodes=live.slice(0,12).map(c=>{
+        const tg=Array.isArray(c.tags)?c.tags:[];
+        return{n:c.name,d:tg.join(', ')};
+      });
+      DM=[...liveNodes,...DM].slice(0,48);
+    }
+  }catch(e){}
+
+  const tk=m=>(m.d||'').split(/[,;\/&]+/).map(d=>d.trim().toLowerCase()).filter(Boolean);
+  const ns=DM.map((m,i)=>({
+    id:'l'+i,
+    name:m.n,
+    dom:m.d||'',
+    color:m.c||cC(m.n),
+    ini:m.n.split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase(),
+    tk:tk(m),
+  }));
+
+  // Dense tag-overlap linking. Every shared token (even partial match)
+  // counts as a link — produces a visibly woven network.
+  const lk=[];
+  for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){
+    const shared=ns[i].tk.filter(t=>ns[j].tk.some(u=>t===u||t.includes(u)||u.includes(t)));
+    if(shared.length)lk.push({source:ns[i].id,target:ns[j].id,s:shared.length});
+  }
+  // Guarantee minimum density even if tags don't overlap.
+  const minLinks=Math.floor(ns.length*2);
+  while(lk.length<minLinks){
+    const a=Math.floor(Math.random()*ns.length);
+    let b=Math.floor(Math.random()*ns.length);
+    if(a===b)b=(b+1)%ns.length;
+    const id1=ns[a].id,id2=ns[b].id;
+    if(!lk.find(l=>(l.source===id1&&l.target===id2)||(l.source===id2&&l.target===id1))){
+      lk.push({source:id1,target:id2,s:1});
+    }
+  }
+
+  const dp=devicePixelRatio||1;
+  const W=co.clientWidth||800,H=co.clientHeight||600;
+  // Bigger nodes than before — Feynman uses BASE_R = 20–30. More presence,
+  // better for reading labels.
+  const BR=Math.max(14,Math.min(22,W/(ns.length*2.2)));
+  const cv=document.createElement('canvas');
+  cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';
+  co.appendChild(cv);
+  const cx=cv.getContext('2d');cx.scale(dp,dp);
+
+  // Particles flowing along links — density scales with link strength
+  const pts=[];
+  lk.forEach(l=>{
+    const count=Math.max(1,Math.round(l.s*1.5));
+    for(let i=0;i<count;i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.5,op:.3+Math.random()*.5});
+  });
+
+
+
+  const sim=d3.forceSimulation(ns)
+    .force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(100,300-d.s*70)).strength(d=>.06+d.s*.12))
+    .force('charge',d3.forceManyBody().strength(-600).distanceMax(900))
+    .force('center',d3.forceCenter(W/2,H/2).strength(.015))
+    .force('collision',d3.forceCollide().radius(BR+18))
+    .force('x',d3.forceX(W/2).strength(.01))
+    .force('y',d3.forceY(H/2).strength(.01))
+    .alphaDecay(.03).velocityDecay(.35);
+
+  let hov=null,mp=null;
+  cv.addEventListener('mousemove',e=>{
+    const r=cv.getBoundingClientRect();
+    const mx=e.clientX-r.left,my=e.clientY-r.top;
+    mp=[mx,my];hov=null;
+    for(const n of ns){
+      if(Math.hypot(n.x-mx,n.y-my)<BR+5){hov=n;break}
+    }
+    cv.style.cursor=hov?'pointer':'default';
+  });
+  cv.addEventListener('mouseleave',()=>{hov=null;mp=null});
+
+  function draw(){
+    const now=performance.now();
+    const dk=isDark();
+    cx.save();
+    cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';
+    cx.fillRect(0,0,W,H);
+
+    // Links
+    for(const l of lk){
+      const s=l.source,t=l.target;
+      cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);
+      cx.strokeStyle=dk?`rgba(170,185,210,${.14+l.s*.10})`:`rgba(140,155,180,${.14+l.s*.10})`;
+      cx.lineWidth=.5+l.s*.3;
+      cx.stroke();
+    }
+
+    // Particles
+    for(const p of pts){
+      p.t+=p.sp;if(p.t>1)p.t-=1;
+      const s=p.l.source,t=p.l.target;
+      const px=s.x+(t.x-s.x)*p.t,py=s.y+(t.y-s.y)*p.t;
+      cx.beginPath();cx.arc(px,py,p.sz,0,Math.PI*2);
+      cx.fillStyle=dk?`rgba(200,220,255,${p.op*.5})`:`rgba(130,150,200,${p.op*.5})`;
+      cx.fill();
+    }
+
+    // Nodes — with mouse focus zoom (Feynman's trick: nodes near cursor grow)
+    for(const n of ns){
+      const hovered=hov===n;
+      let r=BR;
+      if(mp){
+        const dx=n.x-mp[0],dy=n.y-mp[1];
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        const focusR=250;
+        if(dist<focusR){
+          const t=1-dist/focusR;
+          r=BR*(1+t*0.4);
+        }else{
+          r=BR*0.9;
+        }
+      }
+      if(hovered)r=Math.max(r,BR*1.6);
+      const pulse=1+Math.sin(now*.002+n.name.length)*.04;
+      const rr=r*pulse;
+      const[cr,cg,cb]=hR(n.color);
+
+      // Glow
+      const glowR=rr*2.4;
+      const grad=cx.createRadialGradient(n.x,n.y,rr*.4,n.x,n.y,glowR);
+      grad.addColorStop(0,`rgba(${cr},${cg},${cb},${hovered?.16:.06})`);
+      grad.addColorStop(1,'rgba(255,255,255,0)');
+      cx.beginPath();cx.arc(n.x,n.y,glowR,0,Math.PI*2);cx.fillStyle=grad;cx.fill();
+
+      // Hover ring
+      if(hovered){
+        cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);
+        cx.strokeStyle=`rgba(${cr},${cg},${cb},.55)`;cx.lineWidth=2;cx.stroke();
+      }
+
+      // Node ball
+      cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);
+      cx.fillStyle=n.color;cx.fill();
+      cx.strokeStyle='rgba(255,255,255,.25)';cx.lineWidth=1.5;cx.stroke();
+
+      // Initials
+      cx.fillStyle='rgba(255,255,255,.95)';
+      cx.font=`700 ${rr*.55}px Inter,sans-serif`;
+      cx.textAlign='center';cx.textBaseline='middle';
+      cx.fillText(n.ini,n.x,n.y);
+
+      // Name label
+      cx.fillStyle=dk?`rgba(245,245,247,${hovered?.95:.8})`:`rgba(30,35,50,${hovered?.9:.7})`;
+      cx.font=`600 ${hovered?11:10}px 'Libre Baskerville',Georgia,serif`;
+      cx.fillText(n.name,n.x,n.y+rr+14);
+    }
+
+    cx.restore();
+    _lpAnim=requestAnimationFrame(draw);
+  }
+
+  sim.on('tick',()=>{});
+  _lpAnim=requestAnimationFrame(draw);
+}
 
 /* ══════ HOME — Terminal (input top, output below) ══════ */
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
@@ -1910,12 +2263,21 @@ function _exploreCard(c){
 }
 
 /* ══════ SHARED GRAPH DRAWING ══════ */
+// Access-level palette — color encodes how a KB relates to the network.
+// Beats name-hash (information-free) for the most-glanced signal.
+const _ACL_COLOR={public:'#4a90e2',paid:'#22a06b',token:'#b5721a',private:'#94a3b8'};
+function _aclNodeColor(level){return _ACL_COLOR[level||'public']||_ACL_COLOR.public}
+
 async function drawGraphIn(container,corpora,existingCanvas){
   if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}
   const _activity={};
   await Promise.all(corpora.map(async c=>{try{const r=await fetch(`${API}/corpora/${c.id}/analytics?limit=1`);if(r.ok){const a=await r.json();_activity[c.id]=a.total_queries||0}else{_activity[c.id]=0}}catch(e){_activity[c.id]=0}}));
-  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:cC(c.name),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
+  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:_aclNodeColor(c.access_level),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
   const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=new Set(ns[i].tk);const sh=[...new Set(ns[j].tk)].filter(t=>s.has(t));if(sh.length)lk.push({source:ns[i].id,target:ns[j].id,s:sh.length})}
+  // Adjacency for hover-dim + orphan detection. Each node is its own neighbor
+  // (so hovering a node keeps it lit along with its 1-hop friends).
+  const nbr={};ns.forEach(n=>{nbr[n.id]=new Set([n.id])});
+  lk.forEach(l=>{nbr[l.source].add(l.target);nbr[l.target].add(l.source)});
 
   const bottomEl=container.querySelector('.nv-bottom');
   const W=container.clientWidth,H=container.clientHeight-(bottomEl?bottomEl.offsetHeight:0);
@@ -1931,22 +2293,31 @@ async function drawGraphIn(container,corpora,existingCanvas){
   let drag=null,hov=null,mp=null;const tt=container.querySelector('.nv-tt')||document.getElementById('nv-tt');
   function getN(x,y){for(const n of ns)if(Math.hypot(n.x-x,n.y-y)<BR+6)return n;return null}
   cv.onmousedown=e=>{const r=cv.getBoundingClientRect();drag=getN(e.clientX-r.left,e.clientY-r.top);if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart()}};
-  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;mp=[x,y];if(drag){drag.fx=x;drag.fy=y;cv.style.cursor='grabbing';return}hov=getN(x,y);cv.style.cursor=hov?'pointer':'grab';if(hov&&tt){tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level} · Click to chat</div>`;tt.classList.remove('hidden');tt.style.left=(x+12)+'px';tt.style.top=(y-8)+'px'}else if(tt){tt.classList.add('hidden')}};
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;mp=[x,y];if(drag){drag.fx=x;drag.fy=y;cv.style.cursor='grabbing';return}hov=getN(x,y);cv.style.cursor=hov?'pointer':'grab';if(hov&&tt){const ext=hov._isOwn===false?' · external':'';tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level}${ext} · Click to open</div>`;tt.classList.remove('hidden');tt.style.left=(x+12)+'px';tt.style.top=(y-8)+'px'}else if(tt){tt.classList.add('hidden')}};
   cv.onmouseup=()=>{if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
   cv.onclick=()=>{if(!drag&&hov)location.hash='#/corpus/'+hov.id};
   cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
 
   function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);
-    for(const l of lk){const s=l.source,t=l.target;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${.1+l.s*.07})`;cx.lineWidth=.6+l.s*.4;cx.stroke()}
-    for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.4})`;cx.fill()}
-    for(const n of ns){const h=hov===n||drag===n;let r=BR;if(mp&&!drag){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<200?BR*(1+(1-d/200)*.5):BR*.85}if(h)r=Math.max(r,BR*1.4);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);
-      const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${h?.12:.05})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
-      if(h){cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},.5)`;cx.lineWidth=2;cx.stroke()}
-      cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);cx.fillStyle=n.color;cx.fill();cx.strokeStyle='rgba(255,255,255,.25)';cx.lineWidth=1.5;cx.stroke();
-      if(n.queries>0){const pulseR=rr+4+Math.sin(now*.003+n.queries)*(3+Math.min(n.queries,20)*.3);const pulseOp=.15+Math.sin(now*.004+n.name.length)*.1;cx.beginPath();cx.arc(n.x,n.y,pulseR,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${pulseOp})`;cx.lineWidth=2;cx.stroke()}
-      cx.fillStyle='rgba(255,255,255,.95)';cx.font=`700 ${rr*.55}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);
-      const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${h?.95:.7})`:`rgba(30,35,50,${h?.9:.6})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
-      cx.fillStyle=dk?'rgba(200,200,210,.4)':'rgba(100,110,130,.4)';cx.font='400 9px Inter,sans-serif';cx.fillText((n.queries>0?n.queries+' queries':n.document_count+' docs'),n.x,n.y+rr+26)}
+    const activeSet=hov?nbr[hov.id]:null; // hover-dim: keep hovered + neighbors at full opacity
+    for(const l of lk){const s=l.source,t=l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const touches=!activeSet||(activeSet.has(sid)&&activeSet.has(tid));const dim=activeSet&&!touches?.15:1;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${(.15+Math.min(l.s,6)*.08)*dim})`;cx.lineWidth=.8+Math.min(l.s,6)*.45;cx.stroke()}
+    for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const dim=activeSet&&!(activeSet.has(sid)&&activeSet.has(tid))?.15:1;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.4*dim})`;cx.fill()}
+    for(const n of ns){const h=hov===n||drag===n;const isCenter=n._isCenter===true;const isExternal=n._isOwn===false;const isOrphan=nbr[n.id].size<=1;const dim=activeSet&&!activeSet.has(n.id)?.25:1;let r=BR;if(mp&&!drag){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<200?BR*(1+(1-d/200)*.5):BR*.85}if(h)r=Math.max(r,BR*1.4);if(isCenter)r=Math.max(r,BR*1.15);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);
+      const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${(h?.12:.05)*dim})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+      if(h){cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.5*dim})`;cx.lineWidth=2;cx.stroke()}
+      // Fill — external nodes get reduced alpha; orphans (no edges) keep fill but get dashed ring.
+      cx.save();
+      cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);
+      const fillAlpha=(isExternal?.5:1)*dim;
+      cx.fillStyle=`rgba(${cr},${cg},${cb},${fillAlpha})`;cx.fill();
+      if(isExternal||isOrphan){cx.setLineDash([4,3]);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.85*dim})`;cx.lineWidth=1.5}
+      else{cx.strokeStyle=`rgba(255,255,255,${.25*dim})`;cx.lineWidth=1.5}
+      cx.stroke();cx.restore();
+      if(isCenter){cx.beginPath();cx.arc(n.x,n.y,rr+6,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.4*dim})`;cx.lineWidth=2;cx.stroke()}
+      if(n.queries>0){const pulseR=rr+4+Math.sin(now*.003+n.queries)*(3+Math.min(n.queries,20)*.3);const pulseOp=.15+Math.sin(now*.004+n.name.length)*.1;cx.beginPath();cx.arc(n.x,n.y,pulseR,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${pulseOp*dim})`;cx.lineWidth=2;cx.stroke()}
+      cx.fillStyle=`rgba(255,255,255,${.95*dim})`;cx.font=`700 ${rr*.55}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);
+      const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${(h?.95:.7)*dim})`:`rgba(30,35,50,${(h?.9:.6)*dim})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
+      cx.fillStyle=dk?`rgba(200,200,210,${.4*dim})`:`rgba(100,110,130,${.4*dim})`;cx.font='400 9px Inter,sans-serif';cx.fillText((n.queries>0?n.queries+' queries':n.document_count+' docs'),n.x,n.y+rr+26)}
     cx.restore();_gAnim=requestAnimationFrame(draw)}
   sim.on('tick',()=>{});_gAnim=requestAnimationFrame(draw);
 }
@@ -2131,25 +2502,32 @@ function _triggerAppMethod(connector,method,ctx){
     return;
   }
   if(method.action==='show_plugin_docs'){
-    // Inline instructions — external navigation is blocked in sandboxed
-    // preview environments, and anyway the three-step install is short
-    // enough to show directly. Copy button gives users the exact path to
-    // the build artifact.
+    // Inline instructions, tuned for normal Obsidian users (not devs).
+    // They expect to download a pre-built release — not `npm install`.
+    // The plugin-release.yml workflow publishes the three artifacts to
+    // the GitHub Releases page on every `plugin-v*` tag push.
     _showInfoModal({
       title:'Obsidian plugin — install',
-      subtitle:'One-click sync + watch mode from inside Obsidian. Build once, copy into your vault, enable in Obsidian settings.',
+      subtitle:'One-click sync from inside Obsidian. Standard Obsidian plugin install — no Node.js needed.',
       bodyHTML:`
         <ol style="padding-left:20px;font-size:13px;line-height:1.6;margin:0 0 10px">
-          <li>Build the plugin:
-            <pre style="background:var(--bg2);padding:8px 12px;border-radius:5px;font-size:12px;margin:6px 0">cd plugin && npm install && npm run build</pre>
+          <li>Open the <a href="https://github.com/steveyeow/noosphere/releases" target="_blank" rel="noopener">Noosphere Releases page</a> — download <code>manifest.json</code>, <code>main.js</code>, <code>styles.css</code> from the latest release.</li>
+          <li>Put them in your vault folder:
+            <pre style="background:var(--bg2);padding:8px 12px;border-radius:5px;font-size:12px;margin:6px 0;word-break:break-all;white-space:pre-wrap">&lt;your-vault&gt;/.obsidian/plugins/noosphere-sync/</pre>
           </li>
-          <li>Copy <code>manifest.json</code>, <code>main.js</code>, <code>styles.css</code> into
-            <code style="word-break:break-all">&lt;your-vault&gt;/.obsidian/plugins/noosphere-sync/</code>
+          <li>In Obsidian → <b>Settings → Community plugins</b>
+            <div style="font-size:11.5px;color:var(--tx3);margin-top:3px">First time? Click <i>"Turn on community plugins"</i> first — Obsidian's default safety gate.</div>
+            → find <b>Noosphere</b> in Installed plugins → enable its toggle.
           </li>
-          <li>In Obsidian → Settings → Community plugins → enable <b>Noosphere</b></li>
-          <li>Open the Noosphere settings tab → fill Server URL + click <b>Create new</b> next to Corpus ID → click Sync ribbon icon</li>
+          <li>A <b>Noosphere</b> tab appears in the left sidebar of Settings. Open it →
+            <ul style="margin:4px 0 0 4px">
+              <li>Fill <b>Server URL</b>: <code>http://localhost:8420</code> (self-hosted) or <code>https://app.noosphere.wiki</code> (cloud)</li>
+              <li>Click <b>Create new</b> next to the Corpus ID field</li>
+              <li>Click the Sync ribbon icon (top-left of Obsidian)</li>
+            </ul>
+          </li>
         </ol>
-        <p style="font-size:12px;color:var(--tx3);margin:0">Full docs: <code>plugin/README.md</code> in the repo.</p>
+        <p style="font-size:12px;color:var(--tx3);margin:0">Dev build from source: see <code>plugin/README.md</code>.</p>
       `,
     });
     return;
@@ -2686,7 +3064,6 @@ async function renderCorpus(id,sessionId){
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
   let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
   let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);if(r.ok)an=await r.json()}catch(e){}
-  let cap=null;try{const r=await fetch(`${API}/corpora/${id}/describe`);if(r.ok)cap=await r.json()}catch(e){}
   ct.classList.add('content--corpus');
   const al=c.access_level||'public';const tg=Array.isArray(c.tags)?c.tags:[];
   const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
@@ -2728,7 +3105,7 @@ async function renderCorpus(id,sessionId){
   // via hash: #/corpus/{id} = Overview, #/corpus/{id}/insights = Insights.
   // Keeping the URL shape stable now so future Agent-activity data lands
   // without a migration.
-  const tabStripHTML=`<div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab cv-tab--active">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a></div>`;
+  const tabStripHTML=`<div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab cv-tab--active">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a><a href="#/corpus/${id}/settings" class="cv-tab">Settings</a></div>`;
   // Wiki sub-label counts EVERY item rendered in the section (manifest +
   // concept notes). Earlier version counted concepts only — users saw 2
   // rows with "1" in the header and reasonably asked "why 1?". Match the
@@ -2903,7 +3280,7 @@ async function renderCorpusInsights(id){
   const winBar=winOpts.map(([v,l])=>`<a href="#/corpus/${id}/insights?w=${v}" class="cv-ins-win${v===win?' cv-ins-win--active':''}">${l}</a>`).join('');
 
   ct.innerHTML=`<div class="cv-layout cv-layout--full"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div>${c.description?`<p class="cv-desc">${esc(c.description)}</p>`:''}${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>
-    <div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab cv-tab--active">Insights</a></div>
+    <div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab cv-tab--active">Insights</a><a href="#/corpus/${id}/settings" class="cv-tab">Settings</a></div>
     <div class="cv-ins-wrap">
       <div class="cv-ins-head"><div class="cv-ins-title">Agent activity</div><div class="cv-ins-winbar">${winBar}</div></div>
       <div id="cv-ins-body" class="cv-ins-body"><div class="cv-ins-loading">Loading…</div></div>
@@ -2964,6 +3341,72 @@ async function renderCorpusInsights(id){
     : '';
 
   document.getElementById('cv-ins-body').innerHTML=`${empty}<div class="cv-ins-cards">${kpiHTML}</div>${funnelHTML}${citingSection}`;
+}
+
+/* ══════ SETTINGS TAB — Connect endpoints + Maintenance ══════ */
+// Pulled out of the right sidebar so the sidebar can stay focused on live
+// status (mini-graph, access, autonomy, trust, content). Connect is set-once
+// config (copy the endpoint, wire up an agent, forget); Maintenance is
+// infrequent / destructive. Full-width layout — no right panel.
+async function renderCorpusSettings(id){
+  stopAll();hideRP();
+  const ct=document.getElementById('content');ct.classList.remove('content--corpus');
+  let c=null;try{const r=await fetch(`${API}/corpora/${id}`);if(r.ok)c=await r.json()}catch(e){}
+  if(!c){ct.innerHTML='<div class="empty" style="padding:48px;text-align:center">Corpus not found</div>';return}
+  const al=c.access_level||'public';
+  const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
+  const tg=Array.isArray(c.tags)?c.tags:[];
+  const host=location.origin;
+  const endpoints=[
+    {l:'MCP',u:`${host}/mcp`,d:'Primary agent endpoint — MCP-aware agents connect here.'},
+    {l:'describe',u:`${host}/api/v1/corpora/${c.id}/describe`,d:'Capability card — what this KB is good at.'},
+    {l:'ask',u:`${host}/api/v1/corpora/${c.id}/ask`,d:'Full query — returns a cited answer.'},
+    {l:'preview_ask',u:`${host}/api/v1/corpora/${c.id}/preview_ask`,d:'Cheap dry-run — tests fit before a paid ask.'},
+    {l:'search',u:`${host}/api/v1/corpora/${c.id}/search`,d:'Raw chunk search — lower-level than ask.'},
+  ];
+  // Unified row pattern (Obsidian-style settings list): name + description on
+  // the left, primary control on the right. Connect rows put the URL + Copy
+  // on the right; Maintenance rows put a single action button on the right.
+  const epRows=endpoints.map(e=>`<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm cv-set-row-nm--mono">${esc(e.l)}</span><span class="cv-set-row-dc" title="${esc(e.d)}">${esc(e.d)}</span></div><div class="cv-set-row-ctl"><code class="cv-set-row-url" title="${esc(e.u)}">${esc(e.u)}</code><button class="btn-sm" onclick="cp('${e.u}',this)">Copy</button></div></div>`).join('');
+  ct.innerHTML=`<div class="cv-layout cv-layout--full"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div>${c.description?`<p class="cv-desc">${esc(c.description)}</p>`:''}${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>
+    <div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a><a href="#/corpus/${id}/settings" class="cv-tab cv-tab--active">Settings</a></div>
+    <div class="cv-set-wrap">
+      <section class="cv-set-sec">
+        <div class="cv-set-hd"><h2 class="cv-set-h2">Connect</h2><p class="cv-set-sub">Endpoints agents use to discover and query this KB.</p></div>
+        <div class="cv-set-list">${epRows}</div>
+      </section>
+      <section class="cv-set-sec">
+        <div class="cv-set-hd"><h2 class="cv-set-h2">Maintenance</h2><p class="cv-set-sub">Infrequent operations on this corpus.</p></div>
+        <div class="cv-set-list">
+          <div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Re-embed</span><span class="cv-set-row-dc" title="Rebuild all embeddings. Use this if a recent upload didn\u2019t become searchable.">Rebuild all embeddings. Use this if a recent upload didn\u2019t become searchable.</span></div><div class="cv-set-row-ctl"><button class="btn-sm" id="cv-set-reindex">Re-embed</button></div></div>
+          <div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Export</span><span class="cv-set-row-dc" title="Download a JSON archive of this corpus (documents + metadata).">Download a JSON archive of this corpus (documents + metadata).</span></div><div class="cv-set-row-ctl"><button class="btn-sm" id="cv-set-export">Export</button></div></div>
+          <div class="cv-set-row cv-set-row--danger"><div class="cv-set-row-info"><span class="cv-set-row-nm">Delete corpus</span><span class="cv-set-row-dc" title="Permanently delete this corpus and all its documents. Cannot be undone.">Permanently delete this corpus and all its documents. Cannot be undone.</span></div><div class="cv-set-row-ctl"><button class="btn-sm cv-set-btn-danger" id="cv-set-delete">Delete</button></div></div>
+        </div>
+      </section>
+    </div>
+    <div class="cv-scroll-end"></div></div></div>`;
+
+  document.getElementById('cv-set-reindex').onclick=async(e)=>{
+    e.preventDefault();
+    const btn=e.currentTarget;const orig=btn.textContent;
+    btn.textContent='Embedding\u2026';btn.disabled=true;
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/index`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})});
+      if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'Failed')}
+      const d=await r.json();
+      toast(`Re-embedded ${d.embedded||0} chunks`,'success');
+      btn.textContent=orig;btn.disabled=false;
+    }catch(err){toast('Re-embed failed: '+err.message,'error');btn.textContent=orig;btn.disabled=false}
+  };
+  document.getElementById('cv-set-export').onclick=(e)=>{
+    e.preventDefault();window.open(`${API}/corpora/${c.id}/export`,'_blank');
+  };
+  document.getElementById('cv-set-delete').onclick=async(e)=>{
+    e.preventDefault();
+    if(!confirm(`Delete "${c.name}" and all its documents? This cannot be undone.`))return;
+    try{await fetch(`${API}/corpora/${c.id}`,{method:'DELETE'});await loadC();location.hash='#/corpora'}
+    catch(err){toast('Delete failed: '+err.message,'error')}
+  };
 }
 
 // ── Manifest identity card (agent-facing capability card) ──────────────
@@ -3330,6 +3773,159 @@ function showAccessConfirmModal(newLevel, summary){
   });
 }
 
+/* ══════ MINI NETWORK (right-sidebar widget) ══════
+   Static snapshot of this corpus + 1-hop tag neighbors. Rendered once
+   after d3 force settles — no animation loop. "Own" corpora (same owner)
+   render solid; external neighbors render dashed + dimmer. Orphan state:
+   lone center node with an inline hint. Click anywhere → showLocalGraphModal. */
+let _miniNetworkCache=null;
+async function _fetchCorpusNetwork(){
+  if(_miniNetworkCache)return _miniNetworkCache;
+  try{
+    const r=await fetch(`${API}/corpora/network`);
+    if(r.ok){_miniNetworkCache=await r.json();return _miniNetworkCache}
+  }catch(e){}
+  return {nodes:[],links:[]};
+}
+function _invalidateNetworkCache(){_miniNetworkCache=null}
+function _ownIdSet(){return new Set((_corpora||[]).map(x=>x.id))}
+async function drawMiniNetwork(c){
+  const cv=document.getElementById('rp-mini-cv');
+  const emptyEl=document.getElementById('rp-mini-empty');
+  if(!cv)return;
+  cv._nodes=[]; // hit-test target for click/hover
+  const net=await _fetchCorpusNetwork();
+  const byId=new Map(net.nodes.map(n=>[n.id,n]));
+  const center=byId.get(c.id);
+  // Tag-aware empty-state copy. Users confused by "add tags" — make it
+  // explicit that tags are the mechanism and self-referential ("this corpus").
+  const hasTags=Array.isArray(c.tags)?c.tags.length>0:false;
+  const emptyCopy=hasTags
+    ? 'No other corpora share these tags yet.'
+    : 'Tag this corpus to find similar ones in the network.';
+  if(emptyEl)emptyEl.textContent=emptyCopy;
+  if(!center){if(emptyEl)emptyEl.classList.remove('hidden');return}
+  const neighIds=new Set();
+  for(const l of (net.links||[])){
+    const s=typeof l.source==='object'?l.source.id:l.source;
+    const t=typeof l.target==='object'?l.target.id:l.target;
+    if(s===c.id)neighIds.add(t);else if(t===c.id)neighIds.add(s);
+  }
+  if(neighIds.size===0){
+    const W=cv.parentElement.clientWidth,H=cv.parentElement.clientHeight;
+    const dp=devicePixelRatio||1;cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';
+    const cx=cv.getContext('2d');cx.scale(dp,dp);
+    const[cr,cg,cb]=hR(_aclNodeColor(center.access_level));
+    cx.beginPath();cx.arc(W/2,H/2,14,0,Math.PI*2);cx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;cx.fill();
+    cx.strokeStyle='rgba(255,255,255,.3)';cx.lineWidth=1.5;cx.stroke();
+    cx.fillStyle='rgba(255,255,255,.95)';cx.font='700 10px Inter,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
+    cx.fillText((center.initials||center.name[0]||'?').slice(0,2),W/2,H/2);
+    cv._nodes=[{x:W/2,y:H/2,r:14,id:c.id,name:center.name,isCenter:true}];
+    if(emptyEl)emptyEl.classList.remove('hidden');
+    return;
+  }
+  if(emptyEl)emptyEl.classList.add('hidden');
+  const ownIds=_ownIdSet();
+  const nodes=[center,...[...neighIds].map(id=>byId.get(id)).filter(Boolean)].map(n=>({...n,isCenter:n.id===c.id,isOwn:ownIds.has(n.id)}));
+  const links=(net.links||[]).filter(l=>{
+    const s=typeof l.source==='object'?l.source.id:l.source;
+    const t=typeof l.target==='object'?l.target.id:l.target;
+    return (s===c.id&&neighIds.has(t))||(t===c.id&&neighIds.has(s));
+  }).map(l=>({source:typeof l.source==='object'?l.source.id:l.source,target:typeof l.target==='object'?l.target.id:l.target,s:l.strength||1}));
+  const W=cv.parentElement.clientWidth,H=cv.parentElement.clientHeight;
+  const dp=devicePixelRatio||1;cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';
+  const cx=cv.getContext('2d');cx.scale(dp,dp);
+  const centerNode=nodes.find(n=>n.isCenter);if(centerNode){centerNode.fx=W/2;centerNode.fy=H/2}
+  const sim=d3.forceSimulation(nodes).force('link',d3.forceLink(links).id(d=>d.id).distance(46).strength(.5)).force('charge',d3.forceManyBody().strength(-120)).force('center',d3.forceCenter(W/2,H/2).strength(.05)).force('collide',d3.forceCollide().radius(14)).stop();
+  for(let i=0;i<120;i++)sim.tick();
+  for(const n of nodes){n.x=Math.max(12,Math.min(W-12,n.x));n.y=Math.max(12,Math.min(H-12,n.y))}
+  for(const l of links){
+    const s=nodes.find(n=>n.id===(typeof l.source==='object'?l.source.id:l.source));
+    const t=nodes.find(n=>n.id===(typeof l.target==='object'?l.target.id:l.target));
+    if(!s||!t)continue;
+    cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);
+    cx.strokeStyle=`rgba(140,155,180,${.18+Math.min(l.s,5)*.08})`;cx.lineWidth=.8+Math.min(l.s,5)*.3;cx.stroke();
+  }
+  for(const n of nodes){
+    const r=n.isCenter?11:7;
+    n.r=r;
+    const[cr,cg,cb]=hR(_aclNodeColor(n.access_level));
+    if(!n.isOwn){
+      cx.save();cx.setLineDash([3,2]);
+      cx.beginPath();cx.arc(n.x,n.y,r,0,Math.PI*2);
+      cx.fillStyle=`rgba(${cr},${cg},${cb},.35)`;cx.fill();
+      cx.strokeStyle=`rgba(${cr},${cg},${cb},.8)`;cx.lineWidth=1.2;cx.stroke();
+      cx.restore();
+    }else{
+      cx.beginPath();cx.arc(n.x,n.y,r,0,Math.PI*2);
+      cx.fillStyle=`rgba(${cr},${cg},${cb},${n.isCenter?1:.85})`;cx.fill();
+      cx.strokeStyle=n.isCenter?'rgba(255,255,255,.5)':'rgba(255,255,255,.25)';
+      cx.lineWidth=n.isCenter?2:1;cx.stroke();
+    }
+    if(n.isCenter){
+      cx.fillStyle='rgba(255,255,255,.95)';cx.font='700 9px Inter,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
+      cx.fillText((n.initials||n.name[0]||'?').slice(0,2),n.x,n.y);
+    }
+  }
+  cv._nodes=nodes.map(n=>({x:n.x,y:n.y,r:n.r,id:n.id,name:n.name,isCenter:n.isCenter,isOwn:n.isOwn}));
+}
+
+/* ══════ LOCAL GRAPH MODAL (expand-from-sidebar) ══════
+   Full-screen overlay with an interactive graph centered on the current
+   corpus + its 1-hop tag neighbors. Reuses drawGraphIn for consistency
+   with the global Explore view. Close via × or Esc. */
+async function showLocalGraphModal(c){
+  const existing=document.getElementById('lgm-overlay');if(existing)existing.remove();
+  const net=await _fetchCorpusNetwork();
+  const byId=new Map(net.nodes.map(n=>[n.id,n]));
+  const center=byId.get(c.id);
+  const neighIds=new Set();
+  if(center){
+    for(const l of (net.links||[])){
+      const s=typeof l.source==='object'?l.source.id:l.source;
+      const t=typeof l.target==='object'?l.target.id:l.target;
+      if(s===c.id)neighIds.add(t);else if(t===c.id)neighIds.add(s);
+    }
+  }
+  const hood=center?[center,...[...neighIds].map(id=>byId.get(id)).filter(Boolean)]:[];
+  const wrap=document.createElement('div');wrap.id='lgm-overlay';wrap.className='lgm-overlay';
+  const count=hood.length;
+  // Tag-aware subtitle — same logic as the sidebar mini-graph. Avoids the
+  // ambiguous "add tags" phrasing when the user has tags already but none
+  // overlap with other corpora's tags.
+  const hasTags=Array.isArray(c.tags)?c.tags.length>0:false;
+  const subtitle=count>1
+    ? (count-1)+(count===2?' neighbor':' neighbors')
+    : (hasTags?'No other corpora share these tags yet.':'Tag this corpus to find similar ones in the network.');
+  wrap.innerHTML=`<div class="lgm-panel"><div class="lgm-hd"><div class="lgm-ti"><span class="lgm-t1">${esc(c.name)}</span><span class="lgm-t2">${subtitle}</span></div><button class="lgm-cc" id="lgm-cc" title="Close">×</button></div><div class="nv-wrap lgm-canvas-wrap"><canvas id="lgm-cv" class="nv-canvas"></canvas><div class="nv-tt hidden" id="nv-tt"></div></div><div class="lgm-ft"><span class="lgm-ft-lbl">Solid = yours · dashed = external · line weight = shared tags</span></div></div>`;
+  document.body.appendChild(wrap);
+  // Close via ×, Esc, backdrop click, OR route change. The route-change
+  // close matters because drawGraphIn's node click handler navigates via
+  // location.hash — without this listener the modal would stay on top of
+  // the newly-loaded corpus page.
+  const close=()=>{if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}wrap.remove();document.removeEventListener('keydown',escH);window.removeEventListener('hashchange',close)};
+  const escH=e=>{if(e.key==='Escape')close()};
+  document.addEventListener('keydown',escH);
+  window.addEventListener('hashchange',close);
+  wrap.querySelector('#lgm-cc').onclick=close;
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+  // Even the orphan case (just the center) gets a visible node — an empty
+  // canvas with only a "no neighbors" subtitle made the modal feel broken.
+  // drawGraphIn handles single-corpus input: no edges, just one bubble.
+  if(hood.length>=1){
+    const ownIds=_ownIdSet();
+    const corporaShape=hood.map(n=>({
+      id:n.id,name:n.name,slug:n.slug||'',description:n.description||'',
+      tags:n.tags||[],document_count:n.document_count||0,
+      access_level:n.access_level||'public',author_name:n.author||'',
+      _isOwn:ownIds.has(n.id),_isCenter:n.id===c.id,
+    }));
+    const cv=wrap.querySelector('#lgm-cv');
+    const container=wrap.querySelector('.lgm-canvas-wrap');
+    setTimeout(()=>drawGraphIn(container,corporaShape,cv),0);
+  }
+}
+
 async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classList.remove('hidden');const host=location.origin;const al=c.access_level||'public';
   // Pull capability describe once — Autonomy stage, Reputation, Content mix
   // all live here (creator-facing controls + derived metrics). If /describe
@@ -3390,46 +3986,53 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   // So there's no "cloud-only" vs "self-hosted" distinction here — only
   // whether this node is participating in the shared discovery network.
   //   Private                              → "Private — not registered"
-  //   Registered & reachable               → "Registered · discoverable"
-  //   Configured but registry unreachable  → "Registering… (retrying)"
-  //   Explicit opt-out (=none)             → "Standalone — not registered"
+  //   Registration succeeded                → "Registered · discoverable"
+  //   Registry reachable but POST rejected  → "Registry unreachable" (with reason)
+  //   Registry unreachable                  → "Registering… (retrying)"
+  //   Explicit opt-out (=none)              → "Standalone — not registered"
+  //
+  // registry_registration_ok is the authoritative signal — set by
+  // register_with_registry() based on the real HTTP 200/201 from the
+  // registry. registry_connected is a weaker probe (HEAD to root) that
+  // can succeed while the POST is blocked by auth / middleware.
   let regStatus='',regHint='';
   if(al==='private'){
     regStatus='Private — not registered';
     regHint='Private corpora never publish to the discovery registry.';
   }else{
-    let registryConnected=false,registryConfigured=false;
-    try{const hr=await fetch(`${API}/health`);const h=await hr.json();registryConnected=!!h.registry_connected;registryConfigured=!!h.registry_configured}catch(e){}
-    if(registryConnected){
+    let registrationOk=false,registryConnected=false,registryConfigured=false;
+    try{const hr=await fetch(`${API}/health`);const h=await hr.json();registrationOk=!!h.registry_registration_ok;registryConnected=!!h.registry_connected;registryConfigured=!!h.registry_configured}catch(e){}
+    if(registrationOk){
       regStatus='Registered · discoverable';
       regHint='This KB is listed in the shared Noosphere registry — any agent on the network can discover and query it.';
     }else if(!registryConfigured){
       regStatus='Standalone — not registered';
       regHint='This node has opted out of the shared Noosphere registry (NOOSPHERE_REGISTRY=none). Agents with the direct endpoint URL can still query this KB, but it won\u2019t show up in network-wide discovery.';
+    }else if(registryConnected){
+      // Registry is up, but we haven't successfully registered. Most
+      // common cause is an auth/middleware 401 on POST — the earlier
+      // check missed it because HEAD is allowed anonymously.
+      regStatus='Registry reachable, registration pending';
+      regHint='The Noosphere registry is up, but this node hasn\u2019t successfully registered yet. Registration runs on serve startup and after corpus changes; check the server logs for errors (auth, rate limits, or payload issues).';
     }else{
       regStatus='Registering… (retrying)';
-      regHint='The Noosphere registry is configured but not currently reachable. This KB will register automatically when the connection comes back. Agents with the direct endpoint URL can still query now.';
+      regHint='The Noosphere registry isn\u2019t reachable right now. This KB will register automatically once the connection comes back. Agents with the direct endpoint URL can still query now.';
     }
   }
 
-  // Right-rail — slimmed. Six sections instead of seven; Stats gone (docs
-  // count folded into Content mix; chunks/words/queries were internal or
-  // duplicated); Trust collapsed to one row (KBR · calibration). Handles
-  // moved out (now a per-URL "This is mine" checkbox on ingest).
-  //
-  //   Connect  — agent-facing endpoints (MCP + more via expand)
-  //   Access   — who can query + licensing + discovery status + conditional
-  //              tokens/pricing/revenue blocks
-  //   Autonomy — single current stage badge + preview of other stages
+  // Right-rail — status & identity only. Config (Connect endpoints) and
+  // destructive ops (Maintenance) live in the Settings tab. Keeping here:
+  //   Network  — mini-graph of this corpus + 1-hop tag neighbors (click to expand)
+  //   Access   — who can query + licensing + discovery + tokens/pricing/revenue
+  //   Autonomy — capability stages + subscriptions
   //   Trust    — KBR + calibration suffix
   //   Content  — doc count + source mix + entities
-  //   Maintenance — owner-only ops (tiny strip at bottom)
-  rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl">Connect</div><div class="rp-ep rp-ep-primary"><span class="rp-epl">MCP</span><span class="rp-epu">${host}/mcp</span><button class="rp-cp" onclick="cp('${host}/mcp',this)">Copy</button></div><details class="rp-ep-more"><summary>All agent endpoints</summary><div class="rp-ep"><span class="rp-epl">describe</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/describe</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/describe',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">ask</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/ask</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/ask',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">preview_ask</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/preview_ask</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/preview_ask',this)">Copy</button></div><div class="rp-ep"><span class="rp-epl">search</span><span class="rp-epu">${host}/api/v1/corpora/${c.id}/search</span><button class="rp-cp" onclick="cp('${host}/api/v1/corpora/${c.id}/search',this)">Copy</button></div></details></div>
+  rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl"><span>Network</span><a href="#" class="rp-mini-expand" id="rp-mini-expand" title="Expand">Expand</a></div><div class="rp-mini-wrap" id="rp-mini-wrap"><canvas class="rp-mini-cv" id="rp-mini-cv"></canvas><div class="rp-mini-empty hidden" id="rp-mini-empty">Add tags to connect with the network.</div></div></div>
     <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="What this KB can do on its own.">Autonomy</div><div class="rp-stages">${autonomyHTML}</div><div class="rp-sub rp-sub--block"><div class="rp-sub-hd"><span class="rp-sub-lbl">Subscriptions <span class="rp-sub-cnt" id="rp-subs-count">(0)</span></span><button class="btn-xs" id="rp-subs-add" title="Subscribe to a peer KB">+ Add</button></div><div class="rp-subs-list" id="rp-subs-list"><span class="rp-sub-empty">Loading…</span></div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Entities</span><div class="rp-entities-row" id="rp-entities-row"><span class="rp-sub-empty">Loading…</span></div></div></div>
-    <div class="rp-sec rp-sec-maint"><div class="rp-lbl">Maintenance</div><div class="rp-maint-row"><a href="#" class="rp-subtle-link" id="rp-reindex" title="Re-embed all documents — use this if a recent upload didn't become searchable">Re-embed</a><a href="#" class="rp-subtle-link" id="rp-export">Export</a><a href="#" class="rp-subtle-link rp-danger" id="rp-delete">Delete corpus</a></div></div>`;
+    <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Entities</span><div class="rp-entities-row" id="rp-entities-row"><span class="rp-sub-empty">Loading…</span></div></div></div>`;
+  drawMiniNetwork(c);
 
   document.getElementById('rp-acc').onchange=()=>{
     const v=document.getElementById('rp-acc').value;
@@ -3576,34 +4179,35 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     }catch(e){row.innerHTML='<span style="font-size:12px;color:var(--tx3)">Failed to load</span>'}
   })();
 
-  /* Maintenance row */
-  document.getElementById('rp-reindex').onclick=async(e)=>{
-    e.preventDefault();
-    // User-initiated recovery path — run now (no debounce), force=true so we
-    // re-embed everything regardless of content_hash (useful when embeddings
-    // got corrupted or an earlier index run failed mid-flight).
-    const btn=document.getElementById('rp-reindex');const orig=btn.textContent;
-    btn.textContent='Embedding…';btn.style.pointerEvents='none';
-    try{
-      const r=await fetch(`${API}/corpora/${c.id}/index`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})});
-      if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||'Failed')}
-      const d=await r.json();
-      toast(`Re-embedded ${d.embedded||0} chunks`,'success');
-      renderCorpus(c.id);
-    }catch(err){
-      toast('Re-embed failed: '+err.message,'error');
-      btn.textContent=orig;btn.style.pointerEvents='';
-    }
+  /* Mini-graph interactions:
+     - Expand link → always open the local-graph modal
+     - Wrap hover → pointer cursor over a neighbor node; default cursor otherwise
+     - Wrap click → hit-test: neighbor node → navigate; center or miss → modal */
+  const miniExpand=document.getElementById('rp-mini-expand');
+  const miniWrap=document.getElementById('rp-mini-wrap');
+  const miniCv=document.getElementById('rp-mini-cv');
+  const hitTest=(ev)=>{
+    const nodes=miniCv&&miniCv._nodes?miniCv._nodes:[];
+    if(!nodes.length)return null;
+    const r=miniCv.getBoundingClientRect();
+    const x=ev.clientX-r.left,y=ev.clientY-r.top;
+    let best=null,bestD=Infinity;
+    for(const n of nodes){const d=Math.hypot(n.x-x,n.y-y);const hit=d<(n.r||8)+4;if(hit&&d<bestD){best=n;bestD=d}}
+    return best;
   };
-  document.getElementById('rp-export').onclick=(e)=>{
-    e.preventDefault();window.open(`${API}/corpora/${c.id}/export`,'_blank');
-  };
-  document.getElementById('rp-delete').onclick=async(e)=>{
-    e.preventDefault();
-    if(!confirm(`Delete "${c.name}" and all its documents? This cannot be undone.`))return;
-    try{await fetch(`${API}/corpora/${c.id}`,{method:'DELETE'});await loadC();location.hash='#/corpora'}
-    catch(err){toast('Delete failed: '+err.message,'error')}
-  };
+  if(miniExpand)miniExpand.onclick=(e)=>{e.preventDefault();e.stopPropagation();showLocalGraphModal(c)};
+  if(miniWrap){
+    miniWrap.onclick=(e)=>{
+      const hit=hitTest(e);
+      if(hit&&!hit.isCenter){location.hash='#/corpus/'+hit.id;return}
+      showLocalGraphModal(c);
+    };
+    miniWrap.onmousemove=(e)=>{
+      const hit=hitTest(e);
+      if(hit&&!hit.isCenter){miniWrap.style.cursor='pointer';miniWrap.title=hit.name+' — click to open'}
+      else{miniWrap.style.cursor='zoom-in';miniWrap.title='Click to expand'}
+    };
+  }
 
   /* Token management */
   async function loadTokens(){

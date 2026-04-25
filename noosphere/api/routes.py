@@ -342,13 +342,24 @@ async def api_health():
     if registry_configured:
         try:
             import httpx
-            resp = httpx.head(registry_url.rstrip("/"), timeout=2, follow_redirects=True)
+            # Timeout was 2s originally — too tight for cross-region SSL
+            # handshake (Railway hosts in SE-Asia; EU/US clients routinely
+            # exceed 2s on TLS 1.3). 10s is comfortable for cold SSL pool
+            # starts — empirically direct httpx.head takes ~5s on first
+            # call, <1s after cert chain is cached. A worse false-negative
+            # than a slow /health was getting "Registering… (retrying)"
+            # shown forever.
+            resp = httpx.head(registry_url.rstrip("/"), timeout=10, follow_redirects=True)
             # Registry itself answering is enough — don't gate on a 200 since
-            # the root path may redirect or respond 404 while /api/v1/register
-            # still works.
+            # the root path may redirect or respond 405 (HEAD not allowed)
+            # while /api/v1/register still works.
             registry_connected = resp.status_code < 500
         except Exception:
             registry_connected = False
+    # Actual registration success — more reliable than the HEAD probe,
+    # which can succeed while auth or other middleware blocks the real
+    # POST. Set in register_with_registry() on success.
+    from noosphere.core.registry import last_registration_ok
     return {
         "status": "ok",
         "version": __version__,
@@ -358,6 +369,7 @@ async def api_health():
         "registry_url": registry_url,
         "registry_configured": registry_configured,
         "registry_connected": registry_connected,
+        "registry_registration_ok": last_registration_ok(),
     }
 
 

@@ -25,6 +25,13 @@ log = logging.getLogger(__name__)
 # then quietly no-ops.
 _NODE_ENDPOINT: str | None = None
 
+# Remember whether the last `register_with_registry()` call actually
+# succeeded (HTTP 200/201 from the registry). The /health endpoint reports
+# this so the UI can show a trustworthy status: a HEAD probe succeeding
+# doesn't prove registration works (auth, rate limits, or middleware can
+# still reject the POST), so a dedicated signal is more reliable.
+_LAST_REGISTRATION_OK: bool = False
+
 
 def set_node_endpoint(endpoint: str) -> None:
     """Remember the node's public endpoint URL so runtime corpus mutations
@@ -32,6 +39,13 @@ def set_node_endpoint(endpoint: str) -> None:
     site. Called once from the `serve` command."""
     global _NODE_ENDPOINT
     _NODE_ENDPOINT = endpoint.rstrip("/")
+
+
+def last_registration_ok() -> bool:
+    """Whether the most recent register_with_registry() call succeeded.
+    Safer than a HEAD probe for UI status — probe can succeed while the
+    actual POST is blocked by auth or other middleware."""
+    return _LAST_REGISTRATION_OK
 
 
 def resync_registry() -> bool:
@@ -103,6 +117,7 @@ def register_with_registry(
         ],
     }
 
+    global _LAST_REGISTRATION_OK
     try:
         resp = httpx.post(
             f"{registry.rstrip('/')}/api/v1/register",
@@ -111,15 +126,19 @@ def register_with_registry(
         )
         if resp.status_code in (200, 201):
             log.info(f"Registered {len(public_corpora)} corpora with {registry}")
+            _LAST_REGISTRATION_OK = True
             return True
         else:
             log.warning(f"Registry returned {resp.status_code}: {resp.text[:200]}")
+            _LAST_REGISTRATION_OK = False
             return False
     except httpx.ConnectError:
         log.warning(f"Could not connect to registry at {registry} (will retry on next serve)")
+        _LAST_REGISTRATION_OK = False
         return False
     except Exception as e:
         log.warning(f"Registry registration failed: {e}")
+        _LAST_REGISTRATION_OK = False
         return False
 
 

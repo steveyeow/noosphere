@@ -7,9 +7,18 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
 body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
 .hidden{display:none!important}.page{width:100%;height:100vh;overflow:hidden}
+/* Landing page extends past the hero into multiple sections, so the
+   generic .page overflow:hidden + height:100vh would clip everything
+   below the fold. Scope the scrollable layout to #page-landing only —
+   #page-main keeps its fixed-viewport behavior. */
+#page-landing.page{height:auto;min-height:100vh;max-height:none;overflow-y:auto;overflow-x:hidden}
 
 /* ── Landing ── */
-.lp{width:100%;height:100%;position:relative;background:var(--lpBg)}
+.lp{width:100%;min-height:100vh;position:relative;background:var(--lpBg)}
+/* Hero is the first viewport. Sections below it are standard document
+   flow with their own padding. The node-network canvas is scoped to
+   .lp-hero (not .lp) so it doesn't tile across scrolled sections. */
+.lp-hero{position:relative;min-height:100vh;overflow:hidden}
 .lp-top{position:absolute;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--gl);backdrop-filter:blur(20px);border-bottom:1px solid var(--brd)}
 .lp-brand{display:flex;align-items:center;gap:8px;font-family:'Libre Baskerville',Georgia,serif;font-weight:400;font-size:15px;color:var(--tx)}
 .lp-top-right{display:flex;align-items:center;gap:12px}
@@ -17,8 +26,14 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lp-dark-btn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;border:1px solid var(--brd);background:var(--bg2);color:var(--tx3);cursor:pointer;transition:color .15s,border-color .15s}.lp-dark-btn:hover{color:var(--tx);border-color:var(--tx3)}
 .lp-cta{padding:6px 16px;border-radius:20px;border:none;background:var(--btnBg);color:var(--btnC);font-size:13px;font-weight:500;cursor:pointer;transition:opacity .15s}.lp-cta:hover{opacity:.8}
 .lp-cv{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
-.lp-ct{position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;width:100%;padding:80px clamp(32px,5vw,80px) 40px;height:100%}
-.lp-h{flex:0 1 400px;min-width:280px}.lp-h1{font-family:'Libre Baskerville',Georgia,serif;font-size:36px;line-height:1.25;font-weight:700;margin-bottom:16px}.lp-sub{font-size:15px;line-height:1.6;color:var(--tx2);margin-bottom:24px}
+.lp-ct{position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;width:100%;padding:80px clamp(32px,5vw,80px) 40px;min-height:100vh;gap:48px}
+.lp-explore{display:inline-block;margin-left:12px;color:var(--tx);text-decoration:none;font-size:15px;opacity:.85}
+.lp-h{flex:0 1 420px;min-width:280px;position:relative;z-index:2}
+/* Radial-gradient backdrop behind hero text so it stays legible on top of
+   the densely-woven background network. Same trick Feynman uses. */
+.lp-h::before{content:'';position:absolute;inset:-60px -80px -40px -60px;z-index:-1;background:radial-gradient(ellipse at 40% 50%,var(--lpBg) 0%,var(--lpBg) 55%,transparent 95%);pointer-events:none;opacity:.96}
+.lp-h1{font-family:'Libre Baskerville',Georgia,serif;font-size:36px;line-height:1.25;font-weight:700;margin-bottom:16px}
+.lp-sub{font-size:15px;line-height:1.6;color:var(--tx2);margin-bottom:24px}
 .lp-go{display:inline-flex;align-items:center;gap:6px;padding:10px 24px;border-radius:24px;border:none;background:var(--btnBg);color:var(--btnC);font-size:15px;font-weight:500;cursor:pointer;transition:opacity .15s}.lp-go:hover{opacity:.8}
 .lp-term{flex:0 1 540px;min-width:340px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;box-shadow:var(--shL);overflow:hidden}
 .lp-term-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--brd)}
@@ -36,7 +51,71 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lpt-quote{font-size:12px;line-height:1.5;color:var(--tx);margin-top:4px}
 .lpt-cite{font-size:10px;color:var(--tx3);margin-top:4px}
 
-.lp-mission{position:absolute;bottom:20px;left:28px;z-index:10;font-family:'Libre Baskerville',Georgia,serif;font-size:12px;font-style:italic;color:var(--tx3);opacity:.6;letter-spacing:.01em}
+/* Footer — single-row, full-width. Brand + copyright pinned left,
+   social icons pinned right. No cramped centered column. */
+.lp-footer{border-top:1px solid var(--brd);padding:18px clamp(24px,5vw,48px);background:var(--lpBg);position:relative;z-index:1}
+.lp-footer-row{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.lp-footer-brand{display:inline-flex;align-items:center;gap:8px;font-family:'Libre Baskerville',Georgia,serif;font-size:13px;color:var(--tx2);font-weight:400}
+.lp-footer-brand svg{opacity:.85}
+.lp-footer-copy{color:var(--tx3);font-family:Inter,-apple-system,sans-serif;font-size:12px}
+.lp-footer-social{display:inline-flex;align-items:center;gap:14px}
+.lp-footer-ico{display:inline-flex;align-items:center;justify-content:center;color:var(--tx3);transition:color .15s;text-decoration:none}
+.lp-footer-ico:hover{color:var(--tx)}
+
+/* ── Landing sections (S2–S5) ──
+   Typography-forward design — most sections use clean row lists rather
+   than boxed cards. Previous heavy card chrome (borders, icons, padded
+   panels) competed with the hero's network visual and made the page feel
+   cluttered. Now the hero stays the dominant visual, and each section
+   below reads like a well-set magazine article: bold headline, lead
+   paragraph, then a terse list of terms + explanations. */
+.lp-sec{padding:96px clamp(32px,5vw,80px) 32px;position:relative;z-index:1;background:var(--lpBg)}
+.lp-sec:last-of-type{padding-bottom:32px}
+.lp-sec-inner{max-width:880px;margin:0 auto}
+.lp-sec-h{font-family:'Libre Baskerville',Georgia,serif;font-size:clamp(28px,3.5vw,36px);line-height:1.2;font-weight:700;letter-spacing:-.015em;margin-bottom:16px;color:var(--tx)}
+.lp-sec-sub{font-size:16px;line-height:1.65;color:var(--tx2);max-width:620px;margin-bottom:48px}
+.lp-sec-foot{font-size:14px;line-height:1.65;color:var(--tx2);margin-top:24px;max-width:680px}
+.lp-sec-foot code{font-family:var(--mono);background:var(--accSoft);padding:1px 6px;border-radius:3px;font-size:13px}
+.lp-sec-foot strong{color:var(--tx);font-weight:600}
+
+/* Row-list — replaces the heavy card grid for S2 and S5. No borders, no
+   backgrounds, no icons. Just a term + explanation separated by hairlines. */
+.lp-cards{display:flex;flex-direction:column;border-top:1px solid var(--brd)}
+.lp-card{display:grid;grid-template-columns:200px 1fr;gap:32px;padding:22px 0;border-bottom:1px solid var(--brd);align-items:baseline;background:transparent;border-radius:0}
+@media(max-width:640px){.lp-card{grid-template-columns:1fr;gap:6px;padding:18px 0}}
+.lp-card-ico{display:none}
+.lp-card-h{font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:700;color:var(--tx);letter-spacing:-.01em;margin:0}
+.lp-card-p{font-size:15px;line-height:1.65;color:var(--tx2);margin:0}
+
+/* Tool list — S3 (agent interface). Clean terminal-style listing, no box. */
+.lp-tool-list{display:flex;flex-direction:column;border-top:1px solid var(--brd);background:transparent;border-radius:0;padding:0}
+.lp-tool{display:grid;grid-template-columns:160px 1fr;gap:24px;padding:14px 0;font-size:14.5px;line-height:1.6;border-bottom:1px solid var(--brd);align-items:baseline}
+.lp-tool code{font-family:var(--mono);color:var(--tx);font-weight:600;font-size:13.5px;background:transparent;padding:0}
+.lp-tool span{color:var(--tx2)}
+@media(max-width:600px){.lp-tool{grid-template-columns:1fr;gap:4px;padding:12px 0}}
+
+/* Autonomy levels — S4 (network). Same row pattern. */
+.lp-autonomy{display:flex;flex-direction:column;border-top:1px solid var(--brd);background:transparent;border-radius:0;padding:0}
+.lp-level{display:grid;grid-template-columns:44px 160px 1fr;gap:20px;padding:14px 0;font-size:14.5px;line-height:1.6;border-bottom:1px solid var(--brd);align-items:baseline}
+.lp-level-lbl{font-family:var(--mono);font-weight:600;color:var(--tx3);font-size:12.5px;letter-spacing:.05em}
+.lp-level-nm{font-family:'Libre Baskerville',Georgia,serif;font-weight:700;color:var(--tx);font-size:15px}
+.lp-level-dc{color:var(--tx2)}
+@media(max-width:600px){.lp-level{grid-template-columns:44px 1fr;gap:10px}.lp-level-dc{grid-column:1/-1;padding-left:54px;padding-top:2px}}
+
+/* Callout — self-host note inside S4. Subtle left border, not a box. */
+.lp-callout{margin-top:28px;padding:16px 20px 16px 22px;background:var(--accSoft);border-left:3px solid var(--tx);border-radius:0 4px 4px 0;font-size:14.5px;line-height:1.65;color:var(--tx2)}
+.lp-callout strong{color:var(--tx);font-weight:700;font-family:'Libre Baskerville',Georgia,serif}
+
+/* CTA row — S5. Three inline buttons, no card chrome. First is primary
+   (filled); the other two are ghost links. */
+.lp-cta-row{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;margin-top:52px;padding-top:40px;border-top:1px solid var(--brd)}
+.lp-cta-card{display:flex;align-items:center;gap:12px;padding:0;background:transparent;border:none;border-radius:0}
+.lp-cta-h{display:none}
+.lp-cta-p{display:none}
+.lp-cta-btn{display:inline-flex;align-items:center;padding:11px 22px;background:var(--btnBg);color:var(--btnC);border:none;border-radius:24px;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none;font-family:inherit;transition:opacity .15s,border-color .15s}
+.lp-cta-btn:hover{opacity:.85}
+.lp-cta-card:not(:first-child) .lp-cta-btn{background:transparent;color:var(--tx);border:1px solid var(--brd)}
+.lp-cta-card:not(:first-child) .lp-cta-btn:hover{border-color:var(--tx3);opacity:1}
 
 /* ── Sidebar ── */
 #page-main{display:flex;height:100vh;max-height:100vh;min-height:0;overflow:hidden}
@@ -1125,6 +1204,57 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 
 /* ── Reputation suffix (folded-in calibration signal) ── */
 .rp-kbr-conf{color:var(--tx3);font-size:11px;font-weight:400;margin-left:2px}
+
+/* ── Sidebar mini-graph (live snapshot of this corpus + 1-hop neighbors) ── */
+.rp-sec-first .rp-lbl{display:flex;align-items:center;justify-content:space-between}
+.rp-mini-expand{font-size:10px;font-weight:500;color:var(--tx3);text-transform:none;letter-spacing:0;text-decoration:none;padding:2px 6px;border-radius:4px;border:1px solid transparent;transition:border-color .12s,color .12s}
+.rp-mini-expand:hover{color:var(--tx);border-color:var(--brd)}
+.rp-mini-wrap{position:relative;width:100%;height:180px;border-radius:8px;border:1px solid var(--brd);background:var(--bg);overflow:hidden;cursor:pointer;transition:border-color .12s}
+.rp-mini-wrap:hover{border-color:var(--tx3)}
+.rp-mini-cv{width:100%;height:100%;display:block}
+.rp-mini-empty{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:10.5px;color:var(--tx3);padding:0 10px;pointer-events:none}
+
+/* ── Local-graph modal (click-to-expand from sidebar) ── */
+.lgm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:40px;backdrop-filter:blur(4px)}
+.lgm-panel{width:min(960px,100%);height:min(680px,100%);background:var(--bg2);border:1px solid var(--brd);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.lgm-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--brd)}
+.lgm-ti{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lgm-t1{font-family:'Libre Baskerville',Georgia,serif;font-size:17px;color:var(--tx);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lgm-t2{font-size:11px;color:var(--tx3)}
+.lgm-cc{background:transparent;border:0;color:var(--tx3);font-size:22px;line-height:1;cursor:pointer;padding:4px 10px;border-radius:6px;transition:background .12s,color .12s}
+.lgm-cc:hover{background:var(--bgH);color:var(--tx)}
+.lgm-canvas-wrap{flex:1;position:relative;min-height:0;background:var(--bg)}
+.lgm-canvas-wrap canvas{display:block;width:100%;height:100%}
+.lgm-ft{padding:10px 20px;border-top:1px solid var(--brd);font-size:11px;color:var(--tx3)}
+.lgm-ft-lbl{font-style:italic}
+
+/* ── Settings tab (Connect + Maintenance) ──
+   Matches the Insights tab layout: left-aligned content block with a
+   960px cap and 24px side padding (not centered — same visual rhythm
+   as Insights). Inside each section, rows follow the doc-item / cv-ins-citing
+   pattern: name + meta left, controls right, all on one line. */
+.cv-set-wrap{max-width:960px;padding:28px 24px 60px;display:flex;flex-direction:column;gap:32px}
+.cv-set-sec{display:flex;flex-direction:column;gap:12px}
+.cv-set-hd{display:flex;flex-direction:column;gap:2px}
+.cv-set-h2{font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:600;color:var(--tx);margin:0}
+.cv-set-sub{font-size:12px;color:var(--tx3);margin:0}
+/* Each row is a single horizontal line — same shape as doc-item on the
+   Overview tab and cv-ins-citing rows on Insights: name on the left, meta
+   in the middle (ellipsized), controls on the right. Visual consistency
+   across tabs is the goal. */
+.cv-set-list{border:1px solid var(--brd);border-radius:10px;overflow:hidden;background:var(--bg2)}
+.cv-set-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid var(--brd);transition:background .12s}
+.cv-set-row:last-child{border-bottom:none}
+.cv-set-row:hover{background:var(--bgH)}
+.cv-set-row-info{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;overflow:hidden}
+.cv-set-row-nm{font-size:13px;font-weight:500;color:var(--tx);flex-shrink:0}
+.cv-set-row-nm--mono{font-family:var(--mono);font-size:12.5px;font-weight:600}
+.cv-set-row-dc{font-size:12px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cv-set-row-ctl{flex-shrink:0;display:flex;align-items:center;gap:8px}
+.cv-set-row-url{font-family:var(--mono);font-size:11.5px;color:var(--tx2);background:var(--bg);padding:4px 9px;border-radius:4px;border:1px solid var(--brd);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+.cv-set-row--danger .cv-set-row-nm{color:#dc2626}
+.cv-set-btn-danger{background:#ef4444;color:#fff;border-color:#ef4444}
+.cv-set-btn-danger:hover{background:#dc2626}
 
 /* ── "This URL is mine" checkbox + compile auto-refresh checkbox ──
    Default browser checkboxes render dark-filled on some themes/OSes, which

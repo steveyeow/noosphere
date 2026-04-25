@@ -39,6 +39,13 @@ PUBLIC_PATHS = {
     "/api/v1/stripe/webhook",
     "/api/v1/cloud/webhook",
     "/favicon.ico",
+    # Node-to-node registration is anonymous by design — any self-hosted
+    # node can publish its metadata and retract it. Spam is deterred at
+    # a different layer: fake endpoints fail real queries (reputation
+    # stays at zero), and the registry's reconcile step drops nodes that
+    # stop heartbeating.
+    "/api/v1/register",
+    "/api/v1/deregister",
 }
 PUBLIC_PREFIXES = (
     "/static/",

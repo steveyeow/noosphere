@@ -20,18 +20,22 @@ This plugin is a thin UX layer on top of the `noosphere sync --obsidian` CLI. Sa
 
 ## Install
 
-### Manual (works today)
+### For users — download a pre-built release (recommended)
 
-1. Download the latest release ZIP from the main Noosphere repo's Releases page (contains `manifest.json`, `main.js`, `styles.css`).
-2. Extract it into `<your-vault>/.obsidian/plugins/noosphere-sync/`.
-3. In Obsidian: Settings → Community plugins → enable Noosphere.
-4. Open Noosphere's settings tab and fill in:
-   - **Server URL** — default `http://localhost:8420` for local self-hosted
-   - **Corpus ID or slug** — the destination KB
-   - **API token** — leave blank for self-hosted, fill for cloud
-5. Click "Test" to verify connection, then click the sync ribbon icon.
+1. Open the [Noosphere Releases page](https://github.com/steveyeow/noosphere/releases).
+2. On the latest `plugin-vX.Y.Z` release, download the three files: **`manifest.json`**, **`main.js`**, **`styles.css`**.
+3. Put them in `<your-vault>/.obsidian/plugins/noosphere-sync/` (create the folder if it doesn't exist).
+4. In Obsidian → **Settings → Community plugins**. If this is your first community plugin, click **Turn on community plugins** first (Obsidian's default safety gate).
+5. In the Installed plugins list, enable the toggle next to **Noosphere**.
+6. A **Noosphere** tab now appears in the left sidebar of Settings. Open it and fill in:
+   - **Server URL** — `http://localhost:8420` for local self-hosted, `https://app.noosphere.wiki` for cloud
+   - **Corpus ID or slug** — click **Create new** to generate one named after your vault, or paste an existing ID
+   - **API token** — leave blank for self-hosted; required for cloud (generate in the Noosphere web UI)
+7. Click **Test** to verify the connection, then click the **Sync** ribbon icon (top-left of Obsidian).
 
-### From source (for development)
+That's it. No Node.js required on your side — the plugin artifacts are pre-built by the repo's GitHub Actions workflow on every plugin tag.
+
+### For developers — build from source
 
 ```bash
 cd plugin
@@ -39,13 +43,13 @@ npm install
 npm run build         # produces main.js
 ```
 
-Then copy `manifest.json`, `main.js`, and `styles.css` into `<your-vault>/.obsidian/plugins/noosphere-sync/`.
+Then copy `manifest.json`, `main.js`, `styles.css` into `<your-vault>/.obsidian/plugins/noosphere-sync/`.
 
 For live-reload development: `npm run dev` (rebuilds on save). Use Obsidian's "Reload app without saving" command after edits, or add the [Hot-Reload](https://github.com/pjeby/hot-reload) plugin to skip the reload step.
 
-### Community plugin directory
+### Community plugin directory (future)
 
-Planned. When submitted and approved, this plugin will appear in Obsidian's built-in "Browse community plugins" picker. Until then, use manual install above.
+Once the plugin is stable, the maintainer will submit it to [obsidianmd/obsidian-releases](https://github.com/obsidianmd/obsidian-releases) for review. After approval, users can install directly from Obsidian's built-in "Browse community plugins" picker. Until then, the Releases-page flow above is the supported path.
 
 ## How it talks to Noosphere
 

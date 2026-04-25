@@ -665,6 +665,14 @@ def _log_query(
     token_id: str | None = None,
     action: str = "ask",
 ):
+    # Only log real agent activity. A request counts as "agent activity"
+    # when it carries an `x-agent-id` header or a corpus access token.
+    # UI-internal fetches (owner browsing, metadata prefetch on page load)
+    # carry neither and must not pollute the Insights funnel — otherwise
+    # Describe/preview_ask/ask counters reflect the owner's own tab-switching,
+    # not outside usage.
+    if not (agent_id or token_id):
+        return
     try:
         conn = get_conn()
         conn.execute(
