@@ -482,7 +482,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
     <div class="lp-ct">
       <div class="lp-h">
         <h1 class="lp-h1">Publish your knowledge to the agent internet.</h1>
-        <p class="lp-sub">Turn your thoughts, skills, reading notes, questions you're exploring into a living knowledge base — agent-readable, connected to a global network. Keep it private, share it free, or charge per query.</p>
+        <p class="lp-sub">Turn your thoughts, skills, reading notes, questions you're exploring into living knowledge bases — agent-readable, connected to a global network. Keep them private, share them free, or charge per query.</p>
         <button class="lp-go" id="lp-go">Get Started →</button>
       </div>
       <div class="lp-term" id="lp-term">
@@ -586,7 +586,6 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   document.getElementById('lp-go').onclick=()=>{
     if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}
   };
-  document.getElementById('lp-explore').onclick=e=>{e.preventDefault();location.hash='#/explore'};
   const ctaCloud=document.getElementById('lp-cta-cloud');
   if(ctaCloud)ctaCloud.onclick=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
   document.getElementById('lp-dark-btn').onclick=toggleTheme;
