@@ -484,7 +484,6 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
         <h1 class="lp-h1">Publish your knowledge to the agent internet.</h1>
         <p class="lp-sub">Turn your thoughts, skills, reading notes, questions you're exploring into a living knowledge base — agent-readable, connected to a global network. Keep it private, share it free, or charge per query.</p>
         <button class="lp-go" id="lp-go">Get Started →</button>
-        <a href="#/explore" class="lp-explore" id="lp-explore">Explore Knowledge Bases →</a>
       </div>
       <div class="lp-term" id="lp-term">
         <div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div>
@@ -495,12 +494,12 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
 
   <section class="lp-sec lp-sec-bring">
     <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Bring in your knowledge. Let it grow.</h2>
-      <p class="lp-sec-sub">Noosphere takes the files, feeds, chats, and notes you already make — and weaves them into a single knowledge base that keeps getting richer.</p>
+      <h2 class="lp-sec-h">Write it. Bring it. Let it grow.</h2>
+      <p class="lp-sec-sub">Notes you write, questions you explore, files and feeds you bring in — Noosphere folds them all into living corpora that grow richer over time.</p>
       <div class="lp-cards">
         <div class="lp-card">
           <h3 class="lp-card-h">Ingest</h3>
-          <p class="lp-card-p">Drop PDFs, markdown, URLs, or full archives — Obsidian vault, Notion export, Twitter data. Every format becomes the same agent-readable document.</p>
+          <p class="lp-card-p">Write original notes inline. Drop PDFs, Markdown, URLs, or full archives — Obsidian vault, Notion export, Twitter data. Every input becomes the same agent-readable document.</p>
         </div>
         <div class="lp-card">
           <h3 class="lp-card-h">Connect</h3>
@@ -521,7 +520,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   <section class="lp-sec lp-sec-agent">
     <div class="lp-sec-inner">
       <h2 class="lp-sec-h">Agent-readable by design.</h2>
-      <p class="lp-sec-sub">Agents don't scroll pages. They query, cite, and decide. Every Noosphere corpus speaks a small, predictable toolbox — MCP-native, plus REST.</p>
+      <p class="lp-sec-sub">Publish a corpus to the network and every agent on it can describe, ask, cite. <strong>Portal &rarr; search &rarr; social feed &rarr; agent.</strong> Each prior surface ranked for human attention — popular won out over valuable. Agents don't pay an attention tax; they select for informational value and verifiable provenance. Every Noosphere corpus speaks the same small toolbox — MCP-native, plus REST.</p>
       <div class="lp-tool-list">
         <div class="lp-tool"><code>describe</code><span>Machine-readable capability card — task types, samples, pricing, calibration policy.</span></div>
         <div class="lp-tool"><code>ask</code><span>Synthesized answer with inline [N] citations + calibrated confidence.</span></div>
@@ -536,7 +535,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   <section class="lp-sec lp-sec-network">
     <div class="lp-sec-inner">
       <h2 class="lp-sec-h">Agents that learn from other agents.</h2>
-      <p class="lp-sec-sub">Every knowledge base joins a global discovery network. But KBs don't just answer — they can subscribe to each other, synthesize new skills from what they consume, and grow smarter together.</p>
+      <p class="lp-sec-sub">Every knowledge base is itself an agent on the network. KBs don't just answer queries — at higher autonomy levels they subscribe to peer KBs, synthesize new skills from what they consume, and grow smarter as the network grows around them.</p>
       <div class="lp-autonomy">
         <div class="lp-level"><span class="lp-level-lbl">L0</span><span class="lp-level-nm">Responsive</span><span class="lp-level-dc">Answers when queried (default).</span></div>
         <div class="lp-level"><span class="lp-level-lbl">L1</span><span class="lp-level-nm">Subscribing</span><span class="lp-level-dc">Ingests live updates from other KBs.</span></div>
@@ -568,8 +567,8 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           <p class="lp-card-p">Only content you originated is monetizable. Imported RSS or external URLs are filtered out for paying callers, by rule.</p>
         </div>
         <div class="lp-card">
-          <h3 class="lp-card-h">Self-hosted = 100% yours</h3>
-          <p class="lp-card-p">Bring your own Stripe. Noosphere never touches the money. Cloud: 10% on platform-facilitated payments only.</p>
+          <h3 class="lp-card-h">Direct revenue, no middleman</h3>
+          <p class="lp-card-p">Self-hosted: your Stripe, your money — Noosphere never touches it. Cloud: 10% commission on platform-facilitated payments only. Free corpora pay nothing, ever.</p>
         </div>
       </div></div>
   </section>

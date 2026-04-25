@@ -920,7 +920,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .gs-item-text{font-size:12px;line-height:1.5;color:var(--tx2)}
 
 /* ── Login page ── */
-.login-page{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-page{width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:40px 20px;box-sizing:border-box}
 .login-card{background:var(--bg2);border:1px solid var(--brd);border-radius:16px;padding:48px 40px;max-width:400px;width:100%;text-align:center;box-shadow:var(--shL)}
 .login-logo{width:48px;height:48px;margin:0 auto 20px;color:var(--tx)}
 .login-logo svg{width:100%;height:100%}
