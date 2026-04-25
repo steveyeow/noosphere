@@ -335,7 +335,7 @@ async def api_health():
     # registry_connected — true if we've successfully registered + the registry
     #                      is reachable (checked via lightweight HEAD request
     #                      with a short timeout so /health stays fast)
-    from noosphere.core.config import NOOSPHERE_REGISTRY
+    from noosphere.core.config import NOOSPHERE_REGISTRY, NOOSPHERE_IS_REGISTRY
     registry_url = NOOSPHERE_REGISTRY
     registry_configured = bool(registry_url)
     registry_connected = False
@@ -370,6 +370,12 @@ async def api_health():
         "registry_configured": registry_configured,
         "registry_connected": registry_connected,
         "registry_registration_ok": last_registration_ok(),
+        # is_registry — this node IS the shared registry (e.g. noosphere.wiki).
+        # Distinct from registry_configured: a registry node's corpora are
+        # already on its own DB, so it's discoverable WITHOUT having to
+        # outbound-register anywhere. UI uses this to render the right
+        # status copy.
+        "is_registry": NOOSPHERE_IS_REGISTRY,
     }
 
 

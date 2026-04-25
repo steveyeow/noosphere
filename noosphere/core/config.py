@@ -97,10 +97,30 @@ STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", f"{APP_URL}/?payment=cancel")
 # Registry — set NOOSPHERE_REGISTRY to the registry URL to join the Noosphere.
 # Self-hosted nodes register metadata with the registry for discovery.
 # Leave empty or "none" to run as a standalone node.
-DEFAULT_REGISTRY = "https://noosphere-production.up.railway.app"
+DEFAULT_REGISTRY = "https://noosphere.wiki"
 NOOSPHERE_REGISTRY = os.getenv("NOOSPHERE_REGISTRY", DEFAULT_REGISTRY)
 if NOOSPHERE_REGISTRY.lower() == "none":
     NOOSPHERE_REGISTRY = ""
+
+# Is this deployment the shared registry itself? Auto-detected by comparing
+# APP_URL to the canonical registry URL — saves operators from a redundant
+# env var and keeps a single source of truth. Self-hosted nodes have a
+# different APP_URL, so they register normally. The cloud node serving
+# noosphere.wiki recognises itself and skips outbound registration; its
+# corpora are already on the registry's own DB, so the Discovery UI can
+# say "Live on registry — discoverable" instead of the misleading
+# "Standalone — not registered". Env var still wins as an escape hatch
+# (e.g. someone running a private fork of the registry).
+def _normalize_url(u: str) -> str:
+    return u.strip().rstrip("/").lower()
+
+_env_is_reg = os.getenv("NOOSPHERE_IS_REGISTRY", "").lower()
+if _env_is_reg in ("1", "true", "yes"):
+    NOOSPHERE_IS_REGISTRY = True
+elif _env_is_reg in ("0", "false", "no"):
+    NOOSPHERE_IS_REGISTRY = False
+else:
+    NOOSPHERE_IS_REGISTRY = _normalize_url(APP_URL) == _normalize_url(DEFAULT_REGISTRY)
 
 # Enrichment scheduler — interval in minutes (0 = disabled)
 ENRICHMENT_INTERVAL_MINUTES = int(os.getenv("ENRICHMENT_INTERVAL_MINUTES", "60"))

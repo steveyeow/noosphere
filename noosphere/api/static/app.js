@@ -3728,7 +3728,11 @@ async function setupCorpusInteract(id,sessionId){
   send.onclick=chat;ci.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}};
 }
 
-const ACC_MSG={public:'Discoverable by all agents worldwide.',private:'Only accessible via your personal endpoint.',token:'Requires access token to query.',paid:'Agents pay per query or subscribe. Set pricing below.'};
+// Access-level descriptions — describe WHO can query, not discovery. The
+// Discovery row below handles registry visibility separately, so don't
+// reuse "discoverable" here (it confused users into thinking access mode
+// and registry status were the same thing).
+const ACC_MSG={public:'Any agent can query this KB.',private:'Only you can query this KB from your endpoint.',token:'Requires an access token to query.',paid:'Agents pay per query or subscribe. Set pricing below.'};
 
 /* Reputation formula explainer modal. Weights match KBR_WEIGHTS in
    noosphere/core/citations.py — keep in sync if the formula changes. */
@@ -3998,9 +4002,16 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     regStatus='Private — not registered';
     regHint='Private corpora never publish to the discovery registry.';
   }else{
-    let registrationOk=false,registryConnected=false,registryConfigured=false;
-    try{const hr=await fetch(`${API}/health`);const h=await hr.json();registrationOk=!!h.registry_registration_ok;registryConnected=!!h.registry_connected;registryConfigured=!!h.registry_configured}catch(e){}
-    if(registrationOk){
+    let registrationOk=false,registryConnected=false,registryConfigured=false,isRegistry=false;
+    try{const hr=await fetch(`${API}/health`);const h=await hr.json();registrationOk=!!h.registry_registration_ok;registryConnected=!!h.registry_connected;registryConfigured=!!h.registry_configured;isRegistry=!!h.is_registry}catch(e){}
+    if(isRegistry){
+      // This node IS the shared registry (e.g. noosphere.wiki). Corpora
+      // live directly on the discovery DB, so they're already discoverable
+      // without any outbound register step. The older "Standalone — not
+      // registered" copy was technically true but actively misleading.
+      regStatus='Live on registry · discoverable';
+      regHint='This node is the shared Noosphere registry itself. The corpus is already in the discovery index — any agent on the network can find and query it.';
+    }else if(registrationOk){
       regStatus='Registered · discoverable';
       regHint='This KB is listed in the shared Noosphere registry — any agent on the network can discover and query it.';
     }else if(!registryConfigured){
@@ -4026,12 +4037,23 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   //   Trust    — KBR + calibration suffix
   //   Content  — doc count + source mix + entities
   rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl"><span>Network</span><a href="#" class="rp-mini-expand" id="rp-mini-expand" title="Expand">Expand</a></div><div class="rp-mini-wrap" id="rp-mini-wrap"><canvas class="rp-mini-cv" id="rp-mini-cv"></canvas><div class="rp-mini-empty hidden" id="rp-mini-empty">Add tags to connect with the network.</div></div></div>
-    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv">Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
+    <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv" disabled>Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="What this KB can do on its own.">Autonomy</div><div class="rp-stages">${autonomyHTML}</div><div class="rp-sub rp-sub--block"><div class="rp-sub-hd"><span class="rp-sub-lbl">Subscriptions <span class="rp-sub-cnt" id="rp-subs-count">(0)</span></span><button class="btn-xs" id="rp-subs-add" title="Subscribe to a peer KB">+ Add</button></div><div class="rp-subs-list" id="rp-subs-list"><span class="rp-sub-empty">Loading…</span></div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span></div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Entities</span><div class="rp-entities-row" id="rp-entities-row"><span class="rp-sub-empty">Loading…</span></div></div></div>`;
   drawMiniNetwork(c);
 
+  // Dirty-state tracking for the Save button. Without this the button
+  // looked permanently "ready to save" even when the select still matched
+  // the persisted value — clicking did nothing visible (just a "No change"
+  // toast), so users assumed save was broken. The button now reflects
+  // whether there's actually anything to commit.
+  const _curAl=c.access_level||'public';
+  const _saveBtn=document.getElementById('rp-sv');
+  const _refreshSaveState=()=>{
+    const v=document.getElementById('rp-acc').value;
+    _saveBtn.disabled=(v===_curAl);
+  };
   document.getElementById('rp-acc').onchange=()=>{
     const v=document.getElementById('rp-acc').value;
     document.getElementById('rp-msg').textContent=ACC_MSG[v]||'';
@@ -4048,11 +4070,14 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     const discEl=document.getElementById('rp-discovery');
     if(discEl)discEl.textContent=v==='private'?'Private — not registered':'Will register in Noosphere registry after Save';
     if(v==='paid')loadPricingUI(c);
+    _refreshSaveState();
   };
-  document.getElementById('rp-sv').onclick=async()=>{
+  _saveBtn.onclick=async()=>{
     const newAl=document.getElementById('rp-acc').value;
-    const curAl=c.access_level||'public';
-    if(newAl===curAl){toast('No change');return}
+    const curAl=_curAl;
+    // Belt-and-braces — button should already be disabled in this case,
+    // but guard anyway in case something bypasses onchange.
+    if(newAl===curAl){return}
     const external=['public','paid','token'];
     if(external.includes(newAl)){
       let summary=null;
@@ -4066,11 +4091,19 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
         if(!proceed)return;
       }
     }
+    // Visual feedback during the PATCH — without this the click felt
+    // inert on slow connections and users would mash the button.
+    const _origLabel=_saveBtn.textContent;
+    _saveBtn.disabled=true;_saveBtn.textContent='Saving…';
     try{
       const r=await fetch(`${API}/corpora/${c.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_level:newAl})});
-      if(!r.ok){const d=await r.json().catch(()=>({}));toast(d.detail||'Failed to update access','error');return}
+      if(!r.ok){const d=await r.json().catch(()=>({}));toast(d.detail||'Failed to update access','error');_saveBtn.textContent=_origLabel;_refreshSaveState();return}
+      // renderCorpus() rebuilds this whole panel from the freshly loaded
+      // corpus, so the new disabled-by-default Save button takes over.
+      // No need to restore label/state on this branch.
+      toast('Access saved');
       await loadC();renderCorpus(c.id);
-    }catch(e){toast('Failed: '+e.message,'error')}
+    }catch(e){toast('Failed: '+e.message,'error');_saveBtn.textContent=_origLabel;_refreshSaveState()}
   };
 
   /* Reputation formula explainer — the score is a weighted blend; users kept
