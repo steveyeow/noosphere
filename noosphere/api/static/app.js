@@ -2524,7 +2524,26 @@ function _mcBadge(c){
 
 function renderMCList(host){
   const el=document.getElementById('mc-content');
-  if(!_corpora.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';return}
+  if(!_corpora.length){
+    // Workspace-aware empty state — invites rather than informs.
+    if(_workspace.kind==='org'){
+      const o=_orgs.find(o=>o.id===_workspace.org_id);
+      const orgName=o?o.name:'this workspace';
+      el.innerHTML=`<div class="mc-empty mc-empty--team">
+        <h2 class="mc-empty-h">Your team's brain is just starting.</h2>
+        <p class="mc-empty-p">Create the first knowledge base — anyone on ${esc(orgName)} can add to it as you work. Capture from Slack threads, customer email, or a meeting transcript; or start from a note or upload.</p>
+        <div class="mc-empty-actions">
+          <button class="mc-empty-cta mc-empty-cta--primary" id="mc-empty-create">Create first corpus →</button>
+          <a class="mc-empty-cta" href="#/connectors">Browse capture sources</a>
+        </div>
+      </div>`;
+      const create=document.getElementById('mc-empty-create');
+      if(create)create.onclick=()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()};
+      return;
+    }
+    el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';
+    return;
+  }
   el.className='mc-list';
   el.innerHTML=_corpora.map(c=>{
     const tg=Array.isArray(c.tags)?c.tags:[];
@@ -5179,7 +5198,7 @@ function _renderOrgConnectorsTab(org,isAdmin){
         <span class="cv-set-row-dc">${esc(c.desc||'')}</span>
       </div>
       <div class="cv-set-row-ctl">
-        <span class="cv-set-row-static">${c.status==='avail'?'Personal-scope ready':'Coming in T-2'}</span>
+        <span class="cv-set-row-tag">${c.status==='avail'?'Personal-scope ready':'Coming in T-2'}</span>
       </div>
     </div>
   `).join('');
@@ -5201,10 +5220,15 @@ async function _renderOrgMembersTab(org,isAdmin){
   const members=await r.json();
   const rows=members.map(m=>{
     const me=m.user_id===_userId;
-    const label=me?'You':_renderUserPillName(m.user_id);
+    const label=me
+      ? (m.display_name||'You')
+      : (m.display_name||_renderUserPillName(m.user_id));
+    // Show the raw user_id only when it's the only identifier we have;
+    // a member with a display_name doesn't need their hash on display.
+    const sub=m.display_name?(me?'You · '+m.user_id:m.user_id):m.user_id;
     const roleCtl=isAdmin&&!me?`<select class="cv-set-row-input" data-uid="${esc(m.user_id)}" data-role-sel>${['owner','admin','editor','viewer'].map(r=>`<option value="${r}"${m.role===r?' selected':''}>${r}</option>`).join('')}</select>`:`<span class="cv-set-row-static">${esc(m.role)}</span>`;
     const removeBtn=isAdmin&&!me&&m.role!=='owner'?`<button class="cv-set-row-rm" data-uid="${esc(m.user_id)}" title="Remove">×</button>`:'';
-    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">${esc(label)}</span><span class="cv-set-row-dc">${esc(m.user_id)}</span></div><div class="cv-set-row-ctl">${roleCtl}${removeBtn}</div></div>`;
+    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">${esc(label)}</span><span class="cv-set-row-dc">${esc(sub)}</span></div><div class="cv-set-row-ctl">${roleCtl}${removeBtn}</div></div>`;
   }).join('');
   body.innerHTML=`<div class="cv-set-hd"><h3 class="cv-set-h3">Members</h3><div class="cv-set-sub">Roles control read/write access to every org corpus.</div></div><div class="cv-set-list">${rows||'<div class="cv-set-empty">No members.</div>'}</div>`;
   body.querySelectorAll('[data-role-sel]').forEach(sel=>sel.addEventListener('change',async()=>{
@@ -5281,33 +5305,68 @@ async function _renderOrgAuditTab(org,isAdmin){
 
 async function renderInviteAccept(token){
   const lp=document.getElementById('page-landing');if(!lp)return;
-  lp.innerHTML='<div class="invite-page"><div class="invite-card">Loading invite…</div></div>';
+  lp.innerHTML='<div class="invite-page"><div class="cv-set-wrap"><div class="cv-set-loading">Loading invite…</div></div></div>';
   let info=null;
   try{const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token));if(!r.ok)throw new Error('not found');info=await r.json()}
-  catch(e){lp.innerHTML='<div class="invite-page"><div class="invite-card"><h1>Invite not found</h1><p>This link is invalid or expired. Ask the organization admin for a new one.</p><a class="btn-sm" href="#/">Back home</a></div></div>';return}
+  catch(e){
+    lp.innerHTML=`<div class="invite-page"><div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Invite not found</h2><div class="cv-set-sub">This link is invalid or expired. Ask the organization admin for a new one.</div></div><div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Back to home</span><span class="cv-set-row-dc">Pick up where you left off.</span></div><div class="cv-set-row-ctl"><a class="btn-sm" href="#/">Home</a></div></div></div></div></div>`;
+    return;
+  }
   const inv=info.invite||{};const org=info.org||{};
   const used=!!inv.accepted_at;const revoked=!!inv.revoked_at;
   const expired=inv.expires_at&&new Date(inv.expires_at)<new Date();
-  let body='';
-  if(used)body='<p class="invite-state">This invite has already been used.</p>';
-  else if(revoked)body='<p class="invite-state">This invite has been revoked.</p>';
-  else if(expired)body='<p class="invite-state">This invite has expired.</p>';
-  else body=`<p class="invite-pitch">You've been invited to join <strong>${esc(org.name||'an organization')}</strong> as <strong>${esc(inv.role||'editor')}</strong>. You'll share corpora and see contributor attribution on every document.</p><button class="btn invite-accept" id="invite-accept-btn">Accept and join</button>`;
-  lp.innerHTML=`
-    <div class="invite-page">
-      <div class="invite-card">
-        <div class="invite-eyebrow">Organization invite</div>
-        <h1 class="invite-h1">${esc(org.name||'Noosphere organization')}</h1>
-        ${body}
+  const initial=esc((org.name?.[0]||'?').toUpperCase());
+  // Header — same identity treatment as the org-settings header.
+  const headerHTML=`
+    <div class="cv-set-hd cv-set-hd--org">
+      <span class="cv-set-org-avatar">${initial}</span>
+      <div class="cv-set-org-text">
+        <div class="cv-set-sub" style="text-transform:uppercase;letter-spacing:.12em">Organization invite</div>
+        <h2 class="cv-set-h2 cv-set-h2--org">${esc(org.name||'Noosphere organization')}</h2>
+        <div class="cv-set-sub">Role: ${esc(inv.role||'editor')}</div>
       </div>
-    </div>
-  `;
+    </div>`;
+  let bodyHTML='';
+  if(used){
+    bodyHTML='<div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Already used</span><span class="cv-set-row-dc">This invite has already been accepted by someone.</span></div></div></div>';
+  }else if(revoked){
+    bodyHTML='<div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Revoked</span><span class="cv-set-row-dc">An admin revoked this invite. Ask for a fresh link.</span></div></div></div>';
+  }else if(expired){
+    bodyHTML='<div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Expired</span><span class="cv-set-row-dc">This invite has expired. Ask the admin for a new one.</span></div></div></div>';
+  }else{
+    bodyHTML=`
+      <div class="cv-set-sub" style="line-height:1.65;margin-bottom:6px">
+        In <strong>${esc(org.name||'this organization')}</strong>, the team's knowledge is shared and growing. Every member can capture from Slack, meetings, and the tools they use; every document is attributed to whoever added it; and every agent on the team can query the same brain.
+      </div>
+      <div class="cv-set-list">
+        <div class="cv-set-row">
+          <div class="cv-set-row-info">
+            <span class="cv-set-row-nm">Your name <span class="cv-set-row-dc" style="margin-left:4px">(optional · shown to other members)</span></span>
+          </div>
+          <div class="cv-set-row-ctl">
+            <input type="text" id="invite-name" class="cv-set-row-input" placeholder="e.g. Bob Chen" style="min-width:200px" />
+          </div>
+        </div>
+      </div>
+      <div class="invite-accept-row">
+        <button class="btn invite-accept-btn" id="invite-accept-btn">Accept and join →</button>
+      </div>
+    `;
+  }
+  lp.innerHTML=`<div class="invite-page"><div class="cv-set-wrap">${headerHTML}${bodyHTML}</div></div>`;
   const btn=document.getElementById('invite-accept-btn');
+  const nameInput=document.getElementById('invite-name');
+  if(nameInput)setTimeout(()=>nameInput.focus(),60);
   if(btn)btn.addEventListener('click',async()=>{
     btn.disabled=true;btn.textContent='Joining…';
     _ensureSelfHostedUserId();
-    const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token)+'/accept',{method:'POST',headers:{'Content-Type':'application/json'}});
-    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));btn.disabled=false;btn.textContent='Accept and join';return}
+    const display_name=(nameInput?.value||'').trim();
+    const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token)+'/accept',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({display_name}),
+    });
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));btn.disabled=false;btn.textContent='Accept and join →';return}
     const m=await r.json();
     _orgs=[...(_orgs||[]),{id:m.org_id,name:org.name,slug:org.slug,role:m.role}];
     _workspace={kind:'org',org_id:m.org_id};_saveWorkspace();

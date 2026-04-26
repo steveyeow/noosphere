@@ -337,6 +337,113 @@ def test_me_endpoint_lists_orgs_and_workspace(isolated_db):
 # ── Definition of Done end-to-end ─────────────────────────────────
 
 
+def test_org_corpus_default_private(isolated_db):
+    org, alice, _ = _new_org_with_member()
+    org_scoped = _scoped(alice, org["id"])
+    r = org_scoped.post("/api/v1/corpora", json={"name": "Auto-private"})
+    assert r.status_code == 200, r.text
+    assert r.json()["access_level"] == "private"
+
+
+def test_org_corpus_explicit_public_honored(isolated_db):
+    org, alice, _ = _new_org_with_member()
+    org_scoped = _scoped(alice, org["id"])
+    r = org_scoped.post(
+        "/api/v1/corpora",
+        json={"name": "Public KB", "access_level": "public"},
+    )
+    assert r.status_code == 200
+    assert r.json()["access_level"] == "public"
+
+
+def test_personal_corpus_default_public(isolated_db):
+    a = _client(user_id="alice")
+    r = a.post("/api/v1/corpora", json={"name": "Personal default"})
+    assert r.status_code == 200
+    assert r.json()["access_level"] == "public"
+
+
+def test_chat_sessions_scoped_to_workspace(isolated_db):
+    org, alice, _ = _new_org_with_member()
+    # Make a personal corpus + chat session for alice.
+    r = alice.post("/api/v1/corpora", json={"name": "Solo KB"})
+    personal_corpus = r.json()
+    # Make an org corpus + chat session.
+    alice_org = _scoped(alice, org["id"])
+    r = alice_org.post("/api/v1/corpora", json={"name": "Org KB"})
+    org_corpus = r.json()
+    # Insert two sessions directly via DB to keep this test focused.
+    from noosphere.core.db import get_conn
+    conn = get_conn()
+    now = "2026-04-26T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO chat_sessions(id,corpus_id,title,created_at,updated_at) VALUES (?,?,?,?,?)",
+        ("s_personal", personal_corpus["id"], "Personal chat", now, now),
+    )
+    conn.execute(
+        "INSERT INTO chat_sessions(id,corpus_id,title,created_at,updated_at) VALUES (?,?,?,?,?)",
+        ("s_org", org_corpus["id"], "Org chat", now, now),
+    )
+    conn.commit()
+    # Personal workspace listing → only the personal session.
+    r = alice.get("/api/v1/chat-sessions")
+    ids = [s["id"] for s in r.json()]
+    assert "s_personal" in ids and "s_org" not in ids
+    # Org workspace listing → only the org session.
+    r = alice_org.get("/api/v1/chat-sessions")
+    ids = [s["id"] for s in r.json()]
+    assert "s_org" in ids and "s_personal" not in ids
+
+
+def test_invite_accept_with_display_name(isolated_db):
+    a = _client(user_id="alice")
+    org = _create_org(a)
+    a.post(f"/api/v1/orgs/{org['id']}/invites", json={"role": "editor"})
+    invite = a.get(f"/api/v1/orgs/{org['id']}/invites").json()[0]
+    bob = _client(user_id="bob")
+    r = bob.post(
+        f"/api/v1/orgs/invites/{invite['token']}/accept",
+        json={"display_name": "Bob Chen"},
+    )
+    assert r.status_code == 200
+    assert r.json().get("display_name") == "Bob Chen"
+    members = a.get(f"/api/v1/orgs/{org['id']}/members").json()
+    bob_row = next(m for m in members if m["user_id"] == "bob")
+    assert bob_row["display_name"] == "Bob Chen"
+
+
+def test_invite_accept_blank_display_name_falls_back(isolated_db):
+    a = _client(user_id="alice")
+    org = _create_org(a)
+    a.post(f"/api/v1/orgs/{org['id']}/invites", json={"role": "editor"})
+    invite = a.get(f"/api/v1/orgs/{org['id']}/invites").json()[0]
+    bob = _client(user_id="bob")
+    # Empty display name still accepts cleanly.
+    r = bob.post(
+        f"/api/v1/orgs/invites/{invite['token']}/accept",
+        json={"display_name": ""},
+    )
+    assert r.status_code == 200
+    assert r.json().get("display_name") in (None, "")
+
+
+def test_corpora_network_global_not_workspace_scoped(isolated_db):
+    """Noosphere = the world: /corpora/network returns the same node set
+    regardless of which workspace header is sent."""
+    org, alice, _ = _new_org_with_member()
+    _create_org_corpus(alice, org["id"], name="Org Brain")
+    # Carol has no membership; she still sees the public layer.
+    carol = _client(user_id="carol")
+    r_personal = carol.get("/api/v1/corpora/network")
+    r_org = TestClient(app)
+    r_org.headers.update({"X-Noosphere-User-Id": "carol", "X-Noosphere-Workspace": f"org:{org['id']}"})
+    r_other = r_org.get("/api/v1/corpora/network")
+    assert r_personal.status_code == 200 and r_other.status_code == 200
+    # Both views should see the same node ids (subject to access_level
+    # gating — which both views apply identically).
+    assert {n["id"] for n in r_personal.json()["nodes"]} == {n["id"] for n in r_other.json()["nodes"]}
+
+
 def test_t1_definition_of_done_full_flow(isolated_db):
     """End-to-end T-1 milestone DoD:
     - Self-hosted user creates an org.
