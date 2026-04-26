@@ -405,6 +405,44 @@ CREATE TABLE IF NOT EXISTS peer_subscription_runs (
     error_detail TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_peer_run_sub_date ON peer_subscription_runs(subscription_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'team',
+    billing_customer_id TEXT,
+    stripe_connect_account_id TEXT,
+    settings_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_orgs_slug ON organizations(slug);
+
+CREATE TABLE IF NOT EXISTS organization_members (
+    org_id TEXT NOT NULL REFERENCES organizations(id),
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'editor',
+    invited_by TEXT,
+    joined_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_org_members_user ON organization_members(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id TEXT PRIMARY KEY,
+    org_id TEXT,
+    actor_user_id TEXT,
+    action TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    ip_addr TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_org_date ON audit_logs(org_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_logs(resource_type, resource_id);
 """
 
 # SQLite: FTS5 virtual table for full-text search
@@ -462,12 +500,16 @@ MIGRATION_SQL = [
     "ALTER TABLE registered_corpora ADD COLUMN source_composition TEXT DEFAULT '{}'",
     "ALTER TABLE registered_corpora ADD COLUMN kb_reputation REAL DEFAULT 0.0",
     "ALTER TABLE query_logs ADD COLUMN action TEXT DEFAULT 'ask'",
+    "ALTER TABLE corpora ADD COLUMN org_id TEXT",
+    "ALTER TABLE documents ADD COLUMN contributor_user_id TEXT",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations
 POST_MIGRATION_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_documents_source_kind ON documents(corpus_id, source_kind)",
     "CREATE INDEX IF NOT EXISTS idx_queries_corpus_action ON query_logs(corpus_id, action, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_corpora_org ON corpora(org_id)",
+    "CREATE INDEX IF NOT EXISTS idx_documents_contributor ON documents(contributor_user_id)",
 ]
 
 
@@ -508,6 +550,62 @@ def _run_migrations_pg(conn):
             conn.execute(f"RELEASE SAVEPOINT {sp}")
         except Exception:
             conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+    conn.commit()
+
+
+# ── corpora ownership XOR enforcement ──────────────────────────────
+# Either owner_id (personal) XOR org_id (team) — never both, never neither.
+# Must run AFTER MIGRATION_SQL adds corpora.org_id.
+
+_XOR_ABORT_MSG = "corpora: exactly one of owner_id or org_id must be set"
+
+_XOR_TRIGGERS_SQLITE = [
+    f"""CREATE TRIGGER IF NOT EXISTS corpora_owner_org_xor_insert
+        BEFORE INSERT ON corpora
+        FOR EACH ROW
+        WHEN (NEW.owner_id IS NULL) = (NEW.org_id IS NULL)
+        BEGIN
+            SELECT RAISE(ABORT, '{_XOR_ABORT_MSG}');
+        END""",
+    f"""CREATE TRIGGER IF NOT EXISTS corpora_owner_org_xor_update
+        BEFORE UPDATE ON corpora
+        FOR EACH ROW
+        WHEN (NEW.owner_id IS NULL) = (NEW.org_id IS NULL)
+        BEGIN
+            SELECT RAISE(ABORT, '{_XOR_ABORT_MSG}');
+        END""",
+]
+
+
+def _enforce_corpora_xor_sqlite(conn):
+    """Install BEFORE INSERT/UPDATE triggers on corpora to enforce ownership XOR."""
+    import sqlite3
+    for stmt in _XOR_TRIGGERS_SQLITE:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+
+
+def _enforce_corpora_xor_pg(conn):
+    """Add NOT VALID CHECK constraint — enforces on future writes only.
+
+    NOT VALID skips validation of pre-existing rows (legacy corpora that may
+    have NULL owner_id from earlier self-hosted modes), so the migration is
+    safe to apply on populated databases.
+    """
+    sp = "sp_xor_corpora"
+    try:
+        conn.execute(f"SAVEPOINT {sp}")
+        conn.execute("""
+            ALTER TABLE corpora ADD CONSTRAINT corpora_owner_org_xor
+            CHECK ((owner_id IS NOT NULL) <> (org_id IS NOT NULL))
+            NOT VALID
+        """)
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
+    except Exception:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
     conn.commit()
 
 
@@ -600,6 +698,7 @@ def get_conn():
             schema = SCHEMA_SQL.replace("{BLOB_TYPE}", "BYTEA")
             _conn.executescript(schema)
             _run_migrations_pg(_conn)
+            _enforce_corpora_xor_pg(_conn)
             _init_fts_pg(_conn)
         else:
             import sqlite3
@@ -613,6 +712,7 @@ def get_conn():
             schema = SCHEMA_SQL.replace("{BLOB_TYPE}", "BLOB")
             conn.executescript(schema)
             _run_migrations_sqlite(conn)
+            _enforce_corpora_xor_sqlite(conn)
             _init_fts_sqlite(conn)
             _conn = conn
 
