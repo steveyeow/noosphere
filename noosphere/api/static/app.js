@@ -1199,7 +1199,22 @@ function renderHome(){
           return;
         }
         const c=await r.json();
-        await loadC();_homeScope=c.id;updateChip();closeChipMenu();_refreshComposerPlaceholder();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
+        await loadC();
+        _homeScope=c.id;
+        // Drop back to Enrich mode after spinning up a fresh KB — the
+        // user's next action is almost always to feed it (chat / note /
+        // URL / file), not to create another corpus. Without this flip,
+        // the composer stays on Create mode and its placeholder + mode
+        // label remain stuck on the create-prompt, even though the chip
+        // correctly shows the new corpus. Mirrors the post-create UX of
+        // the Create-mode terminal flow so both create paths feel
+        // identical.
+        _composerMode='enrich';
+        updateChip();           // updates chip + calls _refreshComposerPlaceholder
+        closeChipMenu();
+        toast(`Created ${nm}`,'success');
+        renderSBChats();
+        input.focus();
       }catch(e){toast('Failed to create corpus: '+e.message,'error');goEl.disabled=false;goEl.textContent='Create'}
     };
     goEl.onclick=createNew;
