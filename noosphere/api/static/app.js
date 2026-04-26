@@ -2823,15 +2823,120 @@ async function drawGraphIn(container,corpora,existingCanvas){
   const pts=[];lk.forEach(l=>{for(let i=0;i<Math.max(1,Math.round(l.s*1.5));i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.5,op:.3+Math.random()*.5})});
   const sim=d3.forceSimulation(ns).force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(70,220-d.s*50)).strength(d=>.1+d.s*.12)).force('charge',d3.forceManyBody().strength(-500).distanceMax(600)).force('center',d3.forceCenter(W/2,H/2).strength(.04)).force('collision',d3.forceCollide().radius(BR+16)).alphaDecay(.03).velocityDecay(.35);
 
-  let drag=null,hov=null,mp=null;const tt=container.querySelector('.nv-tt')||document.getElementById('nv-tt');
-  function getN(x,y){for(const n of ns)if(Math.hypot(n.x-x,n.y-y)<BR+6)return n;return null}
-  cv.onmousedown=e=>{const r=cv.getBoundingClientRect();drag=getN(e.clientX-r.left,e.clientY-r.top);if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart()}};
-  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();const x=e.clientX-r.left,y=e.clientY-r.top;mp=[x,y];if(drag){drag.fx=x;drag.fy=y;cv.style.cursor='grabbing';return}hov=getN(x,y);cv.style.cursor=hov?'pointer':'grab';if(hov&&tt){const ext=hov._isOwn===false?' · external':'';tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level}${ext} · Click to open</div>`;tt.classList.remove('hidden');tt.style.left=(x+12)+'px';tt.style.top=(y-8)+'px'}else if(tt){tt.classList.add('hidden')}};
-  cv.onmouseup=()=>{if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
-  cv.onclick=()=>{if(!drag&&hov)location.hash='#/corpus/'+hov.id};
-  cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}};
+  // Viewport pan+zoom — Obsidian/Feynman style. The simulation continues
+  // to operate in "world space" (forces, node positions in raw px) while
+  // the canvas applies a translate+scale transform at draw time, so the
+  // physics doesn't have to know anything about the camera.
+  //   view.k       — current zoom scale (1 = identity)
+  //   view.tx/ty   — translation in screen pixels, applied AFTER scale
+  //   ZOOM_MIN/MAX — clamps so a wheel-mash can't trash the layout
+  // Auto-fit runs once the simulation has had time to spread nodes
+  // (~600 ms by default — alphaDecay=.03 means we're well into convergence
+  // by then). Double-click on empty space repeats the fit so users can
+  // recover from drifting/dragging without reloading.
+  const view={tx:0,ty:0,k:1};
+  const ZOOM_MIN=0.25,ZOOM_MAX=4;
+  let _autoFitDone=false;
+  const toWorld=(sx,sy)=>[(sx-view.tx)/view.k,(sy-view.ty)/view.k];
+  function autoFit(){
+    if(!ns.length)return;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const n of ns){
+      if(n.x==null||n.y==null)continue;
+      if(n.x<minX)minX=n.x;if(n.x>maxX)maxX=n.x;
+      if(n.y<minY)minY=n.y;if(n.y>maxY)maxY=n.y;
+    }
+    if(!isFinite(minX))return;
+    const PAD=BR*3;  // give labels room
+    minX-=PAD;maxX+=PAD;minY-=PAD;maxY+=PAD;
+    const bw=Math.max(1,maxX-minX),bh=Math.max(1,maxY-minY);
+    // Cap auto-zoom at 2× — past that a 2-node graph would look
+    // ridiculous (giant orbs filling the screen).
+    const k=Math.min(W/bw,H/bh,2);
+    view.k=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,k));
+    view.tx=W/2-((minX+maxX)/2)*view.k;
+    view.ty=H/2-((minY+maxY)/2)*view.k;
+  }
+  setTimeout(()=>{if(!_autoFitDone){autoFit();_autoFitDone=true}},600);
+
+  let drag=null,hov=null,mp=null,pan=null,panMoved=0;
+  const tt=container.querySelector('.nv-tt')||document.getElementById('nv-tt');
+  // Hit-test in screen space — keeps click targets the same physical
+  // size at every zoom level. World-space hit-test would shrink with
+  // the nodes when zoomed out, leaving 4-pixel click targets.
+  function getN_screen(sx,sy){
+    for(const n of ns){
+      const nsx=n.x*view.k+view.tx,nsy=n.y*view.k+view.ty;
+      if(Math.hypot(nsx-sx,nsy-sy)<BR+6)return n;
+    }
+    return null;
+  }
+  cv.onmousedown=e=>{
+    const r=cv.getBoundingClientRect();
+    const sx=e.clientX-r.left,sy=e.clientY-r.top;
+    drag=getN_screen(sx,sy);
+    if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart();return}
+    // Empty space → start panning. Capture current view offsets so the
+    // delta math in mousemove stays absolute (prevents jitter from
+    // accumulating float error).
+    pan={sx,sy,tx:view.tx,ty:view.ty};
+    panMoved=0;
+    cv.style.cursor='grabbing';
+  };
+  cv.onmousemove=e=>{
+    const r=cv.getBoundingClientRect();
+    const sx=e.clientX-r.left,sy=e.clientY-r.top;
+    if(pan){
+      const dx=sx-pan.sx,dy=sy-pan.sy;
+      view.tx=pan.tx+dx;view.ty=pan.ty+dy;
+      panMoved=Math.max(panMoved,Math.abs(dx)+Math.abs(dy));
+      return;
+    }
+    const [wx,wy]=toWorld(sx,sy);
+    mp=[wx,wy];  // world coords — magnet effect uses n.x/n.y which are world too
+    if(drag){drag.fx=wx;drag.fy=wy;cv.style.cursor='grabbing';return}
+    hov=getN_screen(sx,sy);
+    cv.style.cursor=hov?'pointer':'grab';
+    if(hov&&tt){
+      // Tooltip in screen coords (CSS positions, unaffected by zoom).
+      const ext=hov._isOwn===false?' · external':'';
+      tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level}${ext} · Click to open</div>`;
+      tt.classList.remove('hidden');
+      tt.style.left=(sx+12)+'px';
+      tt.style.top=(sy-8)+'px';
+    }else if(tt){tt.classList.add('hidden')}
+  };
+  cv.onmouseup=()=>{
+    if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}
+    if(pan){pan=null;cv.style.cursor=hov?'pointer':'grab'}
+  };
+  // Suppress click navigation if the gesture was actually a pan — without
+  // this guard, ending a pan on top of a node would teleport the user
+  // into that corpus by accident.
+  cv.onclick=()=>{if(!drag&&hov&&panMoved<5)location.hash='#/corpus/'+hov.id};
+  cv.ondblclick=e=>{e.preventDefault();autoFit()};
+  cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}if(pan)pan=null};
+  // Wheel = zoom anchored at cursor. The "exp(-deltaY * factor)" curve
+  // gives smooth perceived speed across mouse wheels (large discrete
+  // deltaY) and trackpad pinches (small continuous deltaY with ctrlKey).
+  // After updating k, we adjust tx/ty so the world point under the
+  // cursor stays under the cursor — same trick d3-zoom uses.
+  cv.onwheel=e=>{
+    e.preventDefault();
+    const r=cv.getBoundingClientRect();
+    const sx=e.clientX-r.left,sy=e.clientY-r.top;
+    const [wx,wy]=toWorld(sx,sy);
+    const factor=Math.exp(-e.deltaY*0.0015);
+    const newK=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,view.k*factor));
+    if(newK===view.k)return;
+    view.tx=sx-wx*newK;view.ty=sy-wy*newK;view.k=newK;
+  };
 
   function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);
+    // Apply the camera transform AFTER the dpi scale (set once outside the
+    // loop). Everything below this point draws in world coordinates and
+    // gets pan/zoom for free.
+    cx.translate(view.tx,view.ty);cx.scale(view.k,view.k);
     const activeSet=hov?nbr[hov.id]:null; // hover-dim: keep hovered + neighbors at full opacity
     // Edge rendering: solid line for human-curated tag edges, dashed for
     // AI-inferred semantic similarity. Mirrors Obsidian's Graphene plugin
