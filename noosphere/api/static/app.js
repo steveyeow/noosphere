@@ -1120,7 +1120,11 @@ function renderHome(){
     // Enter is a newline and ⌘↵ saves.
     if(modeLabelBtn)modeLabelBtn.style.display='none';
     if(attachBtn)attachBtn.style.display='none';
-    if(slidersBtn)slidersBtn.style.display='none';
+    // Note: a `slidersBtn` toggle used to live here but was removed when
+    // the mode picker collapsed into the mode-label popover — see the
+    // comment near `modeLabelBtn` setup. The lingering reference threw
+    // a ReferenceError that aborted the rest of enterWrite, leaving the
+    // hint visible and the cancel hidden in write mode.
     if(hintLbl)hintLbl.style.display='none';
     if(cancelBtn)cancelBtn.style.display='';
     updateChip();
@@ -1138,7 +1142,6 @@ function renderHome(){
     if(modelLbl)modelLbl.textContent='Noos';
     if(modeLabelBtn)modeLabelBtn.style.display='';
     if(attachBtn)attachBtn.style.display='';
-    if(slidersBtn)slidersBtn.style.display='';
     if(hintLbl){hintLbl.style.display='';hintLbl.innerHTML='Type <kbd>/</kbd> for commands'}
     if(cancelBtn)cancelBtn.style.display='none';
     updateChip();
