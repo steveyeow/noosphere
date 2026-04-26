@@ -175,7 +175,11 @@ def first_org() -> Optional[dict]:
 
 
 def add_member(
-    org_id: str, user_id: str, role: str = ROLE_EDITOR, invited_by: str = ""
+    org_id: str,
+    user_id: str,
+    role: str = ROLE_EDITOR,
+    invited_by: str = "",
+    display_name: str = "",
 ) -> dict:
     if role not in ROLES:
         raise OrgError(f"invalid role: {role}")
@@ -185,11 +189,25 @@ def add_member(
         return existing
     now = _now()
     conn.execute(
-        """INSERT INTO organization_members (org_id, user_id, role, invited_by, joined_at)
-           VALUES (?,?,?,?,?)""",
-        (org_id, user_id, role, invited_by or None, now),
+        """INSERT INTO organization_members
+           (org_id, user_id, role, invited_by, display_name, joined_at)
+           VALUES (?,?,?,?,?,?)""",
+        (org_id, user_id, role, invited_by or None, (display_name or None), now),
     )
     conn.commit()
+    return get_member(org_id, user_id)
+
+
+def update_display_name(org_id: str, user_id: str, display_name: str) -> Optional[dict]:
+    """Set/clear the member's display name. Empty string clears it."""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE organization_members SET display_name=? WHERE org_id=? AND user_id=?",
+        ((display_name or None), org_id, user_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return None
     return get_member(org_id, user_id)
 
 
@@ -320,7 +338,9 @@ def revoke_invite(invite_id: str) -> bool:
     return cur.rowcount > 0
 
 
-def accept_invite(token: str, accepting_user_id: str) -> dict:
+def accept_invite(
+    token: str, accepting_user_id: str, display_name: str = ""
+) -> dict:
     """Consume a single-use invite token, adding the accepting user as a member.
 
     Returns the new (or existing) member row.
@@ -349,6 +369,7 @@ def accept_invite(token: str, accepting_user_id: str) -> dict:
         accepting_user_id,
         role=invite["role"],
         invited_by=invite.get("created_by") or "",
+        display_name=display_name,
     )
     conn.execute(
         "UPDATE organization_invites SET accepted_at=?, accepted_by=? WHERE id=?",
@@ -479,7 +500,7 @@ __all__ = [
     "create_org", "get_org", "get_org_by_slug", "update_org", "delete_org",
     "list_orgs_for_user", "first_org",
     "add_member", "get_member", "list_members", "update_role",
-    "remove_member", "member_role",
+    "remove_member", "member_role", "update_display_name",
     "create_invite", "get_invite", "get_invite_by_token", "list_invites",
     "revoke_invite", "accept_invite",
     "log_audit", "list_audit_logs",

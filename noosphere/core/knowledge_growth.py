@@ -649,6 +649,7 @@ def ingest_rss_feed(
     *,
     max_items: int = 25,
     fetch_timeout: float = 30.0,
+    contributor_user_id: str | None = None,
 ) -> dict[str, Any]:
     """Fetch RSS/Atom, ingest new entries (dedupe by guid/link). Returns counts + document ids."""
     resp = httpx.get(
@@ -680,7 +681,10 @@ def ingest_rss_feed(
         doc: dict | None = None
         if link.startswith("http"):
             try:
-                doc = ingest_url(corpus_id, link, doc_type="blog")
+                doc = ingest_url(
+                    corpus_id, link, doc_type="blog",
+                    contributor_user_id=contributor_user_id,
+                )
                 # merge rss metadata into document — ingest_url sets source_url; add rss fields
                 _merge_document_metadata(doc["id"], meta)
             except Exception as e:
@@ -700,6 +704,7 @@ def ingest_rss_feed(
                 date="",
                 tags=["feed"],
                 metadata=meta,
+                contributor_user_id=contributor_user_id,
             )
 
         ingested.append(doc)
@@ -895,6 +900,7 @@ def ingest_urls_bulk(
     *,
     doc_type: str = "blog",
     source_kind: str | None = None,
+    contributor_user_id: str | None = None,
 ) -> dict[str, Any]:
     """Ingest multiple HTTP URLs (lower-friction batch inflow)."""
     results: list[dict] = []
@@ -905,7 +911,10 @@ def ingest_urls_bulk(
             errors.append({"url": url, "error": "invalid URL"})
             continue
         try:
-            results.append(ingest_url(corpus_id, u, doc_type=doc_type, source_kind=source_kind))
+            results.append(ingest_url(
+                corpus_id, u, doc_type=doc_type, source_kind=source_kind,
+                contributor_user_id=contributor_user_id,
+            ))
         except Exception as e:
             errors.append({"url": u, "error": str(e)})
     idx: dict[str, Any] = {}

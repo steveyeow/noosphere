@@ -258,7 +258,11 @@ class CreateCorpusRequest(BaseModel):
     description: str = ""
     author_name: str = ""
     tags: list[str] = []
-    access_level: str = "public"
+    # access_level is workspace-aware:
+    #   personal → defaults to "public" (creator-friendly publish flow)
+    #   org      → defaults to "private" (team data rarely goes public)
+    # Pass an explicit value to override.
+    access_level: Optional[str] = None
     language: str = "en"
 
 
@@ -557,9 +561,14 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request, backgrou
         owner_id = actor_uid if _is_cloud() else ""
         scope_org_id = ""
 
+    # Resolve workspace-aware default for access_level.
+    resolved_access = req.access_level
+    if resolved_access is None:
+        resolved_access = "private" if scope_org_id else "public"
+
     corpus = create_corpus(
         req.name, description=req.description, author_name=req.author_name,
-        tags=req.tags, access_level=req.access_level, language=req.language,
+        tags=req.tags, access_level=resolved_access, language=req.language,
         owner_id=owner_id, org_id=scope_org_id,
     )
 
@@ -600,25 +609,12 @@ def _safe_update_corpus_embedding(corpus_id: str):
 
 @router.get("/corpora/network")
 async def api_corpus_network(request: Request, background_tasks: BackgroundTasks):
+    # Noosphere = the world. This endpoint is the global public-network
+    # graph, identical regardless of which workspace the caller is in.
+    # Per-workspace ("ours") graphs are served by /corpora and rendered in
+    # #/corpora's Network mode. Private corpora visibility is governed by
+    # access_level (orthogonal to workspace), enforced via include_private.
     corpora = list_corpora(include_private=_is_owner_request(request))
-    # Workspace scoping: the network is what *this* workspace can see.
-    #   org workspace      → org's corpora (+ public registry corpora)
-    #   personal workspace → personal corpora (+ public registry corpora)
-    # Public corpora from the registered_corpora table flow in via the
-    # registry layer, not this endpoint, so we only need to filter the
-    # local corpora list here.
-    kind, active_org = _active_workspace(request)
-    if kind == "org" and active_org:
-        # Caller must actually belong to the org they claim — otherwise
-        # ignore the header and fall back to personal scope rather than
-        # leaking corpora.
-        uid = _get_user_id(request)
-        if uid and orgs_mod.member_role(active_org, uid):
-            corpora = [c for c in corpora if c.get("org_id") == active_org]
-        else:
-            corpora = [c for c in corpora if not c.get("org_id")]
-    else:
-        corpora = [c for c in corpora if not c.get("org_id")]
     # Lazy backfill: any corpus without a profile embedding yet gets one
     # computed in the background. The current response uses whatever
     # tag-only links are computable; the next /network call will pick up
@@ -1090,10 +1086,27 @@ async def api_ingest_urls_bulk(corpus_id: str, req: IngestUrlsRequest, request: 
         raise HTTPException(status_code=400, detail="Maximum 40 URLs per request")
     from noosphere.core.knowledge_growth import ingest_urls_bulk
 
+    contributor_uid = _get_user_id(request)
     try:
-        return ingest_urls_bulk(corpus["id"], req.urls, doc_type=req.doc_type, source_kind=req.source_kind)
+        result = ingest_urls_bulk(
+            corpus["id"], req.urls,
+            doc_type=req.doc_type, source_kind=req.source_kind,
+            contributor_user_id=contributor_uid,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if corpus.get("org_id"):
+        for d in (result.get("results") or result.get("documents") or []):
+            doc_id = d.get("id") if isinstance(d, dict) else None
+            if not doc_id:
+                continue
+            orgs_mod.log_audit(
+                "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                resource_type="document", resource_id=doc_id,
+                metadata={"corpus_id": corpus["id"], "source": "ingest-urls"},
+                ip_addr=_client_ip(request),
+            )
+    return result
 
 
 @router.post("/corpora/{corpus_id}/ingest-feed")
@@ -1104,13 +1117,29 @@ async def api_ingest_feed(corpus_id: str, req: IngestFeedRequest, request: Reque
     _check_quota(request, "ingest_feed")
     from noosphere.core.knowledge_growth import ingest_rss_feed
 
+    contributor_uid = _get_user_id(request)
     try:
-        result = ingest_rss_feed(corpus["id"], req.feed_url.strip(), max_items=req.max_items)
+        result = ingest_rss_feed(
+            corpus["id"], req.feed_url.strip(),
+            max_items=req.max_items,
+            contributor_user_id=contributor_uid,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     _track_usage(request, "ingest_feed")
+    if corpus.get("org_id"):
+        for d in (result.get("documents") or []):
+            doc_id = d.get("id") if isinstance(d, dict) else None
+            if not doc_id:
+                continue
+            orgs_mod.log_audit(
+                "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                resource_type="document", resource_id=doc_id,
+                metadata={"corpus_id": corpus["id"], "feed_url": req.feed_url, "source": "rss"},
+                ip_addr=_client_ip(request),
+            )
     return result
 
 
@@ -1169,9 +1198,18 @@ async def api_import_twitter(corpus_id: str, request: Request, file: UploadFile 
     if not (file.filename or "").lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Expected a .zip archive")
     path = await _save_upload_to_temp(file)
+    contributor_uid = _get_user_id(request)
     try:
         from noosphere.core.importers import import_twitter_archive
-        return import_twitter_archive(corpus["id"], path)
+        result = import_twitter_archive(corpus["id"], path, contributor_user_id=contributor_uid)
+        if corpus.get("org_id"):
+            orgs_mod.log_audit(
+                "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                resource_type="corpus", resource_id=corpus["id"],
+                metadata={"source": "twitter-archive", "imported": result.get("imported", 0)},
+                ip_addr=_client_ip(request),
+            )
+        return result
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -1185,6 +1223,7 @@ async def api_import_twitter(corpus_id: str, request: Request, file: UploadFile 
 async def api_import_notion(corpus_id: str, request: Request, file: UploadFile = File(...)):
     """Import a Notion workspace export ZIP. Pages are ingested as user_original."""
     corpus = _resolve_corpus(corpus_id)
+    contributor_uid = _get_user_id(request)
     _require_owner(request, corpus)
     _check_document_limit(request, corpus["id"])
     if not (file.filename or "").lower().endswith(".zip"):
@@ -1192,7 +1231,15 @@ async def api_import_notion(corpus_id: str, request: Request, file: UploadFile =
     path = await _save_upload_to_temp(file)
     try:
         from noosphere.core.importers import import_notion_export
-        return import_notion_export(corpus["id"], path)
+        result = import_notion_export(corpus["id"], path, contributor_user_id=contributor_uid)
+        if corpus.get("org_id"):
+            orgs_mod.log_audit(
+                "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                resource_type="corpus", resource_id=corpus["id"],
+                metadata={"source": "notion-archive", "imported": result.get("imported", 0)},
+                ip_addr=_client_ip(request),
+            )
+        return result
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -2308,18 +2355,32 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
 
 
 @router.get("/chat-sessions")
-async def api_list_chat_sessions(limit: int = 20):
-    """List recent chat sessions across all corpora."""
+async def api_list_chat_sessions(request: Request, limit: int = 20):
+    """List recent chat sessions, scoped to the active workspace.
+
+    Org workspace → only sessions whose parent corpus belongs to that org.
+    Personal workspace → only sessions whose parent corpus is personal
+    (org_id IS NULL) — keeps a member's personal scratchpads out of the
+    org sidebar and vice versa.
+    """
     conn = get_conn()
-    rows = conn.execute(
-        """SELECT s.id, s.corpus_id, s.title, s.created_at, s.updated_at,
-                  c.name as corpus_name,
-                  (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as message_count
-           FROM chat_sessions s
-           LEFT JOIN corpora c ON c.id = s.corpus_id
-           ORDER BY s.updated_at DESC LIMIT ?""",
-        (limit,),
-    ).fetchall()
+    kind, active_org = _active_workspace(request)
+    base = (
+        "SELECT s.id, s.corpus_id, s.title, s.created_at, s.updated_at, "
+        "       c.name as corpus_name, "
+        "       (SELECT COUNT(*) FROM chat_messages WHERE session_id=s.id) as message_count "
+        "FROM chat_sessions s LEFT JOIN corpora c ON c.id = s.corpus_id "
+    )
+    if kind == "org" and active_org:
+        rows = conn.execute(
+            base + "WHERE c.org_id = ? ORDER BY s.updated_at DESC LIMIT ?",
+            (active_org, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            base + "WHERE c.org_id IS NULL ORDER BY s.updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -3240,16 +3301,24 @@ async def api_get_invite_by_token(token: str):
     }
 
 
+class AcceptInviteRequest(BaseModel):
+    display_name: Optional[str] = ""
+
+
 @router.post("/orgs/invites/{token}/accept")
-async def api_accept_invite(token: str, request: Request):
+async def api_accept_invite(
+    token: str, request: Request, body: Optional[AcceptInviteRequest] = None,
+):
     uid = _require_user(request)
+    display_name = (body.display_name if body else "") or ""
     try:
-        member = orgs_mod.accept_invite(token, uid)
+        member = orgs_mod.accept_invite(token, uid, display_name=display_name.strip())
     except orgs_mod.OrgError as e:
         raise HTTPException(status_code=400, detail=str(e))
     orgs_mod.log_audit(
         "invite.accept", org_id=member["org_id"], actor_user_id=uid,
         resource_type="member", resource_id=uid,
+        metadata={"display_name": member.get("display_name") or ""},
         ip_addr=_client_ip(request),
     )
     return member

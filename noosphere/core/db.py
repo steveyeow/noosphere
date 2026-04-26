@@ -527,6 +527,7 @@ MIGRATION_SQL = [
     # never get one (graph just falls back to tag-overlap edges).
     "ALTER TABLE corpora ADD COLUMN corpus_vector {BLOB_TYPE}",
     "ALTER TABLE corpora ADD COLUMN corpus_vector_norm REAL",
+    "ALTER TABLE organization_members ADD COLUMN display_name TEXT",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations

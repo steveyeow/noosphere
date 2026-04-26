@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 _BATCH_SIZE = 50
 
 
-def import_twitter_archive(corpus_id: str, zip_file_path: str | Path) -> dict[str, Any]:
+def import_twitter_archive(
+    corpus_id: str,
+    zip_file_path: str | Path,
+    *,
+    contributor_user_id: str | None = None,
+) -> dict[str, Any]:
     """Import a Twitter / X data export ZIP into a corpus.
 
     Expects the standard Twitter archive format: data/tweets.js or data/tweet.js
@@ -92,6 +97,7 @@ def import_twitter_archive(corpus_id: str, zip_file_path: str | Path) -> dict[st
                     date=created_at[:10] if created_at else "",
                     tags=["twitter", "tweet"],
                     metadata=meta,
+                    contributor_user_id=contributor_user_id,
                 )
                 imported += 1
             except Exception as e:
@@ -116,7 +122,12 @@ def import_twitter_archive(corpus_id: str, zip_file_path: str | Path) -> dict[st
 _NOTION_UUID_SUFFIX = re.compile(r"\s+[a-f0-9]{32}$")
 
 
-def import_notion_export(corpus_id: str, zip_file_path: str | Path) -> dict[str, Any]:
+def import_notion_export(
+    corpus_id: str,
+    zip_file_path: str | Path,
+    *,
+    contributor_user_id: str | None = None,
+) -> dict[str, Any]:
     """Import a Notion workspace export ZIP into a corpus.
 
     Walks the directory tree inside the ZIP and ingests .md / .html / .csv files.
@@ -183,6 +194,7 @@ def import_notion_export(corpus_id: str, zip_file_path: str | Path) -> dict[str,
                     source_kind="user_original",
                     tags=["notion"],
                     metadata=meta,
+                    contributor_user_id=contributor_user_id,
                 )
                 imported += 1
             except Exception as e:
