@@ -288,6 +288,16 @@ function _activeWorkspaceLabel(){
   return 'Personal';
 }
 
+/* Workspace-context eyebrow — small serif tx3 line that appears on top-level
+   pages ONLY when in an org workspace. Personal is the baseline (no chrome).
+   The asymmetry itself signals "you're inside a shared space." */
+function workspaceEyebrowHTML(){
+  if(_workspace.kind!=='org'||!_workspace.org_id)return '';
+  const o=_orgs.find(o=>o.id===_workspace.org_id);
+  if(!o)return '';
+  return `<div class="ws-eyebrow">${esc(o.name)} · Team workspace</div>`;
+}
+
 function _operatorChipText(){
   if(_cloudMode&&_authUser){
     const email=_authUser.email||'';
@@ -341,28 +351,58 @@ function renderAuthUI(){
 }
 
 function _renderProfilePopoverHTML(){
+  // Active-workspace card — only when we're inside an org. The asymmetry
+  // is the signal: the card's presence tells you "you are in a shared space."
+  // Personal workspace skips the card entirely.
+  let wsCard='';
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);
+    if(o){
+      const initial=esc((o.name?.[0]||'?').toUpperCase());
+      const memberCount=(typeof o.member_count==='number')?o.member_count:null;
+      const meta=memberCount!==null
+        ? `Team · ${memberCount} member${memberCount===1?'':'s'}`
+        : `Team · ${esc(o.role||'member')}`;
+      wsCard=`
+        <div class="sb-pop-card">
+          <div class="sb-pop-card-id">
+            <span class="sb-pop-card-avatar">${initial}</span>
+            <div class="sb-pop-card-text">
+              <div class="sb-pop-card-name">${esc(o.name)}</div>
+              <div class="sb-pop-card-meta">${meta}</div>
+            </div>
+          </div>
+          <div class="sb-pop-card-actions">
+            <a class="sb-pop-pill" data-act="org-settings" data-slug="${esc(o.slug)}">${_ICON_GEAR}<span>Settings</span></a>
+            <a class="sb-pop-pill" data-act="org-invite" data-slug="${esc(o.slug)}">${_ICON_PLUS}<span>Invite members</span></a>
+          </div>
+        </div>`;
+    }
+  }
+  // Workspaces list (radio).
   const wsItems=[];
   wsItems.push(`<button class="sb-pop-item sb-pop-ws${_workspace.kind==='personal'?' is-active':''}" data-act="ws-personal"><span class="sb-pop-ws-dot"></span><span class="sb-pop-ws-name">Personal</span>${_workspace.kind==='personal'?'<span class="sb-pop-ws-check">✓</span>':''}</button>`);
   for(const o of _orgs){
     const active=_workspace.kind==='org'&&_workspace.org_id===o.id;
     wsItems.push(`<a class="sb-pop-item sb-pop-ws${active?' is-active':''}" data-act="ws-org" data-id="${esc(o.id)}" data-slug="${esc(o.slug||'')}"><span class="sb-pop-ws-dot"></span><span class="sb-pop-ws-name">${esc(o.name)}</span><span class="sb-pop-ws-role">${esc(o.role||'member')}</span>${active?'<span class="sb-pop-ws-check">✓</span>':''}</a>`);
   }
-  let settingsItem='';
-  if(_workspace.kind==='org'&&_workspace.org_id){
-    const o=_orgs.find(o=>o.id===_workspace.org_id);
-    if(o)settingsItem=`<a class="sb-pop-item" data-act="org-settings" data-slug="${esc(o.slug)}">${_ICON_GEAR}<span>Org settings</span></a>`;
-  }
-  const cloudItems=(_cloudMode&&_authUser)?
-    `<a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a><a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a>`:'';
+  // Account block (cloud only).
+  const accountBlock=(_cloudMode&&_authUser)?`
+    <div class="sb-pop-divider"></div>
+    <div class="sb-pop-section-label">Account · ${esc(_authUser.email||'')}</div>
+    <a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a>
+    <a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a>
+  `:'';
   const signoutItem=(_cloudMode&&_authUser)?
-    `<div class="sb-pop-divider"></div><button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
+    `<button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
   return `
+    ${wsCard}
+    <div class="sb-pop-section-label">Workspaces</div>
     <div class="sb-pop-section">${wsItems.join('')}</div>
-    ${settingsItem?'<div class="sb-pop-divider"></div>'+settingsItem:''}
     <div class="sb-pop-divider"></div>
     <button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button>
-    ${cloudItems}
     <button class="sb-pop-item" id="sb-pop-theme">${_ICON_SUN}${_ICON_MOON}<span>Theme</span></button>
+    ${accountBlock}
     ${signoutItem}
   `;
 }
@@ -375,7 +415,8 @@ function _wireProfilePopover(bot,popover){
       const act=el.dataset.act;
       if(act==='ws-personal')setWorkspace({kind:'personal',org_id:null});
       else if(act==='ws-org')setWorkspace({kind:'org',org_id:el.dataset.id});
-      else if(act==='org-settings')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug);
+      else if(act==='org-settings')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/members';
+      else if(act==='org-invite')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/invites';
     });
   });
   popover.querySelectorAll('a.sb-pop-item:not([data-act])').forEach(a=>a.addEventListener('click',close));
@@ -1152,6 +1193,7 @@ function renderHome(){
   const greetText=_firstName?`${_tod}, ${_firstName}`:_tod;
 
   ct.innerHTML=`<div class="home" id="home">
+    ${workspaceEyebrowHTML()}
     <div class="home-hero" id="home-hero">
       <canvas class="home-hero-mark" id="dragon-cv" width="64" height="64"></canvas>
       <h1 class="home-greet">${esc(greetText)}</h1>
@@ -2375,7 +2417,7 @@ function showTermConnectRSS(output,input,defaultCorpus,opts){
 function renderChats(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   ct.innerHTML=`<div class="mc-wrap mc-wrap--chats">
-    <div class="mc-top"><h1 class="mc-title">Chats</h1></div>
+    ${workspaceEyebrowHTML()}<div class="mc-top"><h1 class="mc-title">Chats</h1></div>
     <div class="mc-search-wrap">
       <svg class="mc-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" class="mc-search" id="chats-search" placeholder="Search chats…" />
@@ -2422,6 +2464,7 @@ let _mcView='list';
 function renderMyCorpora(){
   hideRP();const ct=document.getElementById('content'),host=location.origin;ct.classList.remove('content--corpus');
   ct.innerHTML=`<div class="mc-wrap">
+    ${workspaceEyebrowHTML()}
     <div class="mc-top">
       <h1 class="mc-title">Corpora</h1>
       <button class="mc-new-btn" id="mc-new-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> New</button>
@@ -5048,15 +5091,28 @@ async function renderOrgSettings(slug,tab){
   if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
     _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();
   }
-  const role=(_orgs.find(o=>o.id===org.id)?.role)||'member';
+  const me=_orgs.find(o=>o.id===org.id);
+  const role=me?.role||'member';
+  const memberCount=(typeof me?.member_count==='number')?me.member_count:null;
   const isAdmin=role==='owner'||role==='admin';
   const tabs=['members','invites','audit'];
   if(!tabs.includes(tab))tab='members';
+  const initial=esc((org.name?.[0]||'?').toUpperCase());
+  // Header conveys identity (avatar + serif name) and core value
+  // (member count = "this is shared"). Plan + slug + role on a calm
+  // muted meta line.
+  const metaParts=['Team plan'];
+  if(memberCount!==null)metaParts.push(`${memberCount} member${memberCount===1?'':'s'}`);
+  metaParts.push(`slug: ${esc(org.slug)}`);
+  metaParts.push(`your role: ${esc(role)}`);
   c.innerHTML=`
     <div class="cv-set-wrap">
-      <div class="cv-set-hd">
-        <h2 class="cv-set-h2">${esc(org.name)}</h2>
-        <div class="cv-set-sub">${esc(org.slug)} · your role: ${esc(role)}</div>
+      <div class="cv-set-hd cv-set-hd--org">
+        <span class="cv-set-org-avatar">${initial}</span>
+        <div class="cv-set-org-text">
+          <h2 class="cv-set-h2 cv-set-h2--org">${esc(org.name)}</h2>
+          <div class="cv-set-sub">${metaParts.join(' · ')}</div>
+        </div>
       </div>
       <div class="cv-tabs cv-tabs-org">
         ${tabs.map(t=>`<a class="cv-tab${t===tab?' cv-tab--active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${t==='members'?'Members':t==='invites'?'Invites':'Audit log'}</a>`).join('')}

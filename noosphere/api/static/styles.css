@@ -1385,14 +1385,39 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 
 /* Popover — accommodates the workspaces section + actions. Slightly wider
    than the personal-mode popover so the role label fits without wrapping. */
-.sb-popover-ws{width:230px}
+.sb-popover-ws{width:264px}
 .sb-pop-section{display:flex;flex-direction:column;gap:1px;padding:2px}
+.sb-pop-section-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);padding:8px 10px 4px}
 .sb-pop-ws{display:flex;align-items:center;gap:8px;padding:7px 8px;font-size:13px;text-align:left}
 .sb-pop-ws.is-active{background:var(--bg2)}
 .sb-pop-ws-dot{width:6px;height:6px;border-radius:50%;background:var(--tx3);flex-shrink:0}
 .sb-pop-ws-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
 .sb-pop-ws-role{font-size:11px;color:var(--tx3);text-transform:lowercase}
 .sb-pop-ws-check{font-size:13px;color:var(--proAcc,#3a82f7)}
+
+/* Active-workspace card at the top of the popover (org workspaces only).
+   Anchors identity (avatar + serif name) and value (member count =
+   "this is shared"); two-pill action row for the most-used jumps. */
+.sb-pop-card{padding:14px 14px 12px;border-bottom:1px solid var(--brd);display:flex;flex-direction:column;gap:12px}
+.sb-pop-card-id{display:flex;align-items:center;gap:10px}
+.sb-pop-card-avatar{width:30px;height:30px;border-radius:7px;background:var(--bg2);border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-family:'Libre Baskerville',Georgia,serif;font-size:14px;color:var(--tx);flex-shrink:0}
+.sb-pop-card-text{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.sb-pop-card-name{font-family:'Libre Baskerville',Georgia,serif;font-size:14px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-pop-card-meta{font-size:11.5px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-pop-card-actions{display:flex;gap:6px;flex-wrap:wrap}
+.sb-pop-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--brd);border-radius:99px;background:var(--bg);cursor:pointer;transition:background 120ms ease,border-color 120ms ease}
+.sb-pop-pill:hover{background:var(--bgH);border-color:var(--tx3)}
+.sb-pop-pill svg{flex-shrink:0;opacity:.7}
+
+/* Org settings page header with avatar + serif name */
+.cv-set-hd--org{flex-direction:row !important;align-items:center;gap:14px}
+.cv-set-org-avatar{width:48px;height:48px;border-radius:10px;background:var(--bg2);border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-family:'Libre Baskerville',Georgia,serif;font-size:22px;color:var(--tx);flex-shrink:0}
+.cv-set-org-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.cv-set-h2--org{font-size:24px}
+
+/* Workspace eyebrow on top-level pages */
+.ws-eyebrow{font-family:'Libre Baskerville',Georgia,serif;font-size:11.5px;letter-spacing:.05em;color:var(--tx3);font-style:italic;margin-bottom:6px;padding-left:2px}
+.home .ws-eyebrow{margin-bottom:8px;align-self:center}
 
 /* Org settings — reuses .cv-set-wrap aesthetic; one-off pieces below */
 .cv-set-h3{font-family:'Libre Baskerville',Georgia,serif;font-size:16px;font-weight:600;color:var(--tx);margin:0}

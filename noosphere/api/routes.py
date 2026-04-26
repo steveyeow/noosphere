@@ -460,6 +460,17 @@ async def api_me(request: Request):
     user_id = _get_user_id(request)
     workspace = _active_workspace(request)
     orgs_for_user = orgs_mod.list_orgs_for_user(user_id) if user_id else []
+    # Annotate each org with its member count — feeds the workspace card
+    # in the profile popover ("Team · 3 members"). Single small SELECT
+    # per org; not in a hot path.
+    if orgs_for_user:
+        conn = get_conn()
+        for o in orgs_for_user:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM organization_members WHERE org_id=?",
+                (o["id"],),
+            ).fetchone()
+            o["member_count"] = row["n"] if row else 0
     workspace_dict = {"kind": workspace[0], "org_id": workspace[1]}
     if _is_cloud():
         email = getattr(request.state, "email", "")
