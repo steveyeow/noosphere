@@ -601,6 +601,24 @@ def _safe_update_corpus_embedding(corpus_id: str):
 @router.get("/corpora/network")
 async def api_corpus_network(request: Request, background_tasks: BackgroundTasks):
     corpora = list_corpora(include_private=_is_owner_request(request))
+    # Workspace scoping: the network is what *this* workspace can see.
+    #   org workspace      → org's corpora (+ public registry corpora)
+    #   personal workspace → personal corpora (+ public registry corpora)
+    # Public corpora from the registered_corpora table flow in via the
+    # registry layer, not this endpoint, so we only need to filter the
+    # local corpora list here.
+    kind, active_org = _active_workspace(request)
+    if kind == "org" and active_org:
+        # Caller must actually belong to the org they claim — otherwise
+        # ignore the header and fall back to personal scope rather than
+        # leaking corpora.
+        uid = _get_user_id(request)
+        if uid and orgs_mod.member_role(active_org, uid):
+            corpora = [c for c in corpora if c.get("org_id") == active_org]
+        else:
+            corpora = [c for c in corpora if not c.get("org_id")]
+    else:
+        corpora = [c for c in corpora if not c.get("org_id")]
     # Lazy backfill: any corpus without a profile embedding yet gets one
     # computed in the background. The current response uses whatever
     # tag-only links are computable; the next /network call will pick up

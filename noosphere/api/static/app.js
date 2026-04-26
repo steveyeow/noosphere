@@ -269,33 +269,54 @@ async function signOut(){
   renderAuthUI();route();
 }
 
+/* Bottom-of-sidebar profile popover. Unified shape across cloud + self-hosted —
+   the popover is where "you-level" actions live (create org, theme, account,
+   sign out). Workspace-level actions stay in the workspace switcher above. */
+const _ICON_SUN='<svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+const _ICON_MOON='<svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _ICON_PLUS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+
 function renderAuthUI(){
   const bot=document.getElementById('sb-bot');
   if(!bot)return;
-  /* Non-cloud: dark mode toggle only */
-  if(!_cloudMode){
-    bot.innerHTML=`<button class="sb-btn" id="dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>`;
-    bot.querySelector('#dark-btn').addEventListener('click',toggleTheme);
-    return;
-  }
-  if(_authUser){
-    const email=_authUser.email||'';
-    const name=email.split('@')[0]||'User';
-    const avatar=_authUser.user_metadata?.avatar_url;
-    const tier=_authUser.user_metadata?.tier||'free';
-    const tierLabel=tier==='pro'?'Pro':'Free';
-    bot.innerHTML=`<div class="sb-profile" id="sb-profile">${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(name)}</span><span class="sb-tier-badge sb-tier-${tier}">${tierLabel}</span></span><svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg></div><div class="sb-popover hidden" id="sb-popover"><a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a><a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a><button class="sb-pop-item" id="sb-pop-theme"><svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span>Dark mode</span></button><div class="sb-pop-divider"></div><button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button></div>`;
-    const profile=bot.querySelector('#sb-profile');
-    const popover=bot.querySelector('#sb-popover');
-    profile.addEventListener('click',e=>{e.stopPropagation();popover.classList.toggle('hidden')});
-    bot.querySelector('#sb-pop-theme').addEventListener('click',e=>{e.stopPropagation();toggleTheme()});
-    bot.querySelector('#sb-pop-signout').addEventListener('click',signOut);
-    popover.querySelectorAll('a.sb-pop-item').forEach(a=>a.addEventListener('click',()=>popover.classList.add('hidden')));
-    document.addEventListener('click',function _closePopover(e){if(!bot.contains(e.target)){popover.classList.add('hidden')}});
-  }else{
+  // Cloud + signed out: just a sign-in button (orgs require an identity).
+  if(_cloudMode&&!_authUser){
     bot.innerHTML=`<button class="sb-btn sb-auth-login" style="width:100%;justify-content:center;gap:6px;padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="sb-lb">Sign in</span></button>`;
     bot.querySelector('.sb-auth-login').onclick=signInWithGoogle;
+    return;
   }
+  // Profile chip — header for the popover.
+  let chipHTML;
+  if(_cloudMode&&_authUser){
+    const email=_authUser.email||'';const name=email.split('@')[0]||'User';
+    const avatar=_authUser.user_metadata?.avatar_url;
+    const tier=_authUser.user_metadata?.tier||'free';const tierLabel=tier==='pro'?'Pro':'Free';
+    chipHTML=`${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(name)}</span><span class="sb-tier-badge sb-tier-${tier}">${tierLabel}</span></span>`;
+  }else{
+    const opName=_ownerName||'You';
+    chipHTML=`<span class="sb-auth-initial">${esc((opName[0]||'·').toUpperCase())}</span><span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(opName)}</span><span class="sb-tier-badge sb-tier-self">Local</span></span>`;
+  }
+  // Popover items, varying with cloud / authed state.
+  const cloudItems=(_cloudMode&&_authUser)?
+    `<a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a><a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a>`:'';
+  const signoutItem=(_cloudMode&&_authUser)?
+    `<div class="sb-pop-divider"></div><button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
+  bot.innerHTML=`
+    <div class="sb-profile" id="sb-profile">${chipHTML}<svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+    <div class="sb-popover hidden" id="sb-popover">
+      <button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button>
+      ${cloudItems}
+      <button class="sb-pop-item" id="sb-pop-theme">${_ICON_SUN}${_ICON_MOON}<span>Theme</span></button>
+      ${signoutItem}
+    </div>`;
+  const profile=bot.querySelector('#sb-profile');
+  const popover=bot.querySelector('#sb-popover');
+  profile.addEventListener('click',e=>{e.stopPropagation();popover.classList.toggle('hidden')});
+  bot.querySelector('#sb-pop-theme').addEventListener('click',e=>{e.stopPropagation();toggleTheme()});
+  bot.querySelector('#sb-pop-create-org').addEventListener('click',e=>{e.stopPropagation();popover.classList.add('hidden');_showCreateOrgModal()});
+  if(_cloudMode&&_authUser)bot.querySelector('#sb-pop-signout').addEventListener('click',signOut);
+  popover.querySelectorAll('a.sb-pop-item').forEach(a=>a.addEventListener('click',()=>popover.classList.add('hidden')));
+  document.addEventListener('click',function _closePopover(e){if(!bot.contains(e.target))popover.classList.add('hidden')});
 }
 function pickCorpusInline(container){
   return new Promise(resolve=>{
@@ -640,7 +661,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       <div class="lp-team-tile">
         <div class="lp-team-tile-text">
           <h2 class="lp-sec-h">For teams →</h2>
-          <p class="lp-sec-sub">The same layer, shared across your org. Every meeting, decision, and conversation flows in. Every agent your team runs queries it.</p>
+          <p class="lp-sec-sub">A living brain and intelligence layer for your team. Captures from Slack, meetings, and tickets at the edge — synthesizes through compile and distill — answers every member and every agent from one shared source of truth.</p>
         </div>
         <a href="#/team" class="lp-team-tile-cta">See team Noosphere →</a>
       </div>
@@ -4928,11 +4949,14 @@ function toggleWorkspaceMenu(e){
     const active=_workspace.kind==='org'&&_workspace.org_id===o.id;
     items.push(`<a class="ws-menu-item${active?' is-active':''}" data-act="org" data-id="${esc(o.id)}" data-slug="${esc(o.slug||'')}"><span class="ws-menu-dot"></span><span class="ws-menu-name">${esc(o.name)}</span><span class="ws-menu-sub">${esc(o.role||'member')}</span>${active?'<span class="ws-menu-check">✓</span>':''}</a>`);
   }
-  items.push('<div class="ws-menu-divider"></div>');
-  items.push('<button class="ws-menu-item ws-menu-create" data-act="create"><span class="ws-menu-plus">+</span><span class="ws-menu-name">Create organization</span></button>');
+  // Settings link — only when an org is active. Workspace creation lives in
+  // the profile area (lower-left), not here, since it's a "you-level" action.
   if(_workspace.kind==='org'&&_workspace.org_id){
     const o=_orgs.find(o=>o.id===_workspace.org_id);
-    if(o)items.push(`<a class="ws-menu-item ws-menu-settings" data-act="settings" data-slug="${esc(o.slug)}"><span class="ws-menu-gear">⚙</span><span class="ws-menu-name">Org settings</span></a>`);
+    if(o){
+      items.push('<div class="ws-menu-divider"></div>');
+      items.push(`<a class="ws-menu-item ws-menu-settings" data-act="settings" data-slug="${esc(o.slug)}"><span class="ws-menu-gear">⚙</span><span class="ws-menu-name">Org settings</span></a>`);
+    }
   }
   menu.innerHTML=items.join('');
   menu.classList.remove('hidden');
@@ -4942,19 +4966,22 @@ function toggleWorkspaceMenu(e){
       const act=el.dataset.act;
       if(act==='personal'){setWorkspace({kind:'personal',org_id:null})}
       else if(act==='org'){setWorkspace({kind:'org',org_id:el.dataset.id})}
-      else if(act==='create'){_showCreateOrgModal()}
       else if(act==='settings'){location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)}
     });
   });
 }
 
 async function setWorkspace(ws){
+  if(_workspace.kind===ws.kind&&_workspace.org_id===ws.org_id)return;
   _workspace=ws;_saveWorkspace();renderWorkspaceSwitcher();
-  // The corpus list, chats, and main view all depend on workspace scope.
-  await loadC();await loadChatSessions();
-  if(location.hash==='#/main'||location.hash==='#/corpora')route();
-  else location.hash='#/corpora';
-  toast(_workspace.kind==='org'?'Switched to '+(_orgs.find(o=>o.id===ws.org_id)?.name||'organization'):'Switched to Personal','success');
+  // Stay on the page the user is on if it's already workspace-scoped (corpora,
+  // home, network/explore — those reload via route()). Otherwise route to the
+  // workspace's home (#/main).
+  const h=location.hash||'';
+  const contextAware=(h==='#/main'||h==='#/corpora'||h.startsWith('#/network')||h.startsWith('#/explore'));
+  if(contextAware){route()}else{location.hash='#/main'}
+  const label=_workspace.kind==='org'?(_orgs.find(o=>o.id===ws.org_id)?.name||'organization'):'Personal';
+  toast('Workspace: '+label,'success');
 }
 
 function _showCreateOrgModal(){
@@ -4980,13 +5007,18 @@ function _showCreateOrgModal(){
 
 async function renderOrgSettings(slug,tab){
   const c=document.getElementById('content');if(!c)return;
-  c.innerHTML='<div class="org-page"><div class="org-page-loading">Loading…</div></div>';
+  // Org settings is a settings-style page, not a corpus detail — drop the
+  // right panel so its leftover NETWORK/ACCESS chrome doesn't follow us in.
+  document.getElementById('rpanel')?.classList.add('hidden');
+  // Match the corpus-settings layout (cv-set-wrap) so the chrome stays
+  // visually identical when you switch from a corpus into an org.
+  c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-loading">Loading…</div></div>';
   let org=null;
   try{
     const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
-    if(!r.ok){c.innerHTML='<div class="org-page"><h1 class="org-h1">Not found</h1><p>That organization doesn\'t exist or you don\'t have access.</p></div>';return}
+    if(!r.ok){c.innerHTML=`<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Not found</h2><div class="cv-set-sub">That organization doesn't exist or you don't have access.</div></div></div>`;return}
     org=await r.json();
-  }catch(e){c.innerHTML='<div class="org-page"><p>Failed to load organization.</p></div>';return}
+  }catch(e){c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Failed to load organization.</h2></div></div>';return}
   // Auto-switch active workspace to this org while we're on its settings.
   if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
     _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();
@@ -4996,18 +5028,15 @@ async function renderOrgSettings(slug,tab){
   const tabs=['members','invites','audit'];
   if(!tabs.includes(tab))tab='members';
   c.innerHTML=`
-    <div class="org-page">
-      <div class="org-page-hd">
-        <div>
-          <div class="org-page-eyebrow">Organization</div>
-          <h1 class="org-h1">${esc(org.name)}</h1>
-          <div class="org-page-meta">${esc(org.slug)} · your role: ${esc(role)}</div>
-        </div>
+    <div class="cv-set-wrap">
+      <div class="cv-set-hd">
+        <h2 class="cv-set-h2">${esc(org.name)}</h2>
+        <div class="cv-set-sub">${esc(org.slug)} · your role: ${esc(role)}</div>
       </div>
-      <div class="org-tabs">
-        ${tabs.map(t=>`<a class="org-tab${t===tab?' is-active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${t==='members'?'Members':t==='invites'?'Invites':'Audit log'}</a>`).join('')}
+      <div class="cv-tabs cv-tabs-org">
+        ${tabs.map(t=>`<a class="cv-tab${t===tab?' cv-tab--active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${t==='members'?'Members':t==='invites'?'Invites':'Audit log'}</a>`).join('')}
       </div>
-      <div class="org-tab-body" id="org-tab-body"></div>
+      <div class="cv-set-sec" id="org-tab-body"></div>
     </div>
   `;
   if(tab==='members')await _renderOrgMembersTab(org,isAdmin);
@@ -5017,24 +5046,24 @@ async function renderOrgSettings(slug,tab){
 
 async function _renderOrgMembersTab(org,isAdmin){
   const body=document.getElementById('org-tab-body');if(!body)return;
-  body.innerHTML='<div class="org-loading">Loading members…</div>';
+  body.innerHTML='<div class="cv-set-loading">Loading members…</div>';
   const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members');
-  if(!r.ok){body.innerHTML='<div class="org-empty">Failed to load members.</div>';return}
+  if(!r.ok){body.innerHTML='<div class="cv-set-empty">Failed to load members.</div>';return}
   const members=await r.json();
   const rows=members.map(m=>{
     const me=m.user_id===_userId;
-    const roleCtl=isAdmin&&!me?`<select class="org-role-sel" data-uid="${esc(m.user_id)}">${['owner','admin','editor','viewer'].map(r=>`<option value="${r}"${m.role===r?' selected':''}>${r}</option>`).join('')}</select>`:`<span class="org-role-static">${esc(m.role)}</span>`;
-    const removeBtn=isAdmin&&!me&&m.role!=='owner'?`<button class="org-row-rm" data-uid="${esc(m.user_id)}" title="Remove">×</button>`:'';
     const label=me?'You':_renderUserPillName(m.user_id);
-    return `<div class="org-row"><div class="org-row-name">${esc(label)}<span class="org-row-uid">${esc(m.user_id.slice(0,12))}…</span></div><div class="org-row-ctl">${roleCtl}${removeBtn}</div></div>`;
+    const roleCtl=isAdmin&&!me?`<select class="cv-set-row-input" data-uid="${esc(m.user_id)}" data-role-sel>${['owner','admin','editor','viewer'].map(r=>`<option value="${r}"${m.role===r?' selected':''}>${r}</option>`).join('')}</select>`:`<span class="cv-set-row-static">${esc(m.role)}</span>`;
+    const removeBtn=isAdmin&&!me&&m.role!=='owner'?`<button class="cv-set-row-rm" data-uid="${esc(m.user_id)}" title="Remove">×</button>`:'';
+    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">${esc(label)}</span><span class="cv-set-row-dc">${esc(m.user_id)}</span></div><div class="cv-set-row-ctl">${roleCtl}${removeBtn}</div></div>`;
   }).join('');
-  body.innerHTML=rows||'<div class="org-empty">No members.</div>';
-  body.querySelectorAll('.org-role-sel').forEach(sel=>sel.addEventListener('change',async()=>{
+  body.innerHTML=`<div class="cv-set-hd"><h3 class="cv-set-h3">Members</h3><div class="cv-set-sub">Roles control read/write access to every org corpus.</div></div><div class="cv-set-list">${rows||'<div class="cv-set-empty">No members.</div>'}</div>`;
+  body.querySelectorAll('[data-role-sel]').forEach(sel=>sel.addEventListener('change',async()=>{
     const uid=sel.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:sel.value})});
     if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
     toast('Role updated','success');
   }));
-  body.querySelectorAll('.org-row-rm').forEach(btn=>btn.addEventListener('click',async()=>{
+  body.querySelectorAll('.cv-set-row-rm').forEach(btn=>btn.addEventListener('click',async()=>{
     if(!confirm('Remove this member?'))return;
     const uid=btn.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'DELETE'});
     if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
@@ -5044,20 +5073,30 @@ async function _renderOrgMembersTab(org,isAdmin){
 
 async function _renderOrgInvitesTab(org,isAdmin){
   const body=document.getElementById('org-tab-body');if(!body)return;
-  if(!isAdmin){body.innerHTML='<div class="org-empty">Admin only.</div>';return}
-  body.innerHTML='<div class="org-loading">Loading invites…</div>';
+  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
+  body.innerHTML='<div class="cv-set-loading">Loading invites…</div>';
   const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites');
   const invites=r.ok?await r.json():[];
   const inviteUrl=t=>location.origin+'/#/invite/'+t;
   const rows=invites.length?invites.map(i=>{
-    return `<div class="org-row"><div class="org-row-name"><span class="org-invite-role">${esc(i.role)}</span><code class="org-invite-link">${esc(inviteUrl(i.token))}</code></div><div class="org-row-ctl"><button class="btn-sm org-invite-copy" data-link="${esc(inviteUrl(i.token))}">Copy</button><button class="btn-sm-ghost org-invite-revoke" data-id="${esc(i.id)}">Revoke</button></div></div>`;
-  }).join(''):'<div class="org-empty">No active invites.</div>';
+    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm"><span class="org-invite-role">${esc(i.role)}</span></span><code class="cv-set-row-dc cv-set-row-mono">${esc(inviteUrl(i.token))}</code></div><div class="cv-set-row-ctl"><button class="btn-sm org-invite-copy" data-link="${esc(inviteUrl(i.token))}">Copy</button><button class="btn-sm-ghost org-invite-revoke" data-id="${esc(i.id)}">Revoke</button></div></div>`;
+  }).join(''):'<div class="cv-set-empty">No active invites.</div>';
   body.innerHTML=`
-    <div class="org-invite-create">
-      <select id="org-invite-role">${['admin','editor','viewer'].map(r=>`<option value="${r}"${r==='editor'?' selected':''}>${r}</option>`).join('')}</select>
-      <button class="btn-sm" id="org-invite-go">Generate invite link</button>
+    <div class="cv-set-hd">
+      <h3 class="cv-set-h3">Invites</h3>
+      <div class="cv-set-sub">Single-use shared links. Send one to each new teammate.</div>
     </div>
-    <div class="org-invite-list">${rows}</div>
+    <div class="cv-set-row cv-set-row-form">
+      <div class="cv-set-row-info">
+        <span class="cv-set-row-nm">New invite link</span>
+        <span class="cv-set-row-dc">Role grants what the recipient can do once they join.</span>
+      </div>
+      <div class="cv-set-row-ctl">
+        <select id="org-invite-role" class="cv-set-row-input">${['admin','editor','viewer'].map(r=>`<option value="${r}"${r==='editor'?' selected':''}>${r}</option>`).join('')}</select>
+        <button class="btn-sm" id="org-invite-go">Generate link</button>
+      </div>
+    </div>
+    <div class="cv-set-list">${rows}</div>
   `;
   document.getElementById('org-invite-go').addEventListener('click',async()=>{
     const role=document.getElementById('org-invite-role').value;
@@ -5078,16 +5117,16 @@ async function _renderOrgInvitesTab(org,isAdmin){
 
 async function _renderOrgAuditTab(org,isAdmin){
   const body=document.getElementById('org-tab-body');if(!body)return;
-  if(!isAdmin){body.innerHTML='<div class="org-empty">Admin only.</div>';return}
-  body.innerHTML='<div class="org-loading">Loading audit log…</div>';
+  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
+  body.innerHTML='<div class="cv-set-loading">Loading audit log…</div>';
   const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/audit-logs?limit=200');
-  if(!r.ok){body.innerHTML='<div class="org-empty">Failed to load.</div>';return}
+  if(!r.ok){body.innerHTML='<div class="cv-set-empty">Failed to load.</div>';return}
   const logs=await r.json();
-  if(!logs.length){body.innerHTML='<div class="org-empty">No activity yet.</div>';return}
-  body.innerHTML=`<div class="org-audit-list">${logs.map(l=>{
+  if(!logs.length){body.innerHTML='<div class="cv-set-empty">No activity yet.</div>';return}
+  body.innerHTML=`<div class="cv-set-hd"><h3 class="cv-set-h3">Audit log</h3><div class="cv-set-sub">Every state change in this organization, newest first.</div></div><div class="org-audit-list cv-set-list">${logs.map(l=>{
     const t=new Date(l.created_at).toLocaleString();
     const meta=l.metadata?Object.entries(l.metadata).map(([k,v])=>`${esc(k)}=${esc(typeof v==='string'?v:JSON.stringify(v))}`).join(' · '):'';
-    return `<div class="org-audit-row"><span class="org-audit-when">${esc(t)}</span><span class="org-audit-who">${esc((l.actor_user_id||'?').slice(0,10))}</span><span class="org-audit-act">${esc(l.action)}</span>${l.resource_type?`<span class="org-audit-res">${esc(l.resource_type)}:${esc((l.resource_id||'').slice(0,10))}</span>`:''}${meta?`<span class="org-audit-meta">${meta}</span>`:''}</div>`;
+    return `<div class="org-audit-row"><span class="org-audit-when">${esc(t)}</span><span class="org-audit-who">${esc(_renderUserPillName(l.actor_user_id))}</span><span class="org-audit-act">${esc(l.action)}</span>${l.resource_type?`<span class="org-audit-res">${esc(l.resource_type)}:${esc((l.resource_id||'').slice(0,10))}</span>`:''}${meta?`<span class="org-audit-meta">${meta}</span>`:''}</div>`;
   }).join('')}</div>`;
 }
 
