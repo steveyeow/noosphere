@@ -480,9 +480,26 @@ async def api_health():
         # so the operator can tell the column itself is the problem.
         pass
 
+    # Build identity — answers "is the running container actually the
+    # commit I just pushed?" without having to grep Railway logs.
+    # RAILWAY_GIT_COMMIT_SHA is set automatically by Railway at deploy
+    # time; falls back to "" on self-hosted / local. Also publishes a
+    # short list of route fingerprints (specifically the ones added in
+    # recent commits) so an operator can confirm a particular endpoint
+    # really shipped, distinct from the silent "old image still serving"
+    # failure mode where /health returns fine but the new endpoint 404s.
+    import os as _os
+    git_sha = (_os.getenv("RAILWAY_GIT_COMMIT_SHA")
+               or _os.getenv("GIT_COMMIT_SHA") or "")[:12]
+    has_admin_recompute = any(
+        getattr(r, "path", "") == "/api/v1/admin/recompute-embeddings"
+        for r in request.app.routes
+    )
     return {
         "status": "ok",
         "version": __version__,
+        "git_sha": git_sha,
+        "has_admin_recompute": has_admin_recompute,
         "corpus_count": len(corpora),
         "network_nodes": remote_nodes,
         "network_corpora": remote_corpora,
