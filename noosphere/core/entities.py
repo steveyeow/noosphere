@@ -641,6 +641,18 @@ def enrich_corpus(corpus_id: str, *, only_unenriched: bool = True, limit: int = 
             enriched_count += 1
             total_new_entities += result.get("new_mentions", 0)
 
+    # Mark the corpus profile vector stale if extraction actually
+    # produced something — the profile text uses top entities by
+    # mention count, and a fresh enrichment run can shift the
+    # dominant entities meaningfully. Skip when nothing new came in
+    # so we don't churn the embedding on no-op enrichment passes.
+    if total_new_entities > 0:
+        try:
+            from noosphere.core.corpus_embedding import mark_corpus_embedding_dirty
+            mark_corpus_embedding_dirty(corpus_id)
+        except Exception:
+            pass
+
     return {
         "corpus_id": corpus_id,
         "enriched": enriched_count,

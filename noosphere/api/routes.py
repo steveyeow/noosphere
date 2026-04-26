@@ -447,6 +447,39 @@ async def api_health():
     # which can succeed while auth or other middleware blocks the real
     # POST. Set in register_with_registry() on success.
     from noosphere.core.registry import last_registration_ok
+    # Profile-embedding pipeline diagnostics — surfaced here so an operator
+    # can tell at a glance whether the discovery graph's semantic edges
+    # are working. Three counts answer different questions:
+    #   embedded — corpora that have a vector (graph can render their edges)
+    #   dirty    — vectors exist but content drifted; pending lazy refresh
+    #   missing  — corpora that have never been embedded; lazy backfill
+    #              should pick them up on next /corpora/network call
+    # column_present catches the boot-time failure mode where the
+    # migration didn't apply (rare, but seeing dirty=missing=embedded=0
+    # on a populated node would otherwise look indistinguishable from
+    # "embedder is down").
+    embedding_stats = {
+        "embedded": 0, "dirty": 0, "missing": 0, "column_present": False,
+    }
+    try:
+        _conn = get_conn()
+        _row = _conn.execute(
+            "SELECT "
+            " SUM(CASE WHEN corpus_vector IS NOT NULL THEN 1 ELSE 0 END) AS embedded, "
+            " SUM(CASE WHEN corpus_vector_dirty_since IS NOT NULL THEN 1 ELSE 0 END) AS dirty, "
+            " SUM(CASE WHEN corpus_vector IS NULL THEN 1 ELSE 0 END) AS missing "
+            "FROM corpora"
+        ).fetchone()
+        if _row is not None:
+            embedding_stats["embedded"] = int(_row["embedded"] or 0)
+            embedding_stats["dirty"] = int(_row["dirty"] or 0)
+            embedding_stats["missing"] = int(_row["missing"] or 0)
+            embedding_stats["column_present"] = True
+    except Exception:
+        # Column missing → migration didn't run. Leaves column_present=False
+        # so the operator can tell the column itself is the problem.
+        pass
+
     return {
         "status": "ok",
         "version": __version__,
@@ -463,6 +496,7 @@ async def api_health():
         # outbound-register anywhere. UI uses this to render the right
         # status copy.
         "is_registry": NOOSPHERE_IS_REGISTRY,
+        "embedding_stats": embedding_stats,
     }
 
 
@@ -657,10 +691,20 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
         if _ids:
             _conn = get_conn()
             _placeholders = ",".join(["?"] * len(_ids))
+            # Pick up two flavours in one pass:
+            #   - corpus_vector IS NULL          → never embedded yet
+            #   - corpus_vector_dirty_since SET  → content shifted since
+            #     the last embed (doc add / new entities / manifest
+            #     regen) and the vector is now stale.
+            # Order NULLs first so a brand-new corpus on a busy node
+            # doesn't get starved by a queue of stale-but-already-embedded
+            # ones — a fresh corpus appearing as a disconnected dot is
+            # the worse UX failure.
             _rows = _conn.execute(
                 f"SELECT id FROM corpora "
                 f"WHERE id IN ({_placeholders}) "
-                f"AND corpus_vector IS NULL "
+                f"AND (corpus_vector IS NULL OR corpus_vector_dirty_since IS NOT NULL) "
+                f"ORDER BY (corpus_vector IS NULL) DESC "
                 f"LIMIT {_BACKFILL_CAP}",
                 tuple(_ids),
             ).fetchall()

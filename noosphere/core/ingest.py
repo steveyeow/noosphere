@@ -487,6 +487,14 @@ def ingest_text(
     )
     conn.commit()
     _update_corpus_counts(corpus_id)
+    # Mark the corpus profile vector stale — its content base just grew,
+    # so the next graph view should refresh the semantic embedding.
+    # Cheap (single SQL UPDATE), import-deferred to avoid cycle.
+    try:
+        from noosphere.core.corpus_embedding import mark_corpus_embedding_dirty
+        mark_corpus_embedding_dirty(corpus_id)
+    except Exception:
+        pass
 
     return {
         "id": doc_id,

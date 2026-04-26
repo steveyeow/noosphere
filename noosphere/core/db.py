@@ -541,6 +541,16 @@ MIGRATION_SQL = [
     # never get one (graph just falls back to tag-overlap edges).
     "ALTER TABLE corpora ADD COLUMN corpus_vector {BLOB_TYPE}",
     "ALTER TABLE corpora ADD COLUMN corpus_vector_norm REAL",
+    # `corpus_vector_dirty_since` flips on whenever the corpus profile
+    # materially changes (doc added, entities extracted, manifest
+    # regenerated). Holds the ISO timestamp of the first dirtying since
+    # the last successful embed; NULL means clean. The lazy-refresh
+    # logic in /corpora/network picks up dirty rows alongside NULL ones,
+    # so the next graph view recomputes the vector. Cheaper than
+    # per-event embed calls (one SQL UPDATE vs an LLM round-trip) and
+    # surfaces the refresh exactly when a user would notice staleness —
+    # when they're looking at the graph.
+    "ALTER TABLE corpora ADD COLUMN corpus_vector_dirty_since TEXT",
     "ALTER TABLE organization_members ADD COLUMN display_name TEXT",
 ]
 

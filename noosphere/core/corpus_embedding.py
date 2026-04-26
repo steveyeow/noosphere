@@ -209,12 +209,41 @@ def update_corpus_embedding(corpus_id: str, *, embedder: Optional[EmbeddingProvi
     # per-passage model used for retrieval), and overwriting them here
     # would conflate two distinct embedding pipelines. The corpus vector
     # gets its dim inferred at load time from blob length / 4 (float32).
+    # Also clear the dirty flag — re-embed is what dirty was waiting for.
     conn.execute(
-        "UPDATE corpora SET corpus_vector=?, corpus_vector_norm=? WHERE id=?",
+        "UPDATE corpora "
+        "SET corpus_vector=?, corpus_vector_norm=?, corpus_vector_dirty_since=NULL "
+        "WHERE id=?",
         (payload, norm, corpus_id),
     )
     conn.commit()
     return True
+
+
+def mark_corpus_embedding_dirty(corpus_id: str) -> None:
+    """Flag a corpus as needing a profile-vector refresh. Cheap UPDATE
+    — does NOT call the embedder. The next /corpora/network view
+    triggers the actual recompute via the lazy-backfill path. Idempotent:
+    re-marking an already-dirty corpus is a no-op (we keep the earliest
+    dirty timestamp so debugging can answer "how long has this been
+    stale?").
+
+    Best-effort: any DB failure (column missing on a half-migrated
+    deployment, etc.) is swallowed so the caller's primary work isn't
+    affected. Worst case the graph just shows the older vector for a
+    while longer.
+    """
+    try:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        get_conn().execute(
+            "UPDATE corpora SET corpus_vector_dirty_since=? "
+            "WHERE id=? AND corpus_vector_dirty_since IS NULL",
+            (now, corpus_id),
+        )
+        get_conn().commit()
+    except Exception as e:
+        log.debug("mark_corpus_embedding_dirty failed for %s: %s", corpus_id, e)
 
 
 def load_corpus_vectors(corpus_ids: Optional[list[str]] = None) -> list[dict]:
