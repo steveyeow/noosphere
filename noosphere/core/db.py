@@ -458,6 +458,20 @@ CREATE TABLE IF NOT EXISTS organization_invites (
 );
 CREATE INDEX IF NOT EXISTS idx_org_invites_token ON organization_invites(token);
 CREATE INDEX IF NOT EXISTS idx_org_invites_org ON organization_invites(org_id);
+
+CREATE TABLE IF NOT EXISTS connector_configs (
+    id TEXT PRIMARY KEY,
+    org_id TEXT,
+    owner_id TEXT,
+    kind TEXT NOT NULL,
+    config_json TEXT DEFAULT '{}',
+    target_corpus_id TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conn_org ON connector_configs(org_id);
+CREATE INDEX IF NOT EXISTS idx_conn_owner ON connector_configs(owner_id);
 """
 
 # SQLite: FTS5 virtual table for full-text search

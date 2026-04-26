@@ -3440,16 +3440,49 @@ function showSourcesPopover(anchor,ctx){
 }
 
 /* Connector-logos hint strip below composer — Notion-style "Get better
-   answers from your apps" row. Dismissible via × (persisted in localStorage);
-   clicking any logo jumps to the Directory. Rendered into an empty
-   container by id (e.g. 'c-chint' on corpus, 'home-chint' on home). */
+   answers from your apps" row. Dismissal is now session-scoped (returns
+   next session) instead of permanent. Workspace-aware: order + label
+   change so personal sees creator tools first, team sees edge-capture
+   tools first. */
 const _CHINT_FLAG='noosphere_chint_dismissed';
+
+// Per-connector priority (lower = front). Personal favors creator tools;
+// team favors edge-capture (Slack / email / meetings) and ticketing.
+// Used by orderedConnectors() below; default 99 if missing.
+const _CONNECTOR_PRIORITY={
+  // kind        personal, team
+  obsidian:    [1, 8],
+  notion:      [2, 5],
+  twitter:     [3, 9],
+  rss_auto:    [4, 7],
+  gdrive:      [5, 6],
+  github:      [6, 4],
+  gmail:       [7, 3],
+  slack:       [8, 1],
+  email_inbox: [9, 2],
+};
+
+function orderedConnectors(){
+  const team=_workspace.kind==='org';
+  return [..._SOURCE_CONNECTORS].sort((a,b)=>{
+    const pa=(_CONNECTOR_PRIORITY[a.kind]||[99,99])[team?1:0];
+    const pb=(_CONNECTOR_PRIORITY[b.kind]||[99,99])[team?1:0];
+    return pa-pb;
+  });
+}
+
 function renderChint(elId,ctx){
   const el=document.getElementById(elId);if(!el)return;
-  if(localStorage.getItem(_CHINT_FLAG)==='1'){el.innerHTML='';return}
-  const logos=_SOURCE_CONNECTORS.map(c=>`<button class="chint-logo" style="background:${c.bg};color:${c.fg}" title="${esc(c.name)}" data-kind="${c.kind}">${c.mono}</button>`).join('');
-  el.innerHTML=`<span class="chint-lbl">Connect live sources</span><span class="chint-logos">${logos}</span><button class="chint-close" type="button" title="Dismiss">×</button>`;
-  el.querySelector('.chint-close').onclick=()=>{localStorage.setItem(_CHINT_FLAG,'1');el.innerHTML=''};
+  if(sessionStorage.getItem(_CHINT_FLAG)==='1'){el.innerHTML='';return}
+  const conns=orderedConnectors();
+  const logos=conns.map(c=>`<button class="chint-logo" style="background:${c.bg};color:${c.fg}" title="${esc(c.name)}" data-kind="${c.kind}">${c.mono}</button>`).join('');
+  // Strip label conveys the team-version core value (capture from where
+  // you work) instead of the generic personal copy.
+  const stripLabel=_workspace.kind==='org'
+    ? 'Capture from where your team works'
+    : 'Connect live sources';
+  el.innerHTML=`<span class="chint-lbl">${esc(stripLabel)}</span><span class="chint-logos">${logos}</span><button class="chint-close" type="button" title="Hide for this session">×</button>`;
+  el.querySelector('.chint-close').onclick=()=>{sessionStorage.setItem(_CHINT_FLAG,'1');el.innerHTML=''};
   el.querySelectorAll('.chint-logo').forEach(btn=>{btn.onclick=()=>{showAppPanel(btn.dataset.kind,ctx||{})}});
 }
 
@@ -5024,6 +5057,10 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
   _loadWorkspace();_ensureSelfHostedUserId();
+  // Migrate the legacy permanent dismiss flag from localStorage to a
+  // session-scoped one — anyone who hit × in the old build gets the
+  // connector strip back next time they reload.
+  if(localStorage.getItem(_CHINT_FLAG)==='1')localStorage.removeItem(_CHINT_FLAG);
   await initAuth();renderAuthUI();
   renderWorkspaceSwitcher();
   window.addEventListener('hashchange',route);route()});
@@ -5095,8 +5132,9 @@ async function renderOrgSettings(slug,tab){
   const role=me?.role||'member';
   const memberCount=(typeof me?.member_count==='number')?me.member_count:null;
   const isAdmin=role==='owner'||role==='admin';
-  const tabs=['members','invites','audit'];
+  const tabs=isAdmin?['members','invites','connectors','audit']:['members','invites','audit'];
   if(!tabs.includes(tab))tab='members';
+  const tabLabel=t=>t==='members'?'Members':t==='invites'?'Invites':t==='connectors'?'Connectors':'Audit log';
   const initial=esc((org.name?.[0]||'?').toUpperCase());
   // Header conveys identity (avatar + serif name) and core value
   // (member count = "this is shared"). Plan + slug + role on a calm
@@ -5115,14 +5153,44 @@ async function renderOrgSettings(slug,tab){
         </div>
       </div>
       <div class="cv-tabs cv-tabs-org">
-        ${tabs.map(t=>`<a class="cv-tab${t===tab?' cv-tab--active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${t==='members'?'Members':t==='invites'?'Invites':'Audit log'}</a>`).join('')}
+        ${tabs.map(t=>`<a class="cv-tab${t===tab?' cv-tab--active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${tabLabel(t)}</a>`).join('')}
       </div>
       <div class="cv-set-sec" id="org-tab-body"></div>
     </div>
   `;
   if(tab==='members')await _renderOrgMembersTab(org,isAdmin);
   else if(tab==='invites')await _renderOrgInvitesTab(org,isAdmin);
+  else if(tab==='connectors')_renderOrgConnectorsTab(org,isAdmin);
   else if(tab==='audit')await _renderOrgAuditTab(org,isAdmin);
+}
+
+function _renderOrgConnectorsTab(org,isAdmin){
+  const body=document.getElementById('org-tab-body');if(!body)return;
+  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
+  // Framework UI for org-shared connectors. Live OAuth is T-2; this surface
+  // teaches the model now: admin connects once, data flows into team
+  // corpora attributed to whoever installed the connector.
+  const conns=orderedConnectors();
+  const cards=conns.map(c=>`
+    <div class="cv-set-row cv-set-row--conn">
+      <div class="cv-set-row-info">
+        <span class="conn-mono" style="background:${c.bg};color:${c.fg}" aria-hidden="true">${esc(c.mono||'?')}</span>
+        <span class="cv-set-row-nm">${esc(c.name)}</span>
+        <span class="cv-set-row-dc">${esc(c.desc||'')}</span>
+      </div>
+      <div class="cv-set-row-ctl">
+        <span class="cv-set-row-static">${c.status==='avail'?'Personal-scope ready':'Coming in T-2'}</span>
+      </div>
+    </div>
+  `).join('');
+  body.innerHTML=`
+    <div class="cv-set-hd">
+      <h3 class="cv-set-h3">Connectors</h3>
+      <div class="cv-set-sub">Org-shared connectors: an admin connects once; data flows into team corpora and every member's agent can query it.</div>
+    </div>
+    <div class="cv-set-list">${cards}</div>
+    <div class="cv-set-sub" style="margin-top:14px">Live OAuth ships in <strong>T-2</strong>. Personal-scope upload &amp; CLI sync work today via the home composer.</div>
+  `;
 }
 
 async function _renderOrgMembersTab(org,isAdmin){
