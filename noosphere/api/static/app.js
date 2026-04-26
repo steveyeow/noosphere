@@ -346,9 +346,11 @@ function renderAuthUI(){
 }
 
 function _renderProfilePopoverHTML(){
-  // Active-workspace card — only when we're inside an org. The asymmetry
-  // is the signal: the card's presence tells you "you are in a shared space."
-  // Personal workspace skips the card entirely.
+  // Workspace card — always rendered; the contents adapt to the active
+  // workspace. Org shows team identity + member count + Settings/Invite
+  // pills. Personal shows the user (or "Personal") + plan tier (cloud) +
+  // single Settings pill. Settings is a single, consistent entry point —
+  // the destination changes with workspace, like Claude / Notion.
   let wsCard='';
   if(_workspace.kind==='org'&&_workspace.org_id){
     const o=_orgs.find(o=>o.id===_workspace.org_id);
@@ -373,6 +375,36 @@ function _renderProfilePopoverHTML(){
           </div>
         </div>`;
     }
+  }else{
+    // Personal workspace card. Avatar = user initial (cloud avatar or
+    // operator initial). Sub line = plan tier in cloud, omitted self-hosted.
+    let avatarHTML='';
+    if(_cloudMode&&_authUser){
+      const av=_authUser.user_metadata?.avatar_url;
+      const nm=(_authUser.email||'U').split('@')[0]||'U';
+      avatarHTML=av?`<img src="${esc(av)}" class="sb-pop-card-avatar"/>`:`<span class="sb-pop-card-avatar">${esc((nm[0]||'?').toUpperCase())}</span>`;
+    }else{
+      const op=_ownerName||'Y';
+      avatarHTML=`<span class="sb-pop-card-avatar">${esc((op[0]||'?').toUpperCase())}</span>`;
+    }
+    let meta='';
+    if(_cloudMode&&_authUser){
+      const tier=(_authUser.user_metadata?.tier||'free').toLowerCase();
+      meta=tier==='pro'?'Pro plan':'Free plan';
+    }
+    wsCard=`
+      <div class="sb-pop-card">
+        <div class="sb-pop-card-id">
+          ${avatarHTML}
+          <div class="sb-pop-card-text">
+            <div class="sb-pop-card-name">Personal</div>
+            ${meta?`<div class="sb-pop-card-meta">${esc(meta)}</div>`:''}
+          </div>
+        </div>
+        <div class="sb-pop-card-actions">
+          <a class="sb-pop-pill" data-act="personal-settings">${_ICON_GEAR}<span>Settings</span></a>
+        </div>
+      </div>`;
   }
   // Workspaces list (radio).
   const wsItems=[];
@@ -414,6 +446,7 @@ function _wireProfilePopover(bot,popover){
       else if(act==='ws-org')setWorkspace({kind:'org',org_id:el.dataset.id});
       else if(act==='org-settings')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/members';
       else if(act==='org-invite')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/invites';
+      else if(act==='personal-settings')location.hash='#/preferences';
     });
   });
   popover.querySelectorAll('a.sb-pop-item:not([data-act])').forEach(a=>a.addEventListener('click',close));
@@ -465,6 +498,7 @@ async function route(){const h=location.hash||'#/';stopAll();
   else if(h==='#/corpora')renderMyCorpora();
   else if(h==='#/chats')renderChats();
   else if(h==='#/connectors')renderConnectors();
+  else if(h==='#/preferences')renderPreferences();
   else if(h.startsWith('#/orgs/')){
     const segs=h.substring('#/orgs/'.length).split('/');
     const slug=segs[0];const tab=segs[1]||'members';
@@ -5124,6 +5158,80 @@ function _showCreateOrgModal(){
       location.hash='#/orgs/'+encodeURIComponent(org.slug);
     }
   });
+}
+
+/* Personal preferences page — the destination for the Settings pill in the
+   personal-workspace popover card. Mirrors org settings layout (cv-set-wrap)
+   but the content is "you-level" preferences: theme, account links (cloud),
+   plan tier (cloud). Keeps the Settings entry consistent across modes — the
+   pill is one button, the page changes with workspace. */
+function renderPreferences(){
+  const c=document.getElementById('content');if(!c)return;
+  document.getElementById('rpanel')?.classList.add('hidden');
+  let avatarHTML='';
+  let nameLine='Personal';
+  let metaLine='Preferences';
+  let accountRow='';
+  let planRow='';
+  if(_cloudMode&&_authUser){
+    const av=_authUser.user_metadata?.avatar_url;
+    const nm=(_authUser.email||'').split('@')[0]||'You';
+    avatarHTML=av?`<img src="${esc(av)}" class="cv-set-org-avatar"/>`:`<span class="cv-set-org-avatar">${esc((nm[0]||'?').toUpperCase())}</span>`;
+    nameLine=esc(nm.charAt(0).toUpperCase()+nm.slice(1));
+    metaLine=esc(_authUser.email||'')+' · personal preferences';
+    const tier=(_authUser.user_metadata?.tier||'free').toLowerCase();
+    const tierLabel=tier==='pro'?'Pro plan':'Free plan';
+    planRow=`
+      <div class="cv-set-row">
+        <div class="cv-set-row-info">
+          <span class="cv-set-row-nm">Plan</span>
+          <span class="cv-set-row-dc">${esc(tierLabel)} — manage subscription, payment, and quota.</span>
+        </div>
+        <div class="cv-set-row-ctl"><a class="btn-sm" href="#/pricing">Manage plan</a></div>
+      </div>`;
+    accountRow=`
+      <div class="cv-set-row">
+        <div class="cv-set-row-info">
+          <span class="cv-set-row-nm">Account</span>
+          <span class="cv-set-row-dc">Profile, email, sign-in providers.</span>
+        </div>
+        <div class="cv-set-row-ctl"><a class="btn-sm" href="#/account">Open account</a></div>
+      </div>`;
+  }else{
+    const op=_ownerName||'You';
+    avatarHTML=`<span class="cv-set-org-avatar">${esc((op[0]||'?').toUpperCase())}</span>`;
+    nameLine=esc(op);
+    metaLine='Self-hosted operator · personal preferences';
+  }
+  // Theme row — shared across cloud + self-hosted.
+  const themeRow=`
+    <div class="cv-set-row">
+      <div class="cv-set-row-info">
+        <span class="cv-set-row-nm">Theme</span>
+        <span class="cv-set-row-dc">Light or dark — applied immediately, remembered next session.</span>
+      </div>
+      <div class="cv-set-row-ctl"><button class="btn-sm" id="pref-toggle-theme">Toggle</button></div>
+    </div>`;
+  c.innerHTML=`
+    <div class="cv-set-wrap">
+      <div class="cv-set-hd cv-set-hd--org">
+        ${avatarHTML}
+        <div class="cv-set-org-text">
+          <h2 class="cv-set-h2 cv-set-h2--org">${nameLine}</h2>
+          <div class="cv-set-sub">${metaLine}</div>
+        </div>
+      </div>
+      <div class="cv-set-sec">
+        <div class="cv-set-hd"><h3 class="cv-set-h3">Preferences</h3><div class="cv-set-sub">App-wide settings that follow you across every workspace.</div></div>
+        <div class="cv-set-list">
+          ${planRow}
+          ${accountRow}
+          ${themeRow}
+        </div>
+      </div>
+    </div>`;
+  const themeBtn=document.getElementById('pref-toggle-theme');
+  if(themeBtn)themeBtn.onclick=toggleTheme;
 }
 
 async function renderOrgSettings(slug,tab){
