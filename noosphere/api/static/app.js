@@ -825,7 +825,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       <div class="lp-team-tile">
         <div class="lp-team-tile-text">
           <h2 class="lp-sec-h">For teams →</h2>
-          <p class="lp-sec-sub">A living brain and intelligence layer for your team. Captures from Slack, meetings, and tickets at the edge — synthesizes through compile and distill — answers every member and every agent from one shared source of truth.</p>
+          <p class="lp-sec-sub">A shared living brain and intelligence layer for your team. Captures from Slack, meetings, and tickets at the edge — synthesizes through compile and distill — answers every member and every agent from one shared source of truth.</p>
         </div>
         <a href="#/team" class="lp-team-tile-cta">See team Noosphere →</a>
       </div>
@@ -857,7 +857,7 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
     <div class="lp-ct lp-ct-wide">
       <div class="lp-h">
         <span class="lp-eyebrow">Noosphere · Team</span>
-        <h1 class="lp-h1">A living brain and intelligence layer for your team.</h1>
+        <h1 class="lp-h1">A shared living brain and intelligence layer for your team.</h1>
         <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Readable and queryable by every agent your team runs. Learn from the global agent knowledge network. With full access control — keep private, share for free, or get paid.</p>
         <button class="lp-go" id="lp-team-go">Start your team's Noosphere →</button>
       </div>
@@ -882,7 +882,7 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
           </ul>
         </div>
         <div class="lp-funnel-arrow">→</div>
-        <div class="lp-funnel-target"><span>Shared team brain</span><small>Queryable by every member &amp; agent</small></div>
+        <div class="lp-funnel-target"><span>Shared, living team brain</span><small>Queryable by every member &amp; agent</small></div>
       </div>
       <div class="lp-cards">
         <div class="lp-card">
@@ -2616,7 +2616,15 @@ function renderMCList(host){
         </div>
       </div>`;
       const create=document.getElementById('mc-empty-create');
-      if(create)create.onclick=()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()};
+      // The CTA's intent is to spin up a new KB — drop the user into the
+      // composer in Create mode (not Enrich), so the placeholder + Send
+      // behavior match what they came here to do.
+      if(create)create.onclick=()=>{
+        _termCtx={};
+        _composerMode='create';
+        location.hash='#/main';
+        if(location.hash==='#/main')renderHome();
+      };
       return;
     }
     el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';
