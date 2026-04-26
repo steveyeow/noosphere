@@ -1186,15 +1186,16 @@ function renderHome(){
       try{
         const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,access_level:'public'})});
         if(!r.ok){
-          // Surface the real backend reason (quota / auth / validation) instead
-          // of a fake "Created" toast. Cloud quota errors arrive as
-          // {detail:{code, limit, used, message}}; non-cloud paths use a flat
-          // string detail. Handle both shapes.
+          // Route through the unified quota handler so 429s render with an
+          // Upgrade CTA (toast w/ action button for resource limits, full
+          // paywall modal for daily quota_exceeded). Falls back to a plain
+          // toast for non-quota errors (auth, validation).
           const d=await r.json().catch(()=>({}));
-          const msg=(d.detail&&typeof d.detail==='object'?d.detail.message:d.detail)||`HTTP ${r.status}`;
-          toast(msg,'error');
-          goEl.disabled=false;goEl.textContent='Create';
-          nameEl.focus();
+          if(!handleQuotaError(r,d)){
+            const msg=(d.detail&&typeof d.detail==='object'?d.detail.message:d.detail)||`HTTP ${r.status}`;
+            toast(msg,'error');
+          }
+          closeChipMenu();
           return;
         }
         const c=await r.json();
@@ -1305,6 +1306,13 @@ function renderHome(){
       for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
       if(d.context?.action==='open_write'){enterWrite()}
       if(d.context?.action==='open_upload'){showTermUpload(output,input,_homeScope)}
+      // Quota tripped during Create-mode — the resp line above already
+      // explains what happened, but the user needs the paywall CTA to
+      // act on it. Open the same modal /corpora 429s use so the upsell
+      // is unified across entry points.
+      if(d.context?.action==='quota_exceeded'){
+        showProModal(d.context.message||'Upgrade to Pro for higher limits.');
+      }
       // Create-mode result: backend just spun up a new KB. Drop the user
       // back into Enrich with that KB pre-selected on the chip — so their
       // very next URL/file/note flows straight into the new corpus without
@@ -2258,13 +2266,21 @@ async function doExploreBrowse(){
   const el=document.getElementById('explore-results');
   el.innerHTML='<div style="color:var(--muted)">Loading...</div>';
   try{
-    const r=await fetch(`${API}/corpora`);
-    const all=await r.json();
-    const pub=all.filter(c=>c.access_level!=='private');
+    // /corpora is user-scoped in cloud mode (filters by owner_id), which
+    // is wrong for a discovery surface — Explore should show every
+    // public KB on this node, not just the viewer's own. /corpora/network
+    // returns all corpora cross-user (with private filtered out unless
+    // the caller is the owner), which matches what Explore wants. As a
+    // side effect this also surfaces orphaned corpora (owner_id=NULL
+    // from legacy create paths) so the operator can find and clean them.
+    const r=await fetch(`${API}/corpora/network`);
+    const data=await r.json();
+    const all=Array.isArray(data)?data:(data.nodes||data.corpora||[]);
+    const pub=all.filter(c=>(c.access_level||'public')!=='private');
     if(!pub.length){el.innerHTML='<div style="color:var(--muted)">No public knowledge bases yet. Be the first — click <strong>+ New</strong>.</div>';return}
     el.innerHTML=pub.map(c=>_exploreCard({
       corpus_id:c.id,corpus_name:c.name,description:c.description||'',
-      author:c.author_name||'',tags:c.tags||[],document_count:c.document_count||0,
+      author:c.author||c.author_name||'',tags:c.tags||[],document_count:c.document_count||0,
       access_level:c.access_level||'public',source:'local',score:1
     })).join('');
   }catch(e){el.innerHTML='<div style="color:var(--err)">Failed to load.</div>'}

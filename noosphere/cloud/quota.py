@@ -52,7 +52,12 @@ QUOTA_LIMITS = {
 # Resource limits (not daily — total)
 RESOURCE_LIMITS = {
     "free": {
-        "corpora": 1,
+        # 5 corpora gives Free users genuine room to dogfood the product
+        # — first KB might not be the keeper, and product-of-record
+        # workflows (work / reading / project) need a few slots in
+        # parallel. The previous limit of 1 punished early experimentation
+        # and triggered the Pro upsell before the user had felt the value.
+        "corpora": 5,
         "documents_per_corpus": 100,
         "queries_per_month": 1000,
     },

@@ -389,9 +389,19 @@ def _handle_create(text: str, *, owner_id: str = "", quota_check=None) -> dict:
                 msg = (detail.get("message") if isinstance(detail, dict) else None) \
                       or (str(detail) if detail else None) \
                       or f"Couldn't create that knowledge base: {str(e)[:120]}"
+                # action: 'quota_exceeded' tells the frontend to open the
+                # full paywall modal in addition to rendering the resp line.
+                # The chat line keeps the user oriented (they see *why*
+                # creation failed); the modal gives them the upgrade CTA.
+                code = detail.get("code") if isinstance(detail, dict) else None
                 return {
                     "lines": [{"type": "resp", "text": msg}],
-                    "context": {"state": "idle"},
+                    "context": {
+                        "state": "idle",
+                        "action": "quota_exceeded",
+                        "quota_code": code or "",
+                        "message": msg,
+                    },
                 }
         try:
             corpus = create_corpus(name, access_level="public", owner_id=owner_id)

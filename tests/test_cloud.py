@@ -160,15 +160,21 @@ def test_check_quota_pro_has_higher_limits():
 
 def test_check_corpus_limit_free():
     from fastapi import HTTPException
+    from noosphere.cloud.quota import RESOURCE_LIMITS
 
     get_or_create_user("corpus-lim-1", "cl1@example.com")
     conn = get_conn()
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """INSERT INTO corpora (id, name, slug, owner_id, created_at, updated_at)
-           VALUES ('cl-1', 'Full', 'full', 'corpus-lim-1', ?, ?)""",
-        (now, now),
-    )
+    # Fill exactly to the Free quota — pulling the number from the live
+    # config so we don't have to hand-update this test every time the
+    # quota changes (Free was 1, then 5; could move again).
+    free_limit = RESOURCE_LIMITS["free"]["corpora"]
+    for i in range(free_limit):
+        conn.execute(
+            "INSERT INTO corpora (id, name, slug, owner_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'corpus-lim-1', ?, ?)",
+            (f"cl-{i}", f"Full {i}", f"full-{i}", now, now),
+        )
     conn.commit()
 
     req = FakeRequest(user_id="corpus-lim-1", tier="free")
