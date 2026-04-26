@@ -313,7 +313,18 @@ async def api_terminal(req: TerminalRequest, request: Request):
     """Interactive terminal command handler."""
     _require_owner(request)
     from noosphere.core.terminal import handle_terminal_input
-    return handle_terminal_input(req.input, req.context, mode=req.mode)
+    # Cloud-only plumbing for Create mode: attribute new corpora to the
+    # current user (otherwise list_user_corpora won't surface them) and
+    # gate creation on the per-tier quota (otherwise this path silently
+    # bypasses the limit that POST /corpora enforces).
+    owner_id = _get_user_id(request) if _is_cloud() else ""
+    quota_check = (lambda: _check_corpus_limit(request)) if req.mode == "create" else None
+    return handle_terminal_input(
+        req.input, req.context,
+        mode=req.mode,
+        owner_id=owner_id,
+        quota_check=quota_check,
+    )
 
 
 def _resolve_corpus(corpus_id: str) -> dict:

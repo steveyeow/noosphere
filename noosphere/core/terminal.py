@@ -6,7 +6,14 @@ from noosphere.core.ingest import ingest_url, ingest_text
 from noosphere.core.indexer import index_corpus
 
 
-def handle_terminal_input(text: str, context: dict | None = None, mode: str = "enrich") -> dict:
+def handle_terminal_input(
+    text: str,
+    context: dict | None = None,
+    mode: str = "enrich",
+    *,
+    owner_id: str = "",
+    quota_check: "callable | None" = None,
+) -> dict:
     """Process terminal input and return structured response.
 
     Home terminal is chat-first (you're talking to Noos). Routing:
@@ -16,6 +23,12 @@ def handle_terminal_input(text: str, context: dict | None = None, mode: str = "e
       - anything else → chat with Noos across all your corpora
 
     State tracks mid-flow interactions (e.g. waiting for corpus choice).
+
+    owner_id and quota_check are only meaningful for mode='create' in cloud
+    deployments — they let the route layer attribute the new corpus to the
+    current user and gate creation on the per-tier quota. Self-hosted
+    callers can leave both as the defaults; quota_check is invoked exactly
+    like _check_corpus_limit and may raise HTTPException to abort.
     """
     text = text.strip()
     ctx = context or {}
@@ -31,7 +44,7 @@ def handle_terminal_input(text: str, context: dict | None = None, mode: str = "e
         return _handle_slash(text)
 
     if mode == "create":
-        return _handle_create(text)
+        return _handle_create(text, owner_id=owner_id, quota_check=quota_check)
 
     # Default: chat with Noos.
     return _handle_question(text)
@@ -343,12 +356,18 @@ def _classify_create_intent(text: str) -> dict | None:
     return data
 
 
-def _handle_create(text: str) -> dict:
+def _handle_create(text: str, *, owner_id: str = "", quota_check=None) -> dict:
     """Create mode: ask the LLM to classify intent and respond.
 
     - intent='topic'  → create the corpus with the LLM-extracted name
     - intent='chat'   → return the LLM's conversational reply (no corpus)
-    - LLM unavailable → graceful fallback so the user isn't dead-ended"""
+    - LLM unavailable → graceful fallback so the user isn't dead-ended
+
+    owner_id is set on the new corpus so cloud-mode list_user_corpora picks
+    it up under the right user. quota_check is invoked before create so
+    Free-tier users hit the same limit they'd hit via POST /corpora — without
+    this gate, Create mode silently bypassed quotas (and produced corpora
+    invisible to the creator due to the missing owner_id)."""
     if not text:
         return _handle_concierge("", has_corpora=False)
 
@@ -357,8 +376,25 @@ def _handle_create(text: str) -> dict:
     if decision and decision.get("intent") == "topic" and decision.get("name"):
         name = decision["name"][:60].rstrip()
         reply = (decision.get("reply") or "").strip()
+        # Quota gate runs first — fail fast before LLM-side state gets stale.
+        # check_corpus_limit raises HTTPException(429, detail={...message...});
+        # surface that to the user as a clear chat line instead of crashing
+        # the request, since we're inside a JSON terminal handler not a
+        # FastAPI exception-handled route.
+        if quota_check is not None:
+            try:
+                quota_check()
+            except Exception as e:
+                detail = getattr(e, "detail", None)
+                msg = (detail.get("message") if isinstance(detail, dict) else None) \
+                      or (str(detail) if detail else None) \
+                      or f"Couldn't create that knowledge base: {str(e)[:120]}"
+                return {
+                    "lines": [{"type": "resp", "text": msg}],
+                    "context": {"state": "idle"},
+                }
         try:
-            corpus = create_corpus(name, access_level="public")
+            corpus = create_corpus(name, access_level="public", owner_id=owner_id)
         except Exception as e:
             return {
                 "lines": [{"type": "resp", "text": f"Couldn't create that knowledge base: {str(e)[:120]}"}],

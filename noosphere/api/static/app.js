@@ -1185,8 +1185,21 @@ function renderHome(){
       goEl.disabled=true;goEl.textContent='…';
       try{
         const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm,access_level:'public'})});
-        const c=await r.json();await loadC();_homeScope=c.id;updateChip();closeChipMenu();_refreshComposerPlaceholder();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
-      }catch(e){toast('Failed to create corpus');goEl.disabled=false;goEl.textContent='Create'}
+        if(!r.ok){
+          // Surface the real backend reason (quota / auth / validation) instead
+          // of a fake "Created" toast. Cloud quota errors arrive as
+          // {detail:{code, limit, used, message}}; non-cloud paths use a flat
+          // string detail. Handle both shapes.
+          const d=await r.json().catch(()=>({}));
+          const msg=(d.detail&&typeof d.detail==='object'?d.detail.message:d.detail)||`HTTP ${r.status}`;
+          toast(msg,'error');
+          goEl.disabled=false;goEl.textContent='Create';
+          nameEl.focus();
+          return;
+        }
+        const c=await r.json();
+        await loadC();_homeScope=c.id;updateChip();closeChipMenu();_refreshComposerPlaceholder();toast(`Created ${nm}`,'success');renderSBChats();input.focus();
+      }catch(e){toast('Failed to create corpus: '+e.message,'error');goEl.disabled=false;goEl.textContent='Create'}
     };
     goEl.onclick=createNew;
     nameEl.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();createNew()}else if(e.key==='Escape'){closeChipMenu()}};
