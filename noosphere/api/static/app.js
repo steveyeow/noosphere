@@ -288,15 +288,10 @@ function _activeWorkspaceLabel(){
   return 'Personal';
 }
 
-/* Workspace-context eyebrow — small serif tx3 line that appears on top-level
-   pages ONLY when in an org workspace. Personal is the baseline (no chrome).
-   The asymmetry itself signals "you're inside a shared space." */
-function workspaceEyebrowHTML(){
-  if(_workspace.kind!=='org'||!_workspace.org_id)return '';
-  const o=_orgs.find(o=>o.id===_workspace.org_id);
-  if(!o)return '';
-  return `<div class="ws-eyebrow">${esc(o.name)} · Team workspace</div>`;
-}
+/* Workspace context is signaled by the bottom-left profile chip; we
+   intentionally do NOT duplicate it across page headers. Kept as a no-op
+   helper so existing call sites remain harmless. */
+function workspaceEyebrowHTML(){return ''}
 
 function _operatorChipText(){
   if(_cloudMode&&_authUser){
