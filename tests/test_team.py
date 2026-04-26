@@ -444,6 +444,50 @@ def test_corpora_network_global_not_workspace_scoped(isolated_db):
     assert {n["id"] for n in r_personal.json()["nodes"]} == {n["id"] for n in r_other.json()["nodes"]}
 
 
+def test_terminal_create_mode_org_workspace(isolated_db, monkeypatch):
+    """In a team workspace, /terminal mode=create must:
+       (a) attribute the new corpus to the org (so it's visible there);
+       (b) default access_level=private (matches team conventions);
+       (c) persist a chat session linked to the new corpus, so the
+           sidebar shows the conversation that created it.
+    """
+    # Stub the LLM classifier so the test doesn't depend on a live key.
+    from noosphere.core import terminal as terminal_mod
+    monkeypatch.setattr(terminal_mod, "_classify_create_intent",
+                        lambda text: {"intent": "topic", "name": "Product Design"})
+
+    org, alice, _ = _new_org_with_member()
+    alice_org = _scoped(alice, org["id"])
+
+    r = alice_org.post(
+        "/api/v1/terminal",
+        json={"input": "product design", "context": {}, "mode": "create"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    cid = body["context"].get("corpus_id")
+    sid = body["context"].get("session_id")
+    assert cid, "no corpus_id in terminal create response"
+    assert sid, "no session_id in terminal create response"
+
+    # (a) corpus visible in the team workspace listing.
+    listing = alice_org.get("/api/v1/corpora").json()
+    assert any(c["id"] == cid for c in listing), "new corpus not in org listing"
+    # (b) default access_level is private for org-scoped creation.
+    new = next(c for c in listing if c["id"] == cid)
+    assert new["access_level"] == "private"
+    assert new.get("org_id") == org["id"]
+    assert not new.get("owner_id")
+
+    # (c) chat session shows up on the workspace-scoped sidebar list.
+    sessions = alice_org.get("/api/v1/chat-sessions").json()
+    assert any(s["id"] == sid for s in sessions), \
+        "create-mode chat session missing from /chat-sessions in org workspace"
+    # (c-bis) it does NOT leak into the personal sidebar.
+    personal_sessions = alice.get("/api/v1/chat-sessions").json()
+    assert not any(s["id"] == sid for s in personal_sessions)
+
+
 def test_t1_definition_of_done_full_flow(isolated_db):
     """End-to-end T-1 milestone DoD:
     - Self-hosted user creates an org.

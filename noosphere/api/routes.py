@@ -367,18 +367,31 @@ class UpdatePeerSubscriptionRequest(BaseModel):
 @router.post("/terminal")
 async def api_terminal(req: TerminalRequest, request: Request):
     """Interactive terminal command handler."""
-    _require_owner(request)
+    # Workspace-aware Create mode: in an org workspace the new corpus must
+    # land in the team scope, otherwise it ends up as a personal corpus the
+    # team can't see. Authorize accordingly — org workspace requires editor+
+    # role; personal falls back to the existing _require_owner check.
+    kind, active_org = _active_workspace(request)
+    if kind == "org" and active_org:
+        _require_org_role(request, active_org, orgs_mod.ROLE_EDITOR)
+    else:
+        _require_owner(request)
+
     from noosphere.core.terminal import handle_terminal_input
+    actor_uid = _get_user_id(request)
     # Cloud-only plumbing for Create mode: attribute new corpora to the
     # current user (otherwise list_user_corpora won't surface them) and
     # gate creation on the per-tier quota (otherwise this path silently
     # bypasses the limit that POST /corpora enforces).
-    owner_id = _get_user_id(request) if _is_cloud() else ""
+    owner_id = actor_uid if _is_cloud() else ""
+    org_id = active_org if kind == "org" else ""
     quota_check = (lambda: _check_corpus_limit(request)) if req.mode == "create" else None
     return handle_terminal_input(
         req.input, req.context,
         mode=req.mode,
         owner_id=owner_id,
+        org_id=org_id,
+        contributor_user_id=actor_uid,
         quota_check=quota_check,
     )
 

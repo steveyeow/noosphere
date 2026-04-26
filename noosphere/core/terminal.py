@@ -12,6 +12,8 @@ def handle_terminal_input(
     mode: str = "enrich",
     *,
     owner_id: str = "",
+    org_id: str = "",
+    contributor_user_id: str = "",
     quota_check: "callable | None" = None,
 ) -> dict:
     """Process terminal input and return structured response.
@@ -44,7 +46,13 @@ def handle_terminal_input(
         return _handle_slash(text)
 
     if mode == "create":
-        return _handle_create(text, owner_id=owner_id, quota_check=quota_check)
+        return _handle_create(
+            text,
+            owner_id=owner_id,
+            org_id=org_id,
+            contributor_user_id=contributor_user_id,
+            quota_check=quota_check,
+        )
 
     # Default: chat with Noos.
     return _handle_question(text)
@@ -356,7 +364,14 @@ def _classify_create_intent(text: str) -> dict | None:
     return data
 
 
-def _handle_create(text: str, *, owner_id: str = "", quota_check=None) -> dict:
+def _handle_create(
+    text: str,
+    *,
+    owner_id: str = "",
+    org_id: str = "",
+    contributor_user_id: str = "",
+    quota_check=None,
+) -> dict:
     """Create mode: ask the LLM to classify intent and respond.
 
     - intent='topic'  → create the corpus with the LLM-extracted name
@@ -403,14 +418,58 @@ def _handle_create(text: str, *, owner_id: str = "", quota_check=None) -> dict:
                         "message": msg,
                     },
                 }
+        # Workspace-aware scoping: in an org workspace, attribute the new
+        # corpus to the org (so the team sees it) and default to private —
+        # team data rarely goes public. Personal stays public default.
         try:
-            corpus = create_corpus(name, access_level="public", owner_id=owner_id)
+            if org_id:
+                corpus = create_corpus(name, access_level="private", org_id=org_id)
+            else:
+                corpus = create_corpus(name, access_level="public", owner_id=owner_id)
         except Exception as e:
             return {
                 "lines": [{"type": "resp", "text": f"Couldn't create that knowledge base: {str(e)[:120]}"}],
                 "context": {"state": "idle"},
             }
         cid = corpus["id"]
+
+        # Persist a chat session for the create flow, so the conversation
+        # ("create a KB about product design") shows up in the sidebar
+        # alongside the actual chat history. Without this, Create-mode
+        # responses landed only as transient cards on the home page.
+        chat_session_id = ""
+        try:
+            import uuid as _uuid
+            from datetime import datetime as _dt, timezone as _tz
+            from noosphere.core.db import get_conn as _get_conn
+            _conn = _get_conn()
+            _now = _dt.now(_tz.utc).isoformat()
+            chat_session_id = _uuid.uuid4().hex
+            _title = (name[:80] or "New knowledge base")
+            _conn.execute(
+                "INSERT INTO chat_sessions (id, corpus_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
+                (chat_session_id, cid, _title, _now, _now),
+            )
+            # User's input as the first message (e.g. "product design").
+            _conn.execute(
+                "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?,?,?,?,?)",
+                (_uuid.uuid4().hex, chat_session_id, "user", text, _now),
+            )
+            # Synthesized assistant reply — short, actionable.
+            _assistant_text = (
+                reply or
+                f"Created **{name}**. Add a source — paste a URL, upload a file, or write a note — and I'll start chatting from it."
+            )
+            _conn.execute(
+                "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?,?,?,?,?)",
+                (_uuid.uuid4().hex, chat_session_id, "assistant", _assistant_text, _now),
+            )
+            _conn.commit()
+        except Exception:
+            # Persisting the chat is best-effort; corpus creation already
+            # succeeded so we don't surface a failure to the user.
+            chat_session_id = ""
+
         lines = [{"type": "card", "label": name, "status": "CREATED",
                   "detail": "New knowledge base — empty", "corpus_id": cid}]
         if reply:
@@ -422,6 +481,7 @@ def _handle_create(text: str, *, owner_id: str = "", quota_check=None) -> dict:
                 "action": "corpus_created",
                 "corpus_id": cid,
                 "corpus_name": name,
+                "session_id": chat_session_id,
             },
         }
 
