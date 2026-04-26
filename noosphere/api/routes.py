@@ -660,9 +660,126 @@ def _safe_update_corpus_embedding(corpus_id: str):
     can't surface as an unhandled task exception in the logs."""
     try:
         from noosphere.core.corpus_embedding import update_corpus_embedding
-        update_corpus_embedding(corpus_id)
+        ok = update_corpus_embedding(corpus_id)
+        # Bumped from debug → info/warning so silent backfill failures
+        # actually surface in production logs. Without this an operator
+        # has no way to tell "tasks queued but never ran" apart from
+        # "tasks ran but every embed call failed".
+        if ok:
+            logger.info("[corpus_embed] backfilled %s", corpus_id)
+        else:
+            logger.warning("[corpus_embed] backfill returned False for %s "
+                           "(empty profile or embedder failure)", corpus_id)
     except Exception as e:
-        logger.debug("background corpus embedding failed for %s: %s", corpus_id, e)
+        logger.warning("[corpus_embed] background embedding raised for %s: %s", corpus_id, e)
+
+
+@router.post("/admin/recompute-embeddings")
+async def api_admin_recompute_embeddings(request: Request, limit: int = 50):
+    """Synchronously recompute corpus profile embeddings, returning a
+    per-corpus diagnostic. Designed for "the graph has no edges, why?"
+    debugging — bypasses BackgroundTasks (so we know if those are the
+    bottleneck) and surfaces the real exception per corpus instead of
+    swallowing it.
+
+    Owner-only. Picks rows where corpus_vector IS NULL OR dirty, capped
+    at `limit` per call (default 50) so a 500-corpus deployment doesn't
+    block a request for minutes.
+
+    Response shape:
+      {
+        "attempted": 8,
+        "succeeded": 6,
+        "failed": 2,
+        "results": [
+          {"id": "abc123", "name": "AI design", "status": "success"},
+          {"id": "def456", "name": "Notes", "status": "failed",
+           "error": "All embedding providers failed: gemini: 429 ..."}
+        ]
+      }
+    """
+    _require_owner(request)
+    limit = max(1, min(200, int(limit)))
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, name FROM corpora "
+        "WHERE corpus_vector IS NULL OR corpus_vector_dirty_since IS NOT NULL "
+        "ORDER BY (corpus_vector IS NULL) DESC, updated_at DESC "
+        "LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    from noosphere.core.corpus_embedding import (
+        compute_corpus_embedding,
+        build_corpus_profile_text,
+    )
+    from noosphere.core.embeddings import get_embedder
+    from noosphere.core.db import pg_binary
+
+    # Resolve the embedder once for the whole run so all corpora pick up
+    # the same provider — saves N round-trip auth probes.
+    try:
+        embedder = get_embedder()
+        embedder_name = embedder.model_name()
+    except Exception as e:
+        return {"attempted": 0, "succeeded": 0, "failed": len(rows),
+                "embedder": None, "embedder_error": str(e)[:300],
+                "results": [{"id": r["id"], "name": r["name"], "status": "failed",
+                             "error": "no embedder available"} for r in rows]}
+
+    results = []
+    succ = 0
+    fail = 0
+    for r in rows:
+        cid = r["id"]
+        # Re-fetch the full corpus row so build_corpus_profile_text has
+        # all fields. Going through corpus_embedding.update_corpus_embedding
+        # would do this for us, but we want to capture the explicit
+        # exception — not the silent-False return — for the diagnostic.
+        full = conn.execute("SELECT * FROM corpora WHERE id=?", (cid,)).fetchone()
+        if not full:
+            fail += 1
+            results.append({"id": cid, "name": r["name"], "status": "failed",
+                            "error": "corpus row not found"})
+            continue
+        corpus_dict = dict(full)
+        profile = build_corpus_profile_text(corpus_dict)
+        if not profile:
+            fail += 1
+            results.append({"id": cid, "name": r["name"], "status": "skipped",
+                            "error": "empty profile text"})
+            continue
+        try:
+            embed_result = compute_corpus_embedding(corpus_dict, embedder=embedder)
+            if not embed_result:
+                fail += 1
+                results.append({"id": cid, "name": r["name"], "status": "failed",
+                                "error": "compute returned None"})
+                continue
+            vec_bytes, norm, _dim, _model = embed_result
+            conn.execute(
+                "UPDATE corpora "
+                "SET corpus_vector=?, corpus_vector_norm=?, "
+                "    corpus_vector_dirty_since=NULL "
+                "WHERE id=?",
+                (pg_binary(vec_bytes), norm, cid),
+            )
+            conn.commit()
+            succ += 1
+            results.append({"id": cid, "name": r["name"], "status": "success",
+                            "profile_chars": len(profile)})
+        except Exception as e:
+            fail += 1
+            results.append({"id": cid, "name": r["name"], "status": "failed",
+                            "error": str(e)[:300]})
+
+    return {
+        "attempted": len(rows),
+        "succeeded": succ,
+        "failed": fail,
+        "embedder": embedder_name,
+        "results": results,
+    }
 
 
 @router.get("/corpora/network")
