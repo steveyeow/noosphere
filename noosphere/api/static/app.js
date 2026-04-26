@@ -2,6 +2,38 @@
 const API='/api/v1';
 let _gAnim=null,_lpAnim=null,_termAnim=null,_files=[],_corpora=[],_chatH=[],_ownerName='',_firstName='';
 let _cloudMode=false,_supabase=null,_authUser=null,_authSession=null;
+/* ── Team workspaces ─────────────────────────────────────────────
+   _workspace.kind: 'personal' | 'org'  ·  _workspace.org_id: string|null
+   _orgs:          [{id,slug,name,role,...}]  (orgs the caller belongs to)
+   _userId:        opaque id for self-hosted (persisted in localStorage),
+                   or the cloud-mode JWT sub once /me returns.
+   _selfHostedUserId — the localStorage value. Created lazily per browser
+   so each invited member ends up with a distinct identity.
+ */
+const WS_KEY='noosphere-workspace';     // {kind, org_id}
+const SH_UID_KEY='noosphere-user-id';   // self-hosted opaque user id
+let _workspace={kind:'personal',org_id:null};
+let _orgs=[];
+let _userId=null;
+let _selfHostedUserId='';
+let _isLocalOperator=false;
+function _ensureSelfHostedUserId(){
+  let id=localStorage.getItem(SH_UID_KEY);
+  if(!id){
+    id='u_'+(crypto?.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,16)
+            :Math.random().toString(36).slice(2,10)+Date.now().toString(36));
+    localStorage.setItem(SH_UID_KEY,id);
+  }
+  _selfHostedUserId=id;return id;
+}
+function _loadWorkspace(){
+  try{const raw=localStorage.getItem(WS_KEY);if(raw){const v=JSON.parse(raw);
+    if(v&&(v.kind==='personal'||(v.kind==='org'&&v.org_id))){_workspace=v}}}catch(_){}
+}
+function _saveWorkspace(){try{localStorage.setItem(WS_KEY,JSON.stringify(_workspace))}catch(_){}}
+function _workspaceHeader(){
+  return _workspace.kind==='org'&&_workspace.org_id?'org:'+_workspace.org_id:'personal';
+}
 // Home composer's corpus scope — hoisted to module scope so downstream
 // helpers (placeholder refresh, compile routing) can see what the user has
 // selected in the chip. null = "Any" (across all corpora); otherwise a corpus id.
@@ -200,6 +232,14 @@ async function initAuth(){
 function authHeaders(){
   const h={};
   if(_authSession?.access_token)h['Authorization']='Bearer '+_authSession.access_token;
+  // Team workspace context — sent on every API call.
+  h['X-Noosphere-Workspace']=_workspaceHeader();
+  // Self-hosted: each browser carries its own opaque user_id so multiple
+  // members on one server are distinguishable. Cloud uses JWT instead.
+  if(!_cloudMode){
+    if(!_selfHostedUserId)_ensureSelfHostedUserId();
+    if(_selfHostedUserId)h['X-Noosphere-User-Id']=_selfHostedUserId;
+  }
   return h;
 }
 
@@ -208,10 +248,10 @@ function apiFetch(url,opts={}){
   return window._origFetch(url,opts);
 }
 
-// Monkey-patch fetch to auto-inject auth headers for API calls
+// Monkey-patch fetch to auto-inject auth + workspace headers for API calls
 window._origFetch=window.fetch;
 window.fetch=function(url,opts={}){
-  if(_authSession?.access_token&&typeof url==='string'&&(url.startsWith(API)||url.startsWith('/'))){
+  if(typeof url==='string'&&(url.startsWith(API)||url.startsWith('/api'))){
     opts=opts||{};opts.headers={...(opts.headers||{}),...authHeaders()};
   }
   return window._origFetch(url,opts);
@@ -286,7 +326,13 @@ function pickCorpusInline(container){
 
 async function route(){const h=location.hash||'#/';stopAll();
   if(h==='#/'||h===''||h==='#/landing'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLP();return}
+  if(h==='#/team'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLPTeam();return}
   if(h==='#/login'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
+  if(h.startsWith('#/invite/')){
+    document.getElementById('page-landing').classList.remove('hidden');
+    document.getElementById('page-main').classList.add('hidden');
+    await renderInviteAccept(h.substring('#/invite/'.length));return;
+  }
   // Cloud mode: redirect to login if not authenticated and trying to access app
   if(_cloudMode&&!_authUser&&h!=='#/explore'&&!h.startsWith('#/explore')){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
@@ -295,6 +341,12 @@ async function route(){const h=location.hash||'#/';stopAll();
   else if(h==='#/corpora')renderMyCorpora();
   else if(h==='#/chats')renderChats();
   else if(h==='#/connectors')renderConnectors();
+  else if(h.startsWith('#/orgs/')){
+    const segs=h.substring('#/orgs/'.length).split('/');
+    const slug=segs[0];const tab=segs[1]||'members';
+    await renderOrgSettings(slug,tab);
+    return;
+  }
   else if(h==='#/pricing')renderPricing();
   else if(h==='#/account')renderAccount();
   else if(h==='#/network'||h.startsWith('#/explore'))renderNet();
@@ -332,6 +384,16 @@ async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.jso
   // empty — better to show no name than the wrong one.
   if(_ownerName.includes(' '))_firstName=_ownerName.split(' ')[0];
   else{const m=_ownerName.match(/^[A-Z][a-z]+(?=[A-Z])/);_firstName=m?m[0]:''}
+  _userId=d.user_id||null;
+  _isLocalOperator=!!d.is_local_operator;
+  _orgs=Array.isArray(d.orgs)?d.orgs:[];
+  // Active workspace must reference an org the user still belongs to —
+  // otherwise reset to Personal so we don't fire requests against a
+  // workspace the server will 403.
+  if(_workspace.kind==='org'&&_workspace.org_id&&!_orgs.find(o=>o.id===_workspace.org_id)){
+    _workspace={kind:'personal',org_id:null};_saveWorkspace();
+  }
+  renderWorkspaceSwitcher();
 }catch(e){}}
 
 /* ── Chat session persistence ── */
@@ -475,7 +537,7 @@ const _LP_ICO={
 };
 
 function renderLP(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp">
-  <nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><button class="lp-dark-btn" id="lp-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav>
+  <nav class="lp-top"><span class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</span><div class="lp-top-right"><a href="#/team" class="lp-top-link">For teams</a><button class="lp-dark-btn" id="lp-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav>
 
   <section class="lp-hero">
     <div class="lp-cv" id="lp-cv"></div>
@@ -573,6 +635,18 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       </div></div>
   </section>
 
+  <section class="lp-sec lp-sec-team-tile">
+    <div class="lp-sec-inner">
+      <div class="lp-team-tile">
+        <div class="lp-team-tile-text">
+          <h2 class="lp-sec-h">For teams →</h2>
+          <p class="lp-sec-sub">The same layer, shared across your org. Every meeting, decision, and conversation flows in. Every agent your team runs queries it.</p>
+        </div>
+        <a href="#/team" class="lp-team-tile-cta">See team Noosphere →</a>
+      </div>
+    </div>
+  </section>
+
   <footer class="lp-footer">
     <div class="lp-footer-row">
       <span class="lp-footer-brand"><svg width="14" height="14" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere · <span class="lp-footer-copy">© 2026</span></span>
@@ -590,6 +664,137 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   if(ctaCloud)ctaCloud.onclick=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
   document.getElementById('lp-dark-btn').onclick=toggleTheme;
   drawLPGraph();animateLPTerm()}
+
+function renderLPTeam(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp lp-team">
+  <nav class="lp-top"><a href="#/" class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</a><div class="lp-top-right"><a href="#/" class="lp-top-link">For solo creators</a><button class="lp-dark-btn" id="lp-team-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav>
+
+  <section class="lp-hero lp-hero-team">
+    <div class="lp-ct lp-ct-wide">
+      <div class="lp-h">
+        <span class="lp-eyebrow">Team Noosphere</span>
+        <h1 class="lp-h1">A living brain and intelligence layer for your team.</h1>
+        <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Query with every agent your team runs. Stays yours, with the access controls you choose.</p>
+        <button class="lp-go" id="lp-team-go">Start your team's Noosphere →</button>
+      </div>
+      <div class="lp-team-funnel">
+        <div class="lp-funnel-col">
+          <div class="lp-funnel-h">Sources</div>
+          <ul class="lp-funnel-list">
+            <li>Linear / Jira tickets</li>
+            <li>Slack channels</li>
+            <li>Customer feedback</li>
+            <li>Sales calls &amp; transcripts</li>
+            <li>Meeting notes</li>
+            <li>Daily standups</li>
+            <li>Design docs &amp; plans</li>
+          </ul>
+        </div>
+        <div class="lp-funnel-arrow">→</div>
+        <div class="lp-funnel-target"><span>Shared team brain</span><small>Queryable by every member &amp; agent</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-bring">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Capture from the edge.</h2>
+      <p class="lp-sec-sub">Knowledge enters at the point of work — not as a separate authoring task. Every member contributes by doing their job; the system attributes and indexes automatically.</p>
+      <div class="lp-cards">
+        <div class="lp-card">
+          <h3 class="lp-card-h">Slack <code>/noosphere</code></h3>
+          <p class="lp-card-p">Save a thread or message into the right corpus with a slash command. Auto-attributed to the saver.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Per-corpus email</h3>
+          <p class="lp-card-p">Each corpus gets a unique forwarding address. Pipe customer email, sales notes, alerts straight in.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Meeting transcripts</h3>
+          <p class="lp-card-p">Paste or forward Granola, Otter, or Fireflies output. Decisions and discussion stay queryable forever.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Org connectors</h3>
+          <p class="lp-card-p">One Notion, Drive, GitHub, or Gmail OAuth covers the whole team. Install once; everyone benefits.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-agent">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Synthesis is the system's job.</h2>
+      <p class="lp-sec-sub">Compile recipes built for orgs turn raw substrate into briefings every member (and every agent) can ask against.</p>
+      <div class="lp-tool-list">
+        <div class="lp-tool"><code>weekly digest</code><span>What shipped, what shifted, what's blocked — auto-compiled across all org corpora.</span></div>
+        <div class="lp-tool"><code>decision log</code><span>Extract decisions and rationale from threads, meetings, design docs.</span></div>
+        <div class="lp-tool"><code>customer-pain synthesis</code><span>Pattern-match across feedback, calls, support — surfacing what matters.</span></div>
+        <div class="lp-tool"><code>onboarding pack</code><span>Auto-generated "what a new hire needs to know" from your org's actual record.</span></div>
+        <div class="lp-tool"><code>ops dashboards</code><span>Saved queries rendered as cards: hiring, sales, eng, anything.</span></div>
+        <div class="lp-tool"><code>distill</code><span>Org-aware interview templates capture tacit founder/expert knowledge before it leaves.</span></div>
+      </div>
+      <p class="lp-sec-foot">Every output is grounded in your org's actual record — with citations back to the Slack message, ticket, or transcript it came from. <strong>No hallucinated org memory.</strong></p>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-network">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Self-improving by design.</h2>
+      <p class="lp-sec-sub">A per-org dashboard surfaces queries returning low confidence or no results. Output is a prioritized list: ingest these sources, interview these people via Distill, compile these topics. Gaps surface themselves and turn into next-actions.</p>
+      <div class="lp-callout">
+        <strong>What we don't know yet.</strong> The team brain doesn't just store — it tells you what's missing. Failed queries become the roadmap for what to capture next.
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-rules">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Self-host or run on cloud.</h2>
+      <p class="lp-sec-sub">Same MIT/BSL line as personal: org primitives in open source; multi-tenant hosting and Stripe Connect in cloud.</p>
+      <div class="lp-cards">
+        <div class="lp-card">
+          <h3 class="lp-card-h">Self-hosted Team</h3>
+          <p class="lp-card-p">Single org per instance. Full org primitives, members, roles, audit log, contributor attribution. Bring your own Stripe and keep 100% of any paid-corpus revenue. Auth: single OIDC or basic password.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Cloud Team</h3>
+          <p class="lp-card-p">Personal workspace plus N orgs, switchable from the top-left. Hosted billing, email invites, hosted SSO. Stripe Connect with 10% platform fee on paid-corpus revenue. $49 / seat / month, 3–50 seats.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">One product, one DB</h3>
+          <p class="lp-card-p">Team is an extension of the same Noosphere — same MCP/REST, same compile/distill engine. A Pro user who later forms a team keeps everything; the corpus just gains an <code>org_id</code>.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Roles &amp; attribution</h3>
+          <p class="lp-card-p">Owner / admin / editor / viewer apply across all org corpora. Every doc records who added it — queryable, audit-loggable, optionally usable for revenue weighting.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-team-cta">
+    <div class="lp-sec-inner lp-team-cta-inner">
+      <h2 class="lp-sec-h">Build your team's queryable memory.</h2>
+      <p class="lp-sec-sub">Team workspaces are rolling out. Start a personal Noosphere today; switch to team when invites open.</p>
+      <button class="lp-go" id="lp-team-go-2">Start a Noosphere →</button>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-footer-row">
+      <span class="lp-footer-brand"><svg width="14" height="14" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere · <span class="lp-footer-copy">© 2026</span></span>
+      <span class="lp-footer-social">
+        <a href="https://github.com/steveyeow/noosphere" target="_blank" rel="noopener" class="lp-footer-ico" title="GitHub"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a>
+        <a href="https://discord.gg/8PAmqAU24R" target="_blank" rel="noopener" class="lp-footer-ico" title="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></a>
+      </span>
+    </div>
+  </footer>
+</div>`;
+  const goHandler=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
+  const g1=document.getElementById('lp-team-go');if(g1)g1.onclick=goHandler;
+  const g2=document.getElementById('lp-team-go-2');if(g2)g2.onclick=goHandler;
+  const dk=document.getElementById('lp-team-dark-btn');if(dk)dk.onclick=toggleTheme;
+  window.scrollTo(0,0);
+}
 
 let _loginMode='signin'; // 'signin' or 'signup'
 function renderLogin(){
@@ -2335,9 +2540,47 @@ function _aclNodeColor(level){return _ACL_COLOR[level||'public']||_ACL_COLOR.pub
 async function drawGraphIn(container,corpora,existingCanvas){
   if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}
   const _activity={};
+  // Server links (semantic + tag) come from /corpora/network. We fetch in
+  // parallel with the per-corpus analytics calls so the graph isn't
+  // serially blocked. Either fetch can fail (offline / endpoint error)
+  // and we degrade gracefully — analytics → 0 queries, links → tag-only
+  // computed client-side.
+  const visibleIds=new Set(corpora.map(c=>c.id));
+  const serverLinksP=fetch(`${API}/corpora/network`).then(r=>r.ok?r.json():null).catch(()=>null);
   await Promise.all(corpora.map(async c=>{try{const r=await fetch(`${API}/corpora/${c.id}/analytics?limit=1`);if(r.ok){const a=await r.json();_activity[c.id]=a.total_queries||0}else{_activity[c.id]=0}}catch(e){_activity[c.id]=0}}));
   const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:_aclNodeColor(c.access_level),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
-  const lk=[];for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=new Set(ns[i].tk);const sh=[...new Set(ns[j].tk)].filter(t=>s.has(t));if(sh.length)lk.push({source:ns[i].id,target:ns[j].id,s:sh.length})}
+
+  // Build links: prefer server-computed (semantic + tag layered), fall
+  // back to client-side tag overlap if /corpora/network is unreachable.
+  // Filter to edges whose endpoints are both visible — the server may
+  // know about corpora the current view is scoped against (e.g. home
+  // shows only the user's, explore shows all public). Without this filter
+  // the force layout would have phantom anchors pulling at nothing.
+  let lk=[];
+  const serverData=await serverLinksP;
+  if(serverData && Array.isArray(serverData.links)){
+    for(const e of serverData.links){
+      const sid=typeof e.source==='string'?e.source:e.source?.id;
+      const tid=typeof e.target==='string'?e.target:e.target?.id;
+      if(!sid||!tid)continue;
+      if(!visibleIds.has(sid)||!visibleIds.has(tid))continue;
+      // Map the server's strength scale onto the existing renderer's
+      // `s` magnitude. Tag edges already use integer shared-tag count
+      // (passes through). Semantic edges use cosine in [floor..1.0]
+      // — rescale to a comparable visual range so a 0.6 cosine doesn't
+      // render thinner than a 1-tag overlap. See _refreshComposerPlaceholder
+      // for the analogous sizing tuning on text labels.
+      const baseS=e.strength==null?1:Number(e.strength);
+      const s=e.kind==='semantic'?Math.max(0.5,(baseS-0.4)*5):baseS;
+      lk.push({source:sid,target:tid,s,kind:e.kind||'tag'});
+    }
+  }
+  if(!lk.length){
+    // Fallback: tag-only client-side computation. Keeps the graph
+    // working when the network endpoint hiccups or the embedding
+    // pipeline isn't configured (self-hosted no-API-key setups).
+    for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){const s=new Set(ns[i].tk);const sh=[...new Set(ns[j].tk)].filter(t=>s.has(t));if(sh.length)lk.push({source:ns[i].id,target:ns[j].id,s:sh.length,kind:'tag'})}
+  }
   // Adjacency for hover-dim + orphan detection. Each node is its own neighbor
   // (so hovering a node keeps it lit along with its 1-hop friends).
   const nbr={};ns.forEach(n=>{nbr[n.id]=new Set([n.id])});
@@ -2364,7 +2607,13 @@ async function drawGraphIn(container,corpora,existingCanvas){
 
   function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);
     const activeSet=hov?nbr[hov.id]:null; // hover-dim: keep hovered + neighbors at full opacity
-    for(const l of lk){const s=l.source,t=l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const touches=!activeSet||(activeSet.has(sid)&&activeSet.has(tid));const dim=activeSet&&!touches?.15:1;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=`rgba(160,170,190,${(.15+Math.min(l.s,6)*.08)*dim})`;cx.lineWidth=.8+Math.min(l.s,6)*.45;cx.stroke()}
+    // Edge rendering: solid line for human-curated tag edges, dashed for
+    // AI-inferred semantic similarity. Mirrors Obsidian's Graphene plugin
+    // convention so the user can tell at a glance "I declared these
+    // related" vs "the model thinks these are related". Ranges of `l.s`
+    // were already normalised by drawGraphIn so the line-width formula
+    // doesn't need a per-kind branch.
+    for(const l of lk){const s=l.source,t=l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const touches=!activeSet||(activeSet.has(sid)&&activeSet.has(tid));const dim=activeSet&&!touches?.15:1;cx.save();cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);if(l.kind==='semantic'){cx.setLineDash([4,4]);cx.strokeStyle=`rgba(140,160,200,${(.18+Math.min(l.s,6)*.07)*dim})`}else{cx.strokeStyle=`rgba(160,170,190,${(.15+Math.min(l.s,6)*.08)*dim})`}cx.lineWidth=.8+Math.min(l.s,6)*.45;cx.stroke();cx.restore()}
     for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const dim=activeSet&&!(activeSet.has(sid)&&activeSet.has(tid))?.15:1;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.4*dim})`;cx.fill()}
     for(const n of ns){const h=hov===n||drag===n;const isCenter=n._isCenter===true;const isExternal=n._isOwn===false;const isOrphan=nbr[n.id].size<=1;const dim=activeSet&&!activeSet.has(n.id)?.25:1;let r=BR;if(mp&&!drag){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<200?BR*(1+(1-d/200)*.5):BR*.85}if(h)r=Math.max(r,BR*1.4);if(isCenter)r=Math.max(r,BR*1.15);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);
       const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${(h?.12:.05)*dim})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
@@ -3174,7 +3423,9 @@ async function renderCorpus(id,sessionId){
       return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title||'Manifest')}</span><span class="doc-hd-right"><span class="doc-mt">${wlab} · <span class="doc-sk sk-system">system generated</span></span><span class="doc-ar">▸</span></span></div></div>`;
     }
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
-    return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span></span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
+    // Show the contributor pill only in team workspaces — meaningless solo.
+    const contribHTML=(_workspace.kind==='org'&&d.contributor_user_id)?(' · '+renderContributorPill(d.contributor_user_id)):'';
+    return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
   };
   // Wiki empty-state: phrase matters depending on whether the manifest is
   // already there. Even before the user compiles a single concept note, the
@@ -4643,5 +4894,247 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
+  _loadWorkspace();_ensureSelfHostedUserId();
+  document.getElementById('sb-workspace')?.addEventListener('click',toggleWorkspaceMenu);
+  document.addEventListener('click',e=>{
+    const menu=document.getElementById('sb-workspace-menu');const btn=document.getElementById('sb-workspace');
+    if(!menu||!btn)return;if(menu.classList.contains('hidden'))return;
+    if(menu.contains(e.target)||btn.contains(e.target))return;
+    menu.classList.add('hidden');
+  });
+  renderWorkspaceSwitcher();
   await initAuth();renderAuthUI();
   window.addEventListener('hashchange',route);route()});
+
+/* ── Team workspaces UI ───────────────────────────────────────── */
+
+function renderWorkspaceSwitcher(){
+  const btn=document.getElementById('sb-workspace');const lab=document.getElementById('sb-ws-label');
+  if(!btn||!lab)return;
+  let label='Personal';
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);label=o?o.name:'Personal';
+  }
+  lab.textContent=label;
+}
+
+function toggleWorkspaceMenu(e){
+  e.stopPropagation();
+  const menu=document.getElementById('sb-workspace-menu');if(!menu)return;
+  if(!menu.classList.contains('hidden')){menu.classList.add('hidden');return}
+  const items=[];
+  items.push(`<button class="ws-menu-item${_workspace.kind==='personal'?' is-active':''}" data-act="personal"><span class="ws-menu-dot"></span><span class="ws-menu-name">Personal</span>${_workspace.kind==='personal'?'<span class="ws-menu-check">✓</span>':''}</button>`);
+  for(const o of _orgs){
+    const active=_workspace.kind==='org'&&_workspace.org_id===o.id;
+    items.push(`<a class="ws-menu-item${active?' is-active':''}" data-act="org" data-id="${esc(o.id)}" data-slug="${esc(o.slug||'')}"><span class="ws-menu-dot"></span><span class="ws-menu-name">${esc(o.name)}</span><span class="ws-menu-sub">${esc(o.role||'member')}</span>${active?'<span class="ws-menu-check">✓</span>':''}</a>`);
+  }
+  items.push('<div class="ws-menu-divider"></div>');
+  items.push('<button class="ws-menu-item ws-menu-create" data-act="create"><span class="ws-menu-plus">+</span><span class="ws-menu-name">Create organization</span></button>');
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);
+    if(o)items.push(`<a class="ws-menu-item ws-menu-settings" data-act="settings" data-slug="${esc(o.slug)}"><span class="ws-menu-gear">⚙</span><span class="ws-menu-name">Org settings</span></a>`);
+  }
+  menu.innerHTML=items.join('');
+  menu.classList.remove('hidden');
+  menu.querySelectorAll('[data-act]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.preventDefault();ev.stopPropagation();menu.classList.add('hidden');
+      const act=el.dataset.act;
+      if(act==='personal'){setWorkspace({kind:'personal',org_id:null})}
+      else if(act==='org'){setWorkspace({kind:'org',org_id:el.dataset.id})}
+      else if(act==='create'){_showCreateOrgModal()}
+      else if(act==='settings'){location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)}
+    });
+  });
+}
+
+async function setWorkspace(ws){
+  _workspace=ws;_saveWorkspace();renderWorkspaceSwitcher();
+  // The corpus list, chats, and main view all depend on workspace scope.
+  await loadC();await loadChatSessions();
+  if(location.hash==='#/main'||location.hash==='#/corpora')route();
+  else location.hash='#/corpora';
+  toast(_workspace.kind==='org'?'Switched to '+(_orgs.find(o=>o.id===ws.org_id)?.name||'organization'):'Switched to Personal','success');
+}
+
+function _showCreateOrgModal(){
+  _showFormModal({
+    title:'Create organization',
+    subtitle:'A shared workspace for your team. Members ingest into the same corpora and contributor names show on every document.',
+    submitLabel:'Create',
+    fields:[
+      {id:'name',label:'Name',placeholder:'Acme Research',hint:'Shown in the workspace switcher.'},
+      {id:'slug',label:'URL slug',placeholder:'acme',hint:'Used in invite links. Lowercase letters, digits, hyphens.'}
+    ],
+    onSubmit:async(v)=>{
+      if(!v.name){toast('Name is required');return}
+      const r=await fetch(API+'/orgs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.name,slug:v.slug||''})});
+      if(!r.ok){const e=await r.json().catch(()=>({}));toast('Create failed: '+(e.detail||r.status));return}
+      const org=await r.json();_closeModal();
+      _orgs=[...(_orgs||[]),{...org,role:'owner'}];
+      await setWorkspace({kind:'org',org_id:org.id});
+      location.hash='#/orgs/'+encodeURIComponent(org.slug);
+    }
+  });
+}
+
+async function renderOrgSettings(slug,tab){
+  const c=document.getElementById('content');if(!c)return;
+  c.innerHTML='<div class="org-page"><div class="org-page-loading">Loading…</div></div>';
+  let org=null;
+  try{
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
+    if(!r.ok){c.innerHTML='<div class="org-page"><h1 class="org-h1">Not found</h1><p>That organization doesn\'t exist or you don\'t have access.</p></div>';return}
+    org=await r.json();
+  }catch(e){c.innerHTML='<div class="org-page"><p>Failed to load organization.</p></div>';return}
+  // Auto-switch active workspace to this org while we're on its settings.
+  if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
+    _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();
+  }
+  const role=(_orgs.find(o=>o.id===org.id)?.role)||'member';
+  const isAdmin=role==='owner'||role==='admin';
+  const tabs=['members','invites','audit'];
+  if(!tabs.includes(tab))tab='members';
+  c.innerHTML=`
+    <div class="org-page">
+      <div class="org-page-hd">
+        <div>
+          <div class="org-page-eyebrow">Organization</div>
+          <h1 class="org-h1">${esc(org.name)}</h1>
+          <div class="org-page-meta">${esc(org.slug)} · your role: ${esc(role)}</div>
+        </div>
+      </div>
+      <div class="org-tabs">
+        ${tabs.map(t=>`<a class="org-tab${t===tab?' is-active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${t==='members'?'Members':t==='invites'?'Invites':'Audit log'}</a>`).join('')}
+      </div>
+      <div class="org-tab-body" id="org-tab-body"></div>
+    </div>
+  `;
+  if(tab==='members')await _renderOrgMembersTab(org,isAdmin);
+  else if(tab==='invites')await _renderOrgInvitesTab(org,isAdmin);
+  else if(tab==='audit')await _renderOrgAuditTab(org,isAdmin);
+}
+
+async function _renderOrgMembersTab(org,isAdmin){
+  const body=document.getElementById('org-tab-body');if(!body)return;
+  body.innerHTML='<div class="org-loading">Loading members…</div>';
+  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members');
+  if(!r.ok){body.innerHTML='<div class="org-empty">Failed to load members.</div>';return}
+  const members=await r.json();
+  const rows=members.map(m=>{
+    const me=m.user_id===_userId;
+    const roleCtl=isAdmin&&!me?`<select class="org-role-sel" data-uid="${esc(m.user_id)}">${['owner','admin','editor','viewer'].map(r=>`<option value="${r}"${m.role===r?' selected':''}>${r}</option>`).join('')}</select>`:`<span class="org-role-static">${esc(m.role)}</span>`;
+    const removeBtn=isAdmin&&!me&&m.role!=='owner'?`<button class="org-row-rm" data-uid="${esc(m.user_id)}" title="Remove">×</button>`:'';
+    const label=me?'You':_renderUserPillName(m.user_id);
+    return `<div class="org-row"><div class="org-row-name">${esc(label)}<span class="org-row-uid">${esc(m.user_id.slice(0,12))}…</span></div><div class="org-row-ctl">${roleCtl}${removeBtn}</div></div>`;
+  }).join('');
+  body.innerHTML=rows||'<div class="org-empty">No members.</div>';
+  body.querySelectorAll('.org-role-sel').forEach(sel=>sel.addEventListener('change',async()=>{
+    const uid=sel.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:sel.value})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    toast('Role updated','success');
+  }));
+  body.querySelectorAll('.org-row-rm').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(!confirm('Remove this member?'))return;
+    const uid=btn.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'DELETE'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    toast('Removed','success');await _renderOrgMembersTab(org,isAdmin);
+  }));
+}
+
+async function _renderOrgInvitesTab(org,isAdmin){
+  const body=document.getElementById('org-tab-body');if(!body)return;
+  if(!isAdmin){body.innerHTML='<div class="org-empty">Admin only.</div>';return}
+  body.innerHTML='<div class="org-loading">Loading invites…</div>';
+  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites');
+  const invites=r.ok?await r.json():[];
+  const inviteUrl=t=>location.origin+'/#/invite/'+t;
+  const rows=invites.length?invites.map(i=>{
+    return `<div class="org-row"><div class="org-row-name"><span class="org-invite-role">${esc(i.role)}</span><code class="org-invite-link">${esc(inviteUrl(i.token))}</code></div><div class="org-row-ctl"><button class="btn-sm org-invite-copy" data-link="${esc(inviteUrl(i.token))}">Copy</button><button class="btn-sm-ghost org-invite-revoke" data-id="${esc(i.id)}">Revoke</button></div></div>`;
+  }).join(''):'<div class="org-empty">No active invites.</div>';
+  body.innerHTML=`
+    <div class="org-invite-create">
+      <select id="org-invite-role">${['admin','editor','viewer'].map(r=>`<option value="${r}"${r==='editor'?' selected':''}>${r}</option>`).join('')}</select>
+      <button class="btn-sm" id="org-invite-go">Generate invite link</button>
+    </div>
+    <div class="org-invite-list">${rows}</div>
+  `;
+  document.getElementById('org-invite-go').addEventListener('click',async()=>{
+    const role=document.getElementById('org-invite-role').value;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,ttl_days:14})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    const inv=await r.json();
+    _showInfoModal({title:'Invite link created',subtitle:`Role: ${inv.role}. Expires in 14 days. Single-use — share with one person.`,copyText:inviteUrl(inv.token)});
+    await _renderOrgInvitesTab(org,isAdmin);
+  });
+  body.querySelectorAll('.org-invite-copy').forEach(b=>b.addEventListener('click',()=>cp(b.dataset.link,b)));
+  body.querySelectorAll('.org-invite-revoke').forEach(b=>b.addEventListener('click',async()=>{
+    if(!confirm('Revoke this invite?'))return;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    toast('Revoked','success');await _renderOrgInvitesTab(org,isAdmin);
+  }));
+}
+
+async function _renderOrgAuditTab(org,isAdmin){
+  const body=document.getElementById('org-tab-body');if(!body)return;
+  if(!isAdmin){body.innerHTML='<div class="org-empty">Admin only.</div>';return}
+  body.innerHTML='<div class="org-loading">Loading audit log…</div>';
+  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/audit-logs?limit=200');
+  if(!r.ok){body.innerHTML='<div class="org-empty">Failed to load.</div>';return}
+  const logs=await r.json();
+  if(!logs.length){body.innerHTML='<div class="org-empty">No activity yet.</div>';return}
+  body.innerHTML=`<div class="org-audit-list">${logs.map(l=>{
+    const t=new Date(l.created_at).toLocaleString();
+    const meta=l.metadata?Object.entries(l.metadata).map(([k,v])=>`${esc(k)}=${esc(typeof v==='string'?v:JSON.stringify(v))}`).join(' · '):'';
+    return `<div class="org-audit-row"><span class="org-audit-when">${esc(t)}</span><span class="org-audit-who">${esc((l.actor_user_id||'?').slice(0,10))}</span><span class="org-audit-act">${esc(l.action)}</span>${l.resource_type?`<span class="org-audit-res">${esc(l.resource_type)}:${esc((l.resource_id||'').slice(0,10))}</span>`:''}${meta?`<span class="org-audit-meta">${meta}</span>`:''}</div>`;
+  }).join('')}</div>`;
+}
+
+async function renderInviteAccept(token){
+  const lp=document.getElementById('page-landing');if(!lp)return;
+  lp.innerHTML='<div class="invite-page"><div class="invite-card">Loading invite…</div></div>';
+  let info=null;
+  try{const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token));if(!r.ok)throw new Error('not found');info=await r.json()}
+  catch(e){lp.innerHTML='<div class="invite-page"><div class="invite-card"><h1>Invite not found</h1><p>This link is invalid or expired. Ask the organization admin for a new one.</p><a class="btn-sm" href="#/">Back home</a></div></div>';return}
+  const inv=info.invite||{};const org=info.org||{};
+  const used=!!inv.accepted_at;const revoked=!!inv.revoked_at;
+  const expired=inv.expires_at&&new Date(inv.expires_at)<new Date();
+  let body='';
+  if(used)body='<p class="invite-state">This invite has already been used.</p>';
+  else if(revoked)body='<p class="invite-state">This invite has been revoked.</p>';
+  else if(expired)body='<p class="invite-state">This invite has expired.</p>';
+  else body=`<p class="invite-pitch">You've been invited to join <strong>${esc(org.name||'an organization')}</strong> as <strong>${esc(inv.role||'editor')}</strong>. You'll share corpora and see contributor attribution on every document.</p><button class="btn invite-accept" id="invite-accept-btn">Accept and join</button>`;
+  lp.innerHTML=`
+    <div class="invite-page">
+      <div class="invite-card">
+        <div class="invite-eyebrow">Organization invite</div>
+        <h1 class="invite-h1">${esc(org.name||'Noosphere organization')}</h1>
+        ${body}
+      </div>
+    </div>
+  `;
+  const btn=document.getElementById('invite-accept-btn');
+  if(btn)btn.addEventListener('click',async()=>{
+    btn.disabled=true;btn.textContent='Joining…';
+    _ensureSelfHostedUserId();
+    const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token)+'/accept',{method:'POST',headers:{'Content-Type':'application/json'}});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));btn.disabled=false;btn.textContent='Accept and join';return}
+    const m=await r.json();
+    _orgs=[...(_orgs||[]),{id:m.org_id,name:org.name,slug:org.slug,role:m.role}];
+    _workspace={kind:'org',org_id:m.org_id};_saveWorkspace();
+    toast('Joined '+(org.name||'organization'),'success');
+    location.hash='#/main';
+  });
+}
+
+function _renderUserPillName(uid){
+  if(!uid)return 'Unknown';
+  if(uid===_userId)return 'You';
+  if(uid==='local')return 'Local operator';
+  return '@'+uid.slice(0,8);
+}
+function renderContributorPill(uid){
+  if(!uid)return '';
+  return `<span class="doc-contributor" title="Contributor: ${esc(uid)}">${esc(_renderUserPillName(uid))}</span>`;
+}

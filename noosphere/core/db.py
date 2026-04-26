@@ -443,6 +443,21 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_org_date ON audit_logs(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_logs(resource_type, resource_id);
+
+CREATE TABLE IF NOT EXISTS organization_invites (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id),
+    token TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'editor',
+    created_by TEXT,
+    expires_at TEXT,
+    accepted_at TEXT,
+    accepted_by TEXT,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_org_invites_token ON organization_invites(token);
+CREATE INDEX IF NOT EXISTS idx_org_invites_org ON organization_invites(org_id);
 """
 
 # SQLite: FTS5 virtual table for full-text search
@@ -502,6 +517,16 @@ MIGRATION_SQL = [
     "ALTER TABLE query_logs ADD COLUMN action TEXT DEFAULT 'ask'",
     "ALTER TABLE corpora ADD COLUMN org_id TEXT",
     "ALTER TABLE documents ADD COLUMN contributor_user_id TEXT",
+    # Corpus-level embedding for the discovery graph. Distinct from
+    # chunks.vector (which is per-chunk) — this is one summary vector
+    # per corpus, computed from name + description + tags + top entities,
+    # used to draw "this KB is semantically related to that KB" edges
+    # without the user having to manually maintain overlapping tags.
+    # Both columns are nullable: pre-existing corpora stay null until
+    # the backfill script runs, and corpora with no embedder configured
+    # never get one (graph just falls back to tag-overlap edges).
+    "ALTER TABLE corpora ADD COLUMN corpus_vector {BLOB_TYPE}",
+    "ALTER TABLE corpora ADD COLUMN corpus_vector_norm REAL",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations
@@ -519,6 +544,10 @@ def _run_migrations_sqlite(conn):
     """Apply additive migrations, silently skipping already-applied ones."""
     import sqlite3
     for stmt in MIGRATION_SQL:
+        # Expand the {BLOB_TYPE} placeholder used by binary-column migrations
+        # so a single migration entry can target both backends — same trick
+        # SCHEMA_SQL uses below.
+        stmt = stmt.replace("{BLOB_TYPE}", "BLOB")
         try:
             conn.execute(stmt)
         except sqlite3.OperationalError:
@@ -534,6 +563,8 @@ def _run_migrations_sqlite(conn):
 def _run_migrations_pg(conn):
     """Apply additive migrations for PostgreSQL using SAVEPOINT."""
     for stmt in MIGRATION_SQL:
+        # See sqlite runner for why this placeholder exists.
+        stmt = stmt.replace("{BLOB_TYPE}", "BYTEA")
         col_name = stmt.split("ADD COLUMN")[1].strip().split()[0] if "ADD COLUMN" in stmt else ""
         sp = f"sp_mig_{col_name}" if col_name else "sp_mig"
         try:

@@ -762,6 +762,7 @@ def save_capture(
     title: str = "",
     question: str = "",
     session_id: str = "",
+    contributor_user_id: str | None = None,
 ) -> dict:
     """Persist a note from chat or manual capture; doc_type=capture with provenance metadata."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -784,6 +785,7 @@ def save_capture(
         source_kind="user_capture",
         tags=["capture"],
         metadata=meta,
+        contributor_user_id=contributor_user_id,
     )
     try:
         index_corpus(corpus_id)

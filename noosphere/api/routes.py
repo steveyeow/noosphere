@@ -12,13 +12,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, U
 from pydantic import BaseModel
 
 from noosphere import __version__
-from noosphere.core.corpus import list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus, source_composition
+from noosphere.core.corpus import LOCAL_OWNER_ID, list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus, source_composition
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
 from noosphere.core.access import check_access, AccessDenied
 from noosphere.core.db import get_conn, is_pg
 from noosphere.core.llm import LLMError
+from noosphere.core import orgs as orgs_mod
 
 # Cloud quota helpers — no-ops when ENABLE_CLOUD is off or user is not authenticated
 def _check_quota(request: Request, action: str):
@@ -67,8 +68,43 @@ def _is_cloud() -> bool:
 
 
 def _get_user_id(request: Request) -> str | None:
-    """Get the authenticated user_id from request state (cloud mode)."""
-    return getattr(request.state, "user_id", None)
+    """Resolve the requesting user_id.
+
+    Cloud mode: from JWT-validated request.state (set by auth middleware).
+    Self-hosted: ``X-Noosphere-User-Id`` header (browser-issued, persisted in
+    localStorage) wins. If absent and the caller is the localhost operator,
+    returns the sentinel ``LOCAL_OWNER_ID``. Otherwise None — anonymous reader.
+    """
+    state_uid = getattr(request.state, "user_id", None)
+    if state_uid:
+        return state_uid
+    if _is_cloud():
+        return None
+    header_uid = request.headers.get("x-noosphere-user-id", "").strip()
+    if header_uid:
+        return header_uid
+    if _is_owner_request(request):
+        return LOCAL_OWNER_ID
+    return None
+
+
+def _client_ip(request: Request) -> str | None:
+    client = request.client
+    return getattr(client, "host", None) if client else None
+
+
+def _active_workspace(request: Request) -> tuple[str, str | None]:
+    """Parse the active workspace from the X-Noosphere-Workspace header.
+
+    Returns ``("personal", None)`` or ``("org", <org_id>)``. Defaults to
+    personal when the header is missing or malformed.
+    """
+    raw = request.headers.get("x-noosphere-workspace", "").strip().lower()
+    if raw.startswith("org:"):
+        org_id = raw[4:].strip()
+        if org_id:
+            return ("org", org_id)
+    return ("personal", None)
 
 
 def _extract_bearer(request: Request) -> str | None:
@@ -114,16 +150,19 @@ def _is_owner_request(request: Request) -> bool:
 def _check_corpus_access(corpus: dict, request: Request) -> str | None:
     """Enforce access control. Returns token_id if token auth was used.
 
-    Owner requests from the web UI bypass access control (self-hosted
-    mode: the person running the server owns all corpora). In cloud
-    mode, the authenticated owner of a corpus also bypasses access
-    checks — otherwise a paid corpus would paywall its own creator.
+    Personal corpus: owner request (localhost / matching user_id) bypasses;
+    other readers fall through to public/token/paid gating.
+    Team corpus: any org member with role >= viewer bypasses; non-members
+    fall through to gating just like for personal corpora.
     """
-    if _is_owner_request(request):
-        return None
-    if _is_cloud():
-        user_id = _get_user_id(request)
-        if user_id and corpus.get("owner_id") == user_id:
+    user_id = _get_user_id(request)
+    if corpus.get("org_id"):
+        if user_id and orgs_mod.can_read_corpus(corpus, user_id):
+            return None
+    else:
+        if _is_owner_request(request):
+            return None
+        if _is_cloud() and user_id and corpus.get("owner_id") == user_id:
             return None
     try:
         return check_access(corpus, _extract_bearer(request))
@@ -132,17 +171,30 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
 
 
 def _require_owner(request: Request, corpus: dict | None = None):
-    """Require the request to come from the owner. Used for write/mutation endpoints.
+    """Require write access on a corpus or the instance.
 
-    In cloud mode: checks that the authenticated user owns the corpus.
-    In self-hosted mode: checks localhost/same-origin (original behavior).
+    Personal corpus:
+      - Cloud: caller's user_id must match owner_id.
+      - Self-hosted: localhost OR matching X-Noosphere-User-Id.
+    Team corpus (org_id set):
+      - Caller must be an org member with role >= editor.
+    No corpus passed: must be a localhost operator (cloud: any authed user).
     """
+    user_id = _get_user_id(request)
+
+    if corpus and corpus.get("org_id"):
+        if not user_id or not orgs_mod.can_write_corpus(corpus, user_id):
+            raise HTTPException(status_code=403, detail="Write access restricted to org editors")
+        return
+
     if _is_cloud():
-        user_id = _get_user_id(request)
         if not user_id:
             raise HTTPException(status_code=401, detail="Authentication required")
         if corpus and corpus.get("owner_id") and corpus["owner_id"] != user_id:
             raise HTTPException(status_code=403, detail="You do not own this corpus")
+        return
+
+    if corpus and corpus.get("owner_id") and user_id and corpus["owner_id"] == user_id:
         return
     if not _is_owner_request(request):
         raise HTTPException(status_code=403, detail="Write access restricted to corpus owner")
@@ -401,14 +453,25 @@ async def api_health():
 
 @router.get("/me")
 async def api_me(request: Request):
+    user_id = _get_user_id(request)
+    workspace = _active_workspace(request)
+    orgs_for_user = orgs_mod.list_orgs_for_user(user_id) if user_id else []
+    workspace_dict = {"kind": workspace[0], "org_id": workspace[1]}
     if _is_cloud():
-        user_id = _get_user_id(request)
         email = getattr(request.state, "email", "")
         tier = getattr(request.state, "tier", "free")
         name = email.split("@")[0].replace(".", " ").title() if email else "User"
-        return {"name": name, "user_id": user_id, "email": email, "tier": tier, "cloud": True}
+        return {
+            "name": name, "user_id": user_id, "email": email, "tier": tier,
+            "cloud": True,
+            "active_workspace": workspace_dict, "orgs": orgs_for_user,
+        }
     from noosphere.core.config import OWNER_NAME
-    return {"name": OWNER_NAME}
+    return {
+        "name": OWNER_NAME, "user_id": user_id,
+        "is_local_operator": _is_owner_request(request),
+        "active_workspace": workspace_dict, "orgs": orgs_for_user,
+    }
 
 
 # ── Corpus CRUD ──
@@ -439,24 +502,74 @@ def _annotate_compile_state(corpora: list[dict]) -> list[dict]:
 
 @router.get("/corpora")
 async def api_list_corpora(request: Request):
+    """List corpora scoped to the active workspace (header ``X-Noosphere-Workspace``).
+
+    Org workspace → org-scoped corpora visible to the calling member.
+    Personal workspace → corpora the caller owns (cloud / matching user_id) or
+    public corpora (anonymous reader / self-hosted operator).
+    """
+    kind, org_id = _active_workspace(request)
+    if kind == "org" and org_id:
+        _require_org_member(request, org_id)
+        rows = get_conn().execute(
+            "SELECT * FROM corpora WHERE org_id=? ORDER BY updated_at DESC", (org_id,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("tags", "owned_handles", "task_types", "samples"):
+                if isinstance(d.get(k), str):
+                    try:
+                        d[k] = _json.loads(d[k])
+                    except Exception:
+                        pass
+            # Strip backend-only graph-embedding fields — they're raw
+            # bytes that break FastAPI's JSON encoder, and the frontend
+            # has no use for them. Mirrors corpus._row_to_dict.
+            d.pop("corpus_vector", None)
+            d.pop("corpus_vector_norm", None)
+            out.append(d)
+        return _annotate_compile_state(out)
     if _is_cloud():
         user_id = _get_user_id(request)
         if user_id:
             return _annotate_compile_state(list_user_corpora(user_id))
         return _annotate_compile_state(list_corpora())
-    return _annotate_compile_state(list_corpora(include_private=_is_owner_request(request)))
+    listed = list_corpora(include_private=_is_owner_request(request))
+    # Personal workspace must never leak org-scoped corpora — those only
+    # surface when the caller switches to that org's workspace explicitly.
+    listed = [c for c in listed if not c.get("org_id")]
+    return _annotate_compile_state(listed)
 
 
 @router.post("/corpora")
 async def api_create_corpus(req: CreateCorpusRequest, request: Request, background_tasks: BackgroundTasks):
-    _require_owner(request)
-    _check_corpus_limit(request)
-    owner_id = _get_user_id(request) if _is_cloud() else ""
+    kind, org_id = _active_workspace(request)
+    actor_uid = _get_user_id(request)
+
+    if kind == "org" and org_id:
+        _require_org_role(request, org_id, orgs_mod.ROLE_EDITOR)
+        owner_id = ""
+        scope_org_id = org_id
+    else:
+        _require_owner(request)
+        _check_corpus_limit(request)
+        owner_id = actor_uid if _is_cloud() else ""
+        scope_org_id = ""
+
     corpus = create_corpus(
         req.name, description=req.description, author_name=req.author_name,
         tags=req.tags, access_level=req.access_level, language=req.language,
-        owner_id=owner_id,
+        owner_id=owner_id, org_id=scope_org_id,
     )
+
+    if scope_org_id:
+        orgs_mod.log_audit(
+            "corpus.create", org_id=scope_org_id, actor_user_id=actor_uid,
+            resource_type="corpus", resource_id=corpus["id"],
+            metadata={"name": corpus["name"], "access_level": corpus.get("access_level")},
+            ip_addr=_client_ip(request),
+        )
     # Materialize the manifest doc immediately so it's pinned first in Wiki
     # from the moment the corpus exists. Auto-fill runs later (after first
     # ingestion) and will refresh the doc content in place.
@@ -474,9 +587,49 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request, backgrou
     return corpus
 
 
+def _safe_update_corpus_embedding(corpus_id: str):
+    """Best-effort wrapper used by BackgroundTasks. Swallows any error so a
+    failing embed call (network blip, quota miss, model misconfigured)
+    can't surface as an unhandled task exception in the logs."""
+    try:
+        from noosphere.core.corpus_embedding import update_corpus_embedding
+        update_corpus_embedding(corpus_id)
+    except Exception as e:
+        logger.debug("background corpus embedding failed for %s: %s", corpus_id, e)
+
+
 @router.get("/corpora/network")
-async def api_corpus_network(request: Request):
+async def api_corpus_network(request: Request, background_tasks: BackgroundTasks):
     corpora = list_corpora(include_private=_is_owner_request(request))
+    # Lazy backfill: any corpus without a profile embedding yet gets one
+    # computed in the background. The current response uses whatever
+    # tag-only links are computable; the next /network call will pick up
+    # the freshly-embedded vectors and show semantic edges. Cost is
+    # bounded — each corpus only gets embedded once until its profile
+    # fields change. Cap per-request to avoid hammering the embedder
+    # API on a fresh deployment with hundreds of pre-existing corpora;
+    # subsequent requests catch up.
+    #
+    # The corpus dicts here have `corpus_vector` stripped (it's raw
+    # bytes that break FastAPI's encoder), so we can't read the column
+    # off of them directly — query the storage side with a single SELECT.
+    _BACKFILL_CAP = 8
+    try:
+        _ids = [c["id"] for c in corpora]
+        if _ids:
+            _conn = get_conn()
+            _placeholders = ",".join(["?"] * len(_ids))
+            _rows = _conn.execute(
+                f"SELECT id FROM corpora "
+                f"WHERE id IN ({_placeholders}) "
+                f"AND corpus_vector IS NULL "
+                f"LIMIT {_BACKFILL_CAP}",
+                tuple(_ids),
+            ).fetchall()
+            for _r in _rows:
+                background_tasks.add_task(_safe_update_corpus_embedding, _r["id"])
+    except Exception as _bf_err:
+        logger.debug("backfill scan skipped: %s", _bf_err)
     nodes = []
     for c in corpora:
         tags = c.get("tags", [])
@@ -503,16 +656,93 @@ async def api_corpus_network(request: Request):
             "autonomy_level": c.get("autonomy_level", 0),
         })
 
-    links = []
+    # Edge computation runs in two layered passes so the graph stays
+    # connected regardless of which signals are populated on which corpora:
+    #
+    #   Layer 1 — semantic (corpus_vector cosine similarity).
+    #     Strong signal. Any pair where both corpora have a profile
+    #     embedding contributes an edge if cosine >= floor. This is
+    #     where a fresh node with no tags still gets meaningful links —
+    #     the profile vector is built from name/description/entities/etc.
+    #     so even an empty corpus has a coherent semantic neighborhood.
+    #
+    #   Layer 2 — explicit tag overlap (the original signal).
+    #     Always added for any pair sharing at least one tag token,
+    #     marked as 'kind=tag' so the frontend can render it
+    #     differently from semantic edges (Graphene-style: solid for
+    #     human-curated, dashed for AI-inferred). Tag edges supersede
+    #     a semantic edge between the same pair if both exist.
+    #
+    # Top-K=4 per node is enforced on the semantic layer to prevent
+    # high-density clusters (similar embeddings everywhere) from
+    # collapsing the graph into a hairball — same trick Feynman uses.
+    SEM_FLOOR = 0.45
+    SEM_TOP_K = 4
+
+    edges: dict[tuple[str, str], dict] = {}
+
+    # ── Layer 1: semantic ──────────────────────────────────────────
+    try:
+        from noosphere.core.corpus_embedding import load_corpus_vectors
+        import numpy as _np
+        node_ids = [n["id"] for n in nodes]
+        vec_rows = load_corpus_vectors(node_ids)
+        if len(vec_rows) >= 2:
+            # Stack into NxD matrix, normalise rows so a single matmul
+            # gives the full pairwise cosine matrix in one shot.
+            id_index = {v["id"]: i for i, v in enumerate(vec_rows)}
+            mat = _np.stack([
+                v["vec"] / (v["norm"] or 1.0) for v in vec_rows
+            ]).astype(_np.float32)
+            sims = mat @ mat.T  # NxN cosine
+            n = len(vec_rows)
+            # Per-node top-K (excluding self), then dedupe across the
+            # two endpoints so we don't double-emit a pair.
+            kept_pairs: set[tuple[int, int]] = set()
+            for i in range(n):
+                row = sims[i].copy()
+                row[i] = -1.0  # exclude self
+                # argpartition is faster than a full sort for top-K.
+                k = min(SEM_TOP_K, n - 1)
+                idxs = _np.argpartition(-row, k - 1)[:k]
+                for j in idxs:
+                    if row[j] < SEM_FLOOR:
+                        continue
+                    a, b = (int(i), int(j)) if i < j else (int(j), int(i))
+                    kept_pairs.add((a, b))
+            for a, b in kept_pairs:
+                src_id = vec_rows[a]["id"]
+                tgt_id = vec_rows[b]["id"]
+                if src_id not in id_index or tgt_id not in id_index:
+                    continue
+                key = (src_id, tgt_id)
+                strength = float(sims[a, b])
+                edges[key] = {
+                    "source": src_id, "target": tgt_id,
+                    "strength": round(strength, 4),
+                    "kind": "semantic",
+                }
+    except Exception as _sem_err:
+        # Embedding pipeline failure must never break /network — graph
+        # falls back to tag-only links and the user still sees something.
+        logger.debug("semantic-link computation skipped: %s", _sem_err)
+
+    # ── Layer 2: tag overlap ───────────────────────────────────────
     for i in range(len(nodes)):
         for j in range(i + 1, len(nodes)):
             shared = set(nodes[i]["tokens"]) & set(nodes[j]["tokens"])
-            if shared:
-                links.append({
-                    "source": nodes[i]["id"], "target": nodes[j]["id"],
-                    "strength": len(shared), "shared_tags": list(shared),
-                })
-    return {"nodes": nodes, "links": links}
+            if not shared:
+                continue
+            src_id, tgt_id = nodes[i]["id"], nodes[j]["id"]
+            key = (src_id, tgt_id)
+            edges[key] = {
+                "source": src_id, "target": tgt_id,
+                "strength": float(len(shared)),
+                "kind": "tag",
+                "shared_tags": list(shared),
+            }
+
+    return {"nodes": nodes, "links": list(edges.values())}
 
 
 @router.get("/corpora/{corpus_id}")
@@ -625,6 +855,14 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
     }
     if updates.keys() & registry_affecting:
         background_tasks.add_task(_safe_resync_registry)
+    if corpus.get("org_id"):
+        action = "access.change" if new_access_level and new_access_level != corpus.get("access_level") else "corpus.update"
+        orgs_mod.log_audit(
+            action, org_id=corpus["org_id"], actor_user_id=_get_user_id(request),
+            resource_type="corpus", resource_id=corpus_id,
+            metadata={"fields": list(updates.keys())},
+            ip_addr=_client_ip(request),
+        )
     return result
 
 
@@ -632,7 +870,15 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
 async def api_delete_corpus(corpus_id: str, request: Request, background_tasks: BackgroundTasks):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    actor_uid = _get_user_id(request)
     delete_corpus(corpus_id)
+    if corpus.get("org_id"):
+        orgs_mod.log_audit(
+            "corpus.delete", org_id=corpus["org_id"], actor_user_id=actor_uid,
+            resource_type="corpus", resource_id=corpus_id,
+            metadata={"name": corpus.get("name")},
+            ip_addr=_client_ip(request),
+        )
     # The next snapshot won't include this corpus, so the registry's
     # reconcile step deletes its record.
     background_tasks.add_task(_safe_resync_registry)
@@ -717,6 +963,7 @@ async def api_upload_files(
 ):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    contributor_uid = _get_user_id(request)
     # Uploads share the "index" bucket because the client always fires a
     # follow-up /index. The follow-up now only charges when embedding work
     # actually ran (see api_index_corpus), so the net per-upload cost stays
@@ -771,11 +1018,20 @@ async def api_upload_files(
             source_kind=source_kind,
             date=metadata.get("date", "") if isinstance(metadata, dict) else "",
             tags=tags, metadata=metadata if isinstance(metadata, dict) else {},
+            contributor_user_id=contributor_uid,
         )
         results.append(doc)
 
     if results:
         _track_usage(request, "index")
+        if corpus.get("org_id"):
+            for d in results:
+                orgs_mod.log_audit(
+                    "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                    resource_type="document", resource_id=d["id"],
+                    metadata={"corpus_id": corpus["id"], "title": d["title"], "source": "upload"},
+                    ip_addr=_client_ip(request),
+                )
     return {"uploaded": len(results), "documents": results}
 
 
@@ -787,11 +1043,23 @@ async def api_ingest_url(corpus_id: str, req: IngestURLRequest, request: Request
     _require_owner(request, corpus)
     _check_quota(request, "ingest_url")
     _check_document_limit(request, corpus["id"])
+    contributor_uid = _get_user_id(request)
     try:
-        doc = ingest_url(corpus["id"], req.url, doc_type=req.doc_type, source_kind=req.source_kind)
+        doc = ingest_url(
+            corpus["id"], req.url,
+            doc_type=req.doc_type, source_kind=req.source_kind,
+            contributor_user_id=contributor_uid,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     _track_usage(request, "ingest_url")
+    if corpus.get("org_id"):
+        orgs_mod.log_audit(
+            "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+            resource_type="document", resource_id=doc["id"],
+            metadata={"corpus_id": corpus["id"], "url": req.url, "source": "url"},
+            ip_addr=_client_ip(request),
+        )
     return doc
 
 
@@ -835,16 +1103,27 @@ async def api_capture(corpus_id: str, req: CaptureRequest, request: Request):
     _require_owner(request, corpus)
     from noosphere.core.knowledge_growth import save_capture
 
+    contributor_uid = _get_user_id(request)
     try:
-        return save_capture(
+        result = save_capture(
             corpus["id"],
             content=req.content,
             title=req.title,
             question=req.question,
             session_id=req.session_id or "",
+            contributor_user_id=contributor_uid,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if corpus.get("org_id"):
+        doc_id = result.get("id") if isinstance(result, dict) else None
+        orgs_mod.log_audit(
+            "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+            resource_type="document", resource_id=doc_id or "",
+            metadata={"corpus_id": corpus["id"], "source": "capture"},
+            ip_addr=_client_ip(request),
+        )
+    return result
 
 
 # ── Archive imports (Twitter / Notion) ──
@@ -2716,3 +2995,277 @@ async def api_stripe_webhook(request: Request):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Team workspaces (orgs, members, invites, audit) ────────────────
+
+
+class CreateOrgRequest(BaseModel):
+    name: str
+    slug: str = ""
+
+
+class UpdateOrgRequest(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    settings: Optional[dict] = None
+
+
+class CreateInviteRequest(BaseModel):
+    role: str = orgs_mod.ROLE_EDITOR
+    ttl_days: int = 14
+
+
+class UpdateMemberRoleRequest(BaseModel):
+    role: str
+
+
+def _require_user(request: Request) -> str:
+    """Require an identified user; 401 otherwise. Used for org write paths."""
+    uid = _get_user_id(request)
+    if not uid:
+        raise HTTPException(status_code=401, detail="User identity required")
+    return uid
+
+
+def _require_org_member(request: Request, org_id: str) -> tuple[str, str]:
+    """Require the caller to be a member of the org. Returns (user_id, role)."""
+    uid = _require_user(request)
+    role = orgs_mod.member_role(org_id, uid)
+    if not role:
+        raise HTTPException(status_code=403, detail="Not a member of this organization")
+    return uid, role
+
+
+def _require_org_role(request: Request, org_id: str, min_role: str) -> tuple[str, str]:
+    uid, role = _require_org_member(request, org_id)
+    if not orgs_mod.role_at_least(role, min_role):
+        raise HTTPException(status_code=403, detail=f"Requires {min_role} or higher")
+    return uid, role
+
+
+def _resolve_org(org_id: str) -> dict:
+    org = orgs_mod.get_org(org_id) or orgs_mod.get_org_by_slug(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return org
+
+
+@router.get("/orgs")
+async def api_list_orgs(request: Request):
+    uid = _get_user_id(request)
+    if not uid:
+        return []
+    return orgs_mod.list_orgs_for_user(uid)
+
+
+@router.post("/orgs")
+async def api_create_org(req: CreateOrgRequest, request: Request):
+    uid = _require_user(request)
+    if not (req.name or "").strip():
+        raise HTTPException(status_code=400, detail="name required")
+    try:
+        org = orgs_mod.create_org(req.name.strip(), owner_user_id=uid, slug=req.slug)
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    orgs_mod.log_audit(
+        "org.create", org_id=org["id"], actor_user_id=uid,
+        resource_type="org", resource_id=org["id"],
+        metadata={"name": org["name"], "slug": org["slug"]},
+        ip_addr=_client_ip(request),
+    )
+    return org
+
+
+@router.get("/orgs/{org_id}")
+async def api_get_org(org_id: str, request: Request):
+    org = _resolve_org(org_id)
+    _require_org_member(request, org["id"])
+    return org
+
+
+@router.patch("/orgs/{org_id}")
+async def api_update_org(org_id: str, req: UpdateOrgRequest, request: Request):
+    org = _resolve_org(org_id)
+    uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        result = orgs_mod.update_org(org["id"], **updates)
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    orgs_mod.log_audit(
+        "org.update", org_id=org["id"], actor_user_id=uid,
+        resource_type="org", resource_id=org["id"],
+        metadata={"fields": list(updates.keys())},
+        ip_addr=_client_ip(request),
+    )
+    return result
+
+
+@router.delete("/orgs/{org_id}")
+async def api_delete_org(org_id: str, request: Request):
+    org = _resolve_org(org_id)
+    uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_OWNER)
+    ok = orgs_mod.delete_org(org["id"])
+    orgs_mod.log_audit(
+        "org.delete", org_id=org["id"], actor_user_id=uid,
+        resource_type="org", resource_id=org["id"],
+        ip_addr=_client_ip(request),
+    )
+    return {"deleted": ok}
+
+
+@router.get("/orgs/{org_id}/members")
+async def api_list_members(org_id: str, request: Request):
+    org = _resolve_org(org_id)
+    _require_org_member(request, org["id"])
+    return orgs_mod.list_members(org["id"])
+
+
+@router.patch("/orgs/{org_id}/members/{user_id}")
+async def api_update_member_role(
+    org_id: str, user_id: str, req: UpdateMemberRoleRequest, request: Request
+):
+    org = _resolve_org(org_id)
+    actor_uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    try:
+        member = orgs_mod.update_role(org["id"], user_id, req.role)
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    orgs_mod.log_audit(
+        "member.role_change", org_id=org["id"], actor_user_id=actor_uid,
+        resource_type="member", resource_id=user_id,
+        metadata={"new_role": req.role},
+        ip_addr=_client_ip(request),
+    )
+    return member
+
+
+@router.delete("/orgs/{org_id}/members/{user_id}")
+async def api_remove_member(org_id: str, user_id: str, request: Request):
+    org = _resolve_org(org_id)
+    actor_uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    try:
+        ok = orgs_mod.remove_member(org["id"], user_id)
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    orgs_mod.log_audit(
+        "member.remove", org_id=org["id"], actor_user_id=actor_uid,
+        resource_type="member", resource_id=user_id,
+        ip_addr=_client_ip(request),
+    )
+    return {"removed": ok}
+
+
+@router.get("/orgs/{org_id}/invites")
+async def api_list_invites(org_id: str, request: Request):
+    org = _resolve_org(org_id)
+    _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    return orgs_mod.list_invites(org["id"])
+
+
+@router.post("/orgs/{org_id}/invites")
+async def api_create_invite(org_id: str, req: CreateInviteRequest, request: Request):
+    org = _resolve_org(org_id)
+    uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    try:
+        invite = orgs_mod.create_invite(
+            org["id"], role=req.role, created_by=uid, ttl_days=req.ttl_days
+        )
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    orgs_mod.log_audit(
+        "member.invite", org_id=org["id"], actor_user_id=uid,
+        resource_type="invite", resource_id=invite["id"],
+        metadata={"role": invite["role"]},
+        ip_addr=_client_ip(request),
+    )
+    return invite
+
+
+@router.delete("/orgs/{org_id}/invites/{invite_id}")
+async def api_revoke_invite(org_id: str, invite_id: str, request: Request):
+    org = _resolve_org(org_id)
+    uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    invite = orgs_mod.get_invite(invite_id)
+    if not invite or invite.get("org_id") != org["id"]:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    ok = orgs_mod.revoke_invite(invite_id)
+    orgs_mod.log_audit(
+        "invite.revoke", org_id=org["id"], actor_user_id=uid,
+        resource_type="invite", resource_id=invite_id,
+        ip_addr=_client_ip(request),
+    )
+    return {"revoked": ok}
+
+
+@router.get("/orgs/invites/{token}")
+async def api_get_invite_by_token(token: str):
+    """Public invite-preview endpoint — used by the accept page before signin."""
+    invite = orgs_mod.get_invite_by_token(token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    org = orgs_mod.get_org(invite["org_id"])
+    return {
+        "invite": {
+            "id": invite["id"],
+            "role": invite["role"],
+            "expires_at": invite.get("expires_at"),
+            "accepted_at": invite.get("accepted_at"),
+            "revoked_at": invite.get("revoked_at"),
+        },
+        "org": {"id": org["id"], "slug": org["slug"], "name": org["name"]} if org else None,
+    }
+
+
+@router.post("/orgs/invites/{token}/accept")
+async def api_accept_invite(token: str, request: Request):
+    uid = _require_user(request)
+    try:
+        member = orgs_mod.accept_invite(token, uid)
+    except orgs_mod.OrgError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    orgs_mod.log_audit(
+        "invite.accept", org_id=member["org_id"], actor_user_id=uid,
+        resource_type="member", resource_id=uid,
+        ip_addr=_client_ip(request),
+    )
+    return member
+
+
+@router.get("/orgs/{org_id}/audit-logs")
+async def api_list_audit_logs(
+    org_id: str,
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    before: Optional[str] = None,
+):
+    org = _resolve_org(org_id)
+    _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    return orgs_mod.list_audit_logs(org["id"], limit=limit, before=before)
+
+
+@router.get("/orgs/{org_id}/corpora")
+async def api_list_org_corpora(org_id: str, request: Request):
+    org = _resolve_org(org_id)
+    _require_org_member(request, org["id"])
+    rows = get_conn().execute(
+        "SELECT * FROM corpora WHERE org_id=? ORDER BY updated_at DESC", (org["id"],)
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("tags", "owned_handles", "task_types", "samples"):
+            if isinstance(d.get(k), str):
+                try:
+                    d[k] = _json.loads(d[k])
+                except Exception:
+                    pass
+        out.append(d)
+    return _annotate_compile_state(out)
+
+

@@ -453,12 +453,16 @@ def ingest_text(
     date: str = "",
     tags: list[str] | None = None,
     metadata: dict | None = None,
+    contributor_user_id: str | None = None,
 ) -> dict:
     """Ingest raw text content as a document.
 
     source_kind: one of "user_original", "user_capture", "external_public",
     "external_subscription". Determines access-filter behavior when a non-owner
     caller queries the corpus (see Principle 3 in project_noosphere_ingestion).
+
+    contributor_user_id: who added the document — used in team workspaces to
+    attribute the doc to a member. Optional in personal contexts.
     """
     doc_id = uuid.uuid4().hex[:12]
     wc = _word_count(content)
@@ -470,13 +474,15 @@ def ingest_text(
         """INSERT INTO documents
            (id, corpus_id, title, content, doc_type, date,
             word_count, content_hash, source_kind, author_entity_id,
-            participant_entity_ids, tags, metadata_json, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            participant_entity_ids, tags, metadata_json, contributor_user_id,
+            created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             doc_id, corpus_id, title, content, doc_type, date,
             wc, c_hash, source_kind, author_entity_id,
             json.dumps(participant_entity_ids or []),
-            json.dumps(tags or []), json.dumps(metadata or {}), now,
+            json.dumps(tags or []), json.dumps(metadata or {}),
+            contributor_user_id or None, now,
         ),
     )
     conn.commit()
@@ -490,6 +496,7 @@ def ingest_text(
         "date": date,
         "word_count": wc,
         "source_kind": source_kind,
+        "contributor_user_id": contributor_user_id or None,
     }
 
 
@@ -528,6 +535,7 @@ def ingest_url(
     *,
     doc_type: str = "blog",
     source_kind: str | None = None,
+    contributor_user_id: str | None = None,
 ) -> dict:
     """Fetch a URL, convert HTML to markdown, and ingest as a document.
 
@@ -574,6 +582,7 @@ def ingest_url(
         source_kind=source_kind,
         author_entity_id=author_entity_id,
         metadata={"source_url": url},
+        contributor_user_id=contributor_user_id,
     )
 
 

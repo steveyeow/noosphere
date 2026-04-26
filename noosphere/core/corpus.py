@@ -19,6 +19,9 @@ def _slugify(text: str) -> str:
     return re.sub(r"-+", "-", s).strip("-")
 
 
+LOCAL_OWNER_ID = "local"  # sentinel owner_id for self-hosted single-user mode
+
+
 def create_corpus(
     name: str,
     *,
@@ -34,7 +37,20 @@ def create_corpus(
     embedding_model: str = "",
     embedding_dim: int = 0,
     owner_id: str = "",
+    org_id: str = "",
 ) -> dict:
+    """Create a corpus. Owner XOR org scope — exactly one must be set.
+
+    If both ``owner_id`` and ``org_id`` are empty, defaults to the self-hosted
+    sentinel owner (``LOCAL_OWNER_ID``) so the row satisfies the corpora XOR
+    constraint. Pass ``org_id`` (and leave ``owner_id`` empty) to create a
+    team-scoped corpus.
+    """
+    if owner_id and org_id:
+        raise ValueError("create_corpus: owner_id and org_id are mutually exclusive")
+    if not owner_id and not org_id:
+        owner_id = LOCAL_OWNER_ID
+
     conn = get_conn()
     corpus_id = uuid.uuid4().hex[:12]
     slug = _slugify(name)
@@ -50,17 +66,28 @@ def create_corpus(
             language, license, tags, access_level,
             source_type, source_url,
             embedding_model, embedding_dim,
-            owner_id, status, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            owner_id, org_id, status, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             corpus_id, name, slug, description, author_name, author_url,
             language, license_, json.dumps(tags or []), access_level,
             source_type, source_url,
             embedding_model, embedding_dim,
-            owner_id or None, "draft", now, now,
+            owner_id or None, org_id or None, "draft", now, now,
         ),
     )
     conn.commit()
+    # Profile embedding for the discovery graph. Best-effort: fires off
+    # an embed call against the configured provider so the new corpus
+    # gets edges in the network view immediately. Never raises into the
+    # create path — if the embedder is misconfigured / network is down,
+    # the corpus is still created and graph just falls back to tag
+    # overlap until the next backfill / update. See corpus_embedding.py.
+    try:
+        from noosphere.core.corpus_embedding import update_corpus_embedding
+        update_corpus_embedding(corpus_id)
+    except Exception:
+        pass
     return get_corpus(corpus_id)
 
 
@@ -127,6 +154,17 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
     values = list(updates.values()) + [corpus_id]
     conn.execute(f"UPDATE corpora SET {set_clause} WHERE id=?", values)
     conn.commit()
+    # Recompute the corpus profile embedding when fields that feed the
+    # profile text change — name, description, tags. Other column edits
+    # (status flips, document_count, etc.) don't change the corpus's
+    # semantic identity, so skip the embed call to save the API hit.
+    _profile_fields = {"name", "description", "tags"}
+    if _profile_fields & set(updates.keys()):
+        try:
+            from noosphere.core.corpus_embedding import update_corpus_embedding
+            update_corpus_embedding(corpus_id)
+        except Exception:
+            pass
     return get_corpus(corpus_id)
 
 
@@ -161,6 +199,15 @@ def _row_to_dict(row) -> dict:
                 d[key] = json.loads(d[key])
             except (json.JSONDecodeError, TypeError):
                 pass
+    # The corpus profile vector + norm are backend-only fields used by
+    # the discovery graph. Returning the raw bytes from /corpora makes
+    # FastAPI's JSON encoder choke (it tries to UTF-8 decode the float32
+    # blob), and the frontend has no use for them anyway. Strip here so
+    # every consumer of `get_corpus` / `list_corpora` gets a clean dict.
+    # `load_corpus_vectors` queries the column directly with explicit SQL
+    # so this strip doesn't affect the graph computation path.
+    d.pop("corpus_vector", None)
+    d.pop("corpus_vector_norm", None)
     return d
 
 
