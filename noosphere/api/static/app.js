@@ -395,12 +395,14 @@ function _renderProfilePopoverHTML(){
   `:'';
   const signoutItem=(_cloudMode&&_authUser)?
     `<button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
+  // Create organization sits directly under the workspaces list (no
+  // divider) — it's a "this is where workspaces come from" continuation,
+  // not a separate category. Theme + account/signout get their own block.
   return `
     ${wsCard}
     <div class="sb-pop-section-label">Workspaces</div>
-    <div class="sb-pop-section">${wsItems.join('')}</div>
+    <div class="sb-pop-section">${wsItems.join('')}<button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button></div>
     <div class="sb-pop-divider"></div>
-    <button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button>
     <button class="sb-pop-item" id="sb-pop-theme">${_ICON_SUN}${_ICON_MOON}<span>Theme</span></button>
     ${accountBlock}
     ${signoutItem}
