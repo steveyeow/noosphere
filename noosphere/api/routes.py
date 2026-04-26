@@ -404,7 +404,7 @@ def _resolve_corpus(corpus_id: str) -> dict:
 
 
 @router.get("/health")
-async def api_health():
+async def api_health(request: Request):
     corpora = list_corpora(include_private=True)
     conn = get_conn()
     try:
