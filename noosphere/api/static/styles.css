@@ -1374,26 +1374,25 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .lp-team-cta-inner .lp-sec-sub{margin-left:auto;margin-right:auto;margin-bottom:32px}
 
 /* ── Team workspaces ───────────────────────────────────────────── */
-.sb-workspace{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;margin:6px 0 4px;background:transparent;border:1px solid var(--brd);border-radius:8px;color:var(--tx);font-size:13px;cursor:pointer;text-align:left;transition:background 120ms ease,border-color 120ms ease}
-.sb-workspace:hover{background:var(--bgH);border-color:var(--brd)}
-.sb-ws-dot{width:6px;height:6px;border-radius:50%;background:var(--proAcc,#3a82f7);flex-shrink:0}
-.sb-ws-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sb-ws-chev{opacity:.55;flex-shrink:0}
-.sb-workspace-menu{position:relative;margin:0 0 6px;background:var(--bg);border:1px solid var(--brd);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);padding:4px;z-index:30}
-.sidebar.collapsed .sb-workspace,.sidebar.collapsed .sb-workspace-menu{display:none}
-.ws-menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;background:transparent;border:0;border-radius:6px;color:var(--tx);font-size:13px;cursor:pointer;text-align:left;text-decoration:none}
-.ws-menu-item:hover{background:var(--bgH)}
-.ws-menu-item.is-active{background:var(--bg2)}
-.ws-menu-dot{width:6px;height:6px;border-radius:50%;background:var(--tx3);flex-shrink:0}
-.ws-menu-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws-menu-sub{font-size:11px;color:var(--tx3);text-transform:lowercase}
-.ws-menu-check{font-size:13px;color:var(--proAcc,#3a82f7)}
-.ws-menu-divider{height:1px;background:var(--brd);margin:4px 2px}
-.ws-menu-settings{color:var(--tx2)}
-.ws-menu-gear{display:inline-flex;width:16px;justify-content:center;color:var(--tx3);font-size:14px}
 
-/* Self-hosted profile tier badge */
-.sb-tier-self{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--bg2);padding:1px 6px;border-radius:99px;margin-left:6px}
+/* Bottom profile chip when it's also the workspace switcher: primary line
+   = active workspace name, secondary line = operator. Two-line layout
+   without growing taller than the standard sb-profile chip. */
+.sb-profile.sb-profile-ws{align-items:center}
+.sb-profile-ws .sb-profile-info{display:flex;flex-direction:column;justify-content:center;line-height:1.2;gap:1px}
+.sb-profile-ws-name{font-size:13px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+.sb-profile-sub{font-size:11px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+
+/* Popover — accommodates the workspaces section + actions. Slightly wider
+   than the personal-mode popover so the role label fits without wrapping. */
+.sb-popover-ws{width:230px}
+.sb-pop-section{display:flex;flex-direction:column;gap:1px;padding:2px}
+.sb-pop-ws{display:flex;align-items:center;gap:8px;padding:7px 8px;font-size:13px;text-align:left}
+.sb-pop-ws.is-active{background:var(--bg2)}
+.sb-pop-ws-dot{width:6px;height:6px;border-radius:50%;background:var(--tx3);flex-shrink:0}
+.sb-pop-ws-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
+.sb-pop-ws-role{font-size:11px;color:var(--tx3);text-transform:lowercase}
+.sb-pop-ws-check{font-size:13px;color:var(--proAcc,#3a82f7)}
 
 /* Org settings — reuses .cv-set-wrap aesthetic; one-off pieces below */
 .cv-set-h3{font-family:'Libre Baskerville',Georgia,serif;font-size:16px;font-weight:600;color:var(--tx);margin:0}

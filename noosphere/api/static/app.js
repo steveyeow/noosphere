@@ -269,12 +269,32 @@ async function signOut(){
   renderAuthUI();route();
 }
 
-/* Bottom-of-sidebar profile popover. Unified shape across cloud + self-hosted —
-   the popover is where "you-level" actions live (create org, theme, account,
-   sign out). Workspace-level actions stay in the workspace switcher above. */
+/* Single bottom-of-sidebar control — the workspace + profile hub.
+   Notion-style: shows the active workspace as the primary label and the
+   operator/user as the sub-label. The popover lists workspaces (radio),
+   Org settings (when in an org), then "you-level" actions (create org,
+   theme, account, sign out). Workspaces and profile actions live together
+   here because both are about "who you are and where you're working." */
 const _ICON_SUN='<svg class="icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
 const _ICON_MOON='<svg class="icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 const _ICON_PLUS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+const _ICON_GEAR='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+
+function _activeWorkspaceLabel(){
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);
+    return o?o.name:'Personal';
+  }
+  return 'Personal';
+}
+
+function _operatorChipText(){
+  if(_cloudMode&&_authUser){
+    const email=_authUser.email||'';
+    return email.split('@')[0]||'User';
+  }
+  return _ownerName||'You';
+}
 
 function renderAuthUI(){
   const bot=document.getElementById('sb-bot');
@@ -285,38 +305,83 @@ function renderAuthUI(){
     bot.querySelector('.sb-auth-login').onclick=signInWithGoogle;
     return;
   }
-  // Profile chip — header for the popover.
-  let chipHTML;
+  // Avatar / initial — cloud uses the auth avatar; self-hosted uses the
+  // active-workspace dot color so the chip primarily reads as "where".
+  let avatarHTML;
   if(_cloudMode&&_authUser){
     const email=_authUser.email||'';const name=email.split('@')[0]||'User';
     const avatar=_authUser.user_metadata?.avatar_url;
-    const tier=_authUser.user_metadata?.tier||'free';const tierLabel=tier==='pro'?'Pro':'Free';
-    chipHTML=`${avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc(name[0].toUpperCase())+'</span>'}<span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(name)}</span><span class="sb-tier-badge sb-tier-${tier}">${tierLabel}</span></span>`;
+    avatarHTML=avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc((name[0]||'?').toUpperCase())+'</span>';
   }else{
-    const opName=_ownerName||'You';
-    chipHTML=`<span class="sb-auth-initial">${esc((opName[0]||'·').toUpperCase())}</span><span class="sb-profile-info sb-lb"><span class="sb-auth-name">${esc(opName)}</span><span class="sb-tier-badge sb-tier-self">Local</span></span>`;
+    const op=_operatorChipText();
+    avatarHTML=`<span class="sb-auth-initial">${esc((op[0]||'·').toUpperCase())}</span>`;
   }
-  // Popover items, varying with cloud / authed state.
+  // Profile chip primary line = active workspace, secondary line = operator.
+  // Both lines update via renderWorkspaceSwitcher().
+  bot.innerHTML=`
+    <div class="sb-profile sb-profile-ws" id="sb-profile">
+      ${avatarHTML}
+      <span class="sb-profile-info sb-lb">
+        <span class="sb-profile-ws-name" id="sb-ws-label">${esc(_activeWorkspaceLabel())}</span>
+        <span class="sb-profile-sub" id="sb-profile-sub">${esc(_operatorChipText())}</span>
+      </span>
+      <svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="sb-popover sb-popover-ws hidden" id="sb-popover"></div>`;
+  const profile=bot.querySelector('#sb-profile');
+  const popover=bot.querySelector('#sb-popover');
+  profile.addEventListener('click',e=>{e.stopPropagation();
+    if(popover.classList.contains('hidden')){
+      popover.innerHTML=_renderProfilePopoverHTML();
+      _wireProfilePopover(bot,popover);
+      popover.classList.remove('hidden');
+    }else{popover.classList.add('hidden')}
+  });
+  document.addEventListener('click',function _closePopover(e){if(!bot.contains(e.target))popover.classList.add('hidden')});
+}
+
+function _renderProfilePopoverHTML(){
+  const wsItems=[];
+  wsItems.push(`<button class="sb-pop-item sb-pop-ws${_workspace.kind==='personal'?' is-active':''}" data-act="ws-personal"><span class="sb-pop-ws-dot"></span><span class="sb-pop-ws-name">Personal</span>${_workspace.kind==='personal'?'<span class="sb-pop-ws-check">✓</span>':''}</button>`);
+  for(const o of _orgs){
+    const active=_workspace.kind==='org'&&_workspace.org_id===o.id;
+    wsItems.push(`<a class="sb-pop-item sb-pop-ws${active?' is-active':''}" data-act="ws-org" data-id="${esc(o.id)}" data-slug="${esc(o.slug||'')}"><span class="sb-pop-ws-dot"></span><span class="sb-pop-ws-name">${esc(o.name)}</span><span class="sb-pop-ws-role">${esc(o.role||'member')}</span>${active?'<span class="sb-pop-ws-check">✓</span>':''}</a>`);
+  }
+  let settingsItem='';
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);
+    if(o)settingsItem=`<a class="sb-pop-item" data-act="org-settings" data-slug="${esc(o.slug)}">${_ICON_GEAR}<span>Org settings</span></a>`;
+  }
   const cloudItems=(_cloudMode&&_authUser)?
     `<a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a><a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a>`:'';
   const signoutItem=(_cloudMode&&_authUser)?
     `<div class="sb-pop-divider"></div><button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
-  bot.innerHTML=`
-    <div class="sb-profile" id="sb-profile">${chipHTML}<svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg></div>
-    <div class="sb-popover hidden" id="sb-popover">
-      <button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button>
-      ${cloudItems}
-      <button class="sb-pop-item" id="sb-pop-theme">${_ICON_SUN}${_ICON_MOON}<span>Theme</span></button>
-      ${signoutItem}
-    </div>`;
-  const profile=bot.querySelector('#sb-profile');
-  const popover=bot.querySelector('#sb-popover');
-  profile.addEventListener('click',e=>{e.stopPropagation();popover.classList.toggle('hidden')});
+  return `
+    <div class="sb-pop-section">${wsItems.join('')}</div>
+    ${settingsItem?'<div class="sb-pop-divider"></div>'+settingsItem:''}
+    <div class="sb-pop-divider"></div>
+    <button class="sb-pop-item" id="sb-pop-create-org">${_ICON_PLUS}<span>Create organization</span></button>
+    ${cloudItems}
+    <button class="sb-pop-item" id="sb-pop-theme">${_ICON_SUN}${_ICON_MOON}<span>Theme</span></button>
+    ${signoutItem}
+  `;
+}
+
+function _wireProfilePopover(bot,popover){
+  const close=()=>popover.classList.add('hidden');
+  popover.querySelectorAll('[data-act]').forEach(el=>{
+    el.addEventListener('click',ev=>{
+      ev.preventDefault();ev.stopPropagation();close();
+      const act=el.dataset.act;
+      if(act==='ws-personal')setWorkspace({kind:'personal',org_id:null});
+      else if(act==='ws-org')setWorkspace({kind:'org',org_id:el.dataset.id});
+      else if(act==='org-settings')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug);
+    });
+  });
+  popover.querySelectorAll('a.sb-pop-item:not([data-act])').forEach(a=>a.addEventListener('click',close));
   bot.querySelector('#sb-pop-theme').addEventListener('click',e=>{e.stopPropagation();toggleTheme()});
-  bot.querySelector('#sb-pop-create-org').addEventListener('click',e=>{e.stopPropagation();popover.classList.add('hidden');_showCreateOrgModal()});
+  bot.querySelector('#sb-pop-create-org').addEventListener('click',e=>{e.stopPropagation();close();_showCreateOrgModal()});
   if(_cloudMode&&_authUser)bot.querySelector('#sb-pop-signout').addEventListener('click',signOut);
-  popover.querySelectorAll('a.sb-pop-item').forEach(a=>a.addEventListener('click',()=>popover.classList.add('hidden')));
-  document.addEventListener('click',function _closePopover(e){if(!bot.contains(e.target))popover.classList.add('hidden')});
 }
 function pickCorpusInline(container){
   return new Promise(resolve=>{
@@ -4916,59 +4981,19 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
   _loadWorkspace();_ensureSelfHostedUserId();
-  document.getElementById('sb-workspace')?.addEventListener('click',toggleWorkspaceMenu);
-  document.addEventListener('click',e=>{
-    const menu=document.getElementById('sb-workspace-menu');const btn=document.getElementById('sb-workspace');
-    if(!menu||!btn)return;if(menu.classList.contains('hidden'))return;
-    if(menu.contains(e.target)||btn.contains(e.target))return;
-    menu.classList.add('hidden');
-  });
-  renderWorkspaceSwitcher();
   await initAuth();renderAuthUI();
+  renderWorkspaceSwitcher();
   window.addEventListener('hashchange',route);route()});
 
 /* ── Team workspaces UI ───────────────────────────────────────── */
 
 function renderWorkspaceSwitcher(){
-  const btn=document.getElementById('sb-workspace');const lab=document.getElementById('sb-ws-label');
-  if(!btn||!lab)return;
-  let label='Personal';
-  if(_workspace.kind==='org'&&_workspace.org_id){
-    const o=_orgs.find(o=>o.id===_workspace.org_id);label=o?o.name:'Personal';
-  }
-  lab.textContent=label;
-}
-
-function toggleWorkspaceMenu(e){
-  e.stopPropagation();
-  const menu=document.getElementById('sb-workspace-menu');if(!menu)return;
-  if(!menu.classList.contains('hidden')){menu.classList.add('hidden');return}
-  const items=[];
-  items.push(`<button class="ws-menu-item${_workspace.kind==='personal'?' is-active':''}" data-act="personal"><span class="ws-menu-dot"></span><span class="ws-menu-name">Personal</span>${_workspace.kind==='personal'?'<span class="ws-menu-check">✓</span>':''}</button>`);
-  for(const o of _orgs){
-    const active=_workspace.kind==='org'&&_workspace.org_id===o.id;
-    items.push(`<a class="ws-menu-item${active?' is-active':''}" data-act="org" data-id="${esc(o.id)}" data-slug="${esc(o.slug||'')}"><span class="ws-menu-dot"></span><span class="ws-menu-name">${esc(o.name)}</span><span class="ws-menu-sub">${esc(o.role||'member')}</span>${active?'<span class="ws-menu-check">✓</span>':''}</a>`);
-  }
-  // Settings link — only when an org is active. Workspace creation lives in
-  // the profile area (lower-left), not here, since it's a "you-level" action.
-  if(_workspace.kind==='org'&&_workspace.org_id){
-    const o=_orgs.find(o=>o.id===_workspace.org_id);
-    if(o){
-      items.push('<div class="ws-menu-divider"></div>');
-      items.push(`<a class="ws-menu-item ws-menu-settings" data-act="settings" data-slug="${esc(o.slug)}"><span class="ws-menu-gear">⚙</span><span class="ws-menu-name">Org settings</span></a>`);
-    }
-  }
-  menu.innerHTML=items.join('');
-  menu.classList.remove('hidden');
-  menu.querySelectorAll('[data-act]').forEach(el=>{
-    el.addEventListener('click',ev=>{
-      ev.preventDefault();ev.stopPropagation();menu.classList.add('hidden');
-      const act=el.dataset.act;
-      if(act==='personal'){setWorkspace({kind:'personal',org_id:null})}
-      else if(act==='org'){setWorkspace({kind:'org',org_id:el.dataset.id})}
-      else if(act==='settings'){location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)}
-    });
-  });
+  // The "switcher" now lives inside the profile chip at the bottom — just
+  // refresh its primary label whenever the active workspace changes.
+  const lab=document.getElementById('sb-ws-label');
+  if(lab)lab.textContent=_activeWorkspaceLabel();
+  const sub=document.getElementById('sb-profile-sub');
+  if(sub)sub.textContent=_operatorChipText();
 }
 
 async function setWorkspace(ws){
