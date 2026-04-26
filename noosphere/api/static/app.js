@@ -12,11 +12,22 @@ let _cloudMode=false,_supabase=null,_authUser=null,_authSession=null;
  */
 const WS_KEY='noosphere-workspace';     // {kind, org_id}
 const SH_UID_KEY='noosphere-user-id';   // self-hosted opaque user id
+const DISPLAY_NAME_KEY='noosphere-display-name';  // user-chosen preferred name
 let _workspace={kind:'personal',org_id:null};
 let _orgs=[];
 let _userId=null;
 let _selfHostedUserId='';
 let _isLocalOperator=false;
+let _userDisplayName='';                // overrides extracted _firstName when set
+function _loadDisplayName(){try{_userDisplayName=(localStorage.getItem(DISPLAY_NAME_KEY)||'').trim()}catch(_){_userDisplayName=''}}
+function _saveDisplayName(v){
+  try{
+    const trimmed=(v||'').trim();
+    if(trimmed){localStorage.setItem(DISPLAY_NAME_KEY,trimmed)}
+    else{localStorage.removeItem(DISPLAY_NAME_KEY)}
+    _userDisplayName=trimmed;
+  }catch(_){}
+}
 function _ensureSelfHostedUserId(){
   let id=localStorage.getItem(SH_UID_KEY);
   if(!id){
@@ -295,6 +306,10 @@ function _activeWorkspaceLabel(){
 function workspaceEyebrowHTML(){return ''}
 
 function _operatorChipText(){
+  // Preferred name wins everywhere it's surfaced (greeting, personal card,
+  // Settings header). Falls back to email-prefix (cloud) / OWNER_NAME
+  // (self-hosted) so we never show an empty label.
+  if(_userDisplayName)return _userDisplayName;
   if(_cloudMode&&_authUser){
     const email=_authUser.email||'';
     return email.split('@')[0]||'User';
@@ -841,11 +856,18 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
   <section class="lp-hero lp-hero-team">
     <div class="lp-ct lp-ct-wide">
       <div class="lp-h">
-        <span class="lp-eyebrow">Team Noosphere</span>
+        <span class="lp-eyebrow">Noosphere · Team</span>
         <h1 class="lp-h1">A living brain and intelligence layer for your team.</h1>
-        <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Query with every agent your team runs. Stays yours, with the access controls you choose.</p>
+        <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Readable and queryable by every agent your team runs. Learn from the global agent knowledge network. With full access control — keep private, share for free, or get paid.</p>
         <button class="lp-go" id="lp-team-go">Start your team's Noosphere →</button>
       </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-bring">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Capture from the edge.</h2>
+      <p class="lp-sec-sub">Knowledge enters at the point of work — not as a separate authoring task. Every member contributes by doing their job; the system attributes and indexes automatically.</p>
       <div class="lp-team-funnel">
         <div class="lp-funnel-col">
           <div class="lp-funnel-h">Sources</div>
@@ -862,13 +884,6 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
         <div class="lp-funnel-arrow">→</div>
         <div class="lp-funnel-target"><span>Shared team brain</span><small>Queryable by every member &amp; agent</small></div>
       </div>
-    </div>
-  </section>
-
-  <section class="lp-sec lp-sec-bring">
-    <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Capture from the edge.</h2>
-      <p class="lp-sec-sub">Knowledge enters at the point of work — not as a separate authoring task. Every member contributes by doing their job; the system attributes and indexes automatically.</p>
       <div class="lp-cards">
         <div class="lp-card">
           <h3 class="lp-card-h">Slack <code>/noosphere</code></h3>
@@ -941,11 +956,28 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
     </div>
   </section>
 
-  <section class="lp-sec lp-sec-team-cta">
-    <div class="lp-sec-inner lp-team-cta-inner">
-      <h2 class="lp-sec-h">Build your team's queryable memory.</h2>
-      <p class="lp-sec-sub">Team workspaces are rolling out. Start a personal Noosphere today; switch to team when invites open.</p>
-      <button class="lp-go" id="lp-team-go-2">Start a Noosphere →</button>
+  <section class="lp-sec lp-sec-archetypes">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Built for many kinds of teams.</h2>
+      <p class="lp-sec-sub">Same Noosphere, different access-level mixes. Whether your knowledge stays private or goes to market, the global agent knowledge network compounds value for every team on it.</p>
+      <div class="lp-cards">
+        <div class="lp-card">
+          <h3 class="lp-card-h">Startup &amp; internal teams</h3>
+          <p class="lp-card-p">Engineering teams, startups, ops, customer success. The brain stays fully private — yet your agents still learn from the wider network: domain corpora, public expertise, peer teams' published knowledge. Contribute nothing outward, still get smarter from what others publish.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Research &amp; lab teams</h3>
+          <p class="lp-card-p">Research labs, R&amp;D groups, academic teams. Private internal corpora alongside public research corpora. The same workspace that runs ongoing research becomes its own ambient distribution surface — every paper, dataset, and note queryable by any agent on the network.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Creator, newsletter &amp; MCN teams</h3>
+          <p class="lp-card-p">Newsletter teams, content collectives, MCNs, indie media. The knowledge you produce becomes a living, queryable product. Free corpora attract readers; paid corpora capture subscriber and agent revenue. One workspace runs the team and publishes to the network.</p>
+        </div>
+        <div class="lp-card">
+          <h3 class="lp-card-h">Consulting &amp; expert practices</h3>
+          <p class="lp-card-p">Consulting firms, specialty practices, expert networks, investment teams. Build corpora explicitly to sell — to clients, to other teams' agents, to the open market. Per-contributor attribution makes collaborative authorship economically real; org-level Stripe lets the team capture revenue directly.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -961,7 +993,6 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
 </div>`;
   const goHandler=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
   const g1=document.getElementById('lp-team-go');if(g1)g1.onclick=goHandler;
-  const g2=document.getElementById('lp-team-go-2');if(g2)g2.onclick=goHandler;
   const dk=document.getElementById('lp-team-dark-btn');if(dk)dk.onclick=toggleTheme;
   window.scrollTo(0,0);
 }
@@ -1233,7 +1264,11 @@ function renderHome(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.classList.add('content--home');
   const _h=new Date().getHours();
   const _tod=_h<12?'Good morning':_h<18?'Good afternoon':'Good evening';
-  const greetText=_firstName?`${_tod}, ${_firstName}`:_tod;
+  // Preferred name (user-chosen, persisted) wins over the heuristic
+  // first-name extraction; both fall through to the bare time-of-day
+  // greeting so the page never reads as "Good evening, ".
+  const greetName=(_userDisplayName||'').trim()||_firstName;
+  const greetText=greetName?`${_tod}, ${greetName}`:_tod;
 
   ct.innerHTML=`<div class="home" id="home">
     ${workspaceEyebrowHTML()}
@@ -5118,7 +5153,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
   document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
-  _loadWorkspace();_ensureSelfHostedUserId();
+  _loadWorkspace();_ensureSelfHostedUserId();_loadDisplayName();
   // Migrate the legacy permanent dismiss flag from localStorage to a
   // session-scoped one — anyone who hit × in the old build gets the
   // connector strip back next time they reload.
@@ -5251,8 +5286,9 @@ function _settingsRenderSection(name){
 function _settingsRenderAccount(p){
   const cloud=_cloudMode&&_authUser;
   const email=cloud?(_authUser.email||''):'';
-  const nm=cloud?(email.split('@')[0]||'You'):(_ownerName||'You');
-  const display=nm.charAt(0).toUpperCase()+nm.slice(1);
+  const fallback=cloud?(email.split('@')[0]||'You'):(_ownerName||'You');
+  const fallbackDisplay=fallback.charAt(0).toUpperCase()+fallback.slice(1);
+  const current=_userDisplayName||'';
   p.innerHTML=`
     <div class="settings-pane-hd">
       <h3 class="settings-pane-h">Account</h3>
@@ -5261,8 +5297,13 @@ function _settingsRenderAccount(p){
     <div class="settings-rows">
       <div class="settings-row">
         <div class="settings-row-info">
-          <div class="settings-row-nm">Name</div>
-          <div class="settings-row-dc">${esc(display)}</div>
+          <div class="settings-row-nm">Preferred name</div>
+          <div class="settings-row-dc">How you'd like Noosphere to greet you.</div>
+        </div>
+        <div class="settings-row-ctl settings-row-ctl--name">
+          <input type="text" class="settings-input" id="settings-name-input"
+            value="${esc(current)}" placeholder="${esc(fallbackDisplay)}" maxlength="60" />
+          <button class="btn-sm" id="settings-name-save" type="button">Save</button>
         </div>
       </div>
       ${email?`<div class="settings-row">
@@ -5278,6 +5319,21 @@ function _settingsRenderAccount(p){
         </div>
       </div>`:''}
     </div>`;
+  const input=document.getElementById('settings-name-input');
+  const saveBtn=document.getElementById('settings-name-save');
+  const persist=()=>{
+    const v=(input.value||'').trim();
+    _saveDisplayName(v);
+    saveBtn.textContent='Saved';
+    setTimeout(()=>saveBtn.textContent='Save',900);
+    // Refresh surfaces that show the name immediately. The home greeting
+    // is the most-visible target — re-render it if it's the page behind
+    // the modal (hash will be #/settings after the user clicked Settings).
+    renderWorkspaceSwitcher();
+    if(document.querySelector('.home-greet'))renderHome();
+  };
+  saveBtn.onclick=persist;
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();persist()}});
 }
 
 function _settingsRenderAppearance(p){
