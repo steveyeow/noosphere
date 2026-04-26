@@ -969,9 +969,19 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .pg-page{max-width:720px;margin:0 auto;padding:48px 32px 64px;overflow-y:auto;height:100%}
 .pg-hd{text-align:center;margin-bottom:48px}.pg-title{font-family:'Libre Baskerville',Georgia,serif;font-size:28px;font-weight:400;color:var(--tx);margin-bottom:8px}.pg-sub{font-size:14px;color:var(--tx2);line-height:1.6}
 .pg-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:48px}
-.pg-card{background:var(--bg2);border:1px solid var(--brd);border-radius:14px;padding:24px;position:relative;display:flex;flex-direction:column;transition:box-shadow .2s,border-color .2s}.pg-card:hover{box-shadow:var(--sh)}
-.pg-card-pro{border-color:var(--tx2)}
-.pg-current{border-color:var(--tx2)}
+.pg-card{background:var(--bg2);border:1px solid var(--brd);border-radius:14px;padding:24px;position:relative;display:flex;flex-direction:column;transition:box-shadow .2s,border-color .2s,background .2s}.pg-card:hover{box-shadow:var(--sh)}
+/* Pro = featured: full-strength border + faint accent tint, so it reads
+   as the recommended option in both light (near-black border) and dark
+   (near-white border) without resorting to colored gradients.
+   Free stays on the subtle --brd border so the visual hierarchy is clear. */
+.pg-card-pro{border-color:var(--tx);background:var(--accBg)}
+/* Current plan is communicated via the in-card text badges (.pg-badge on
+   Free, .pg-tier-badge on Pro), not via border. Adding border emphasis
+   here used to collide with .pg-card-pro and made Free-current and Pro
+   look identical. A soft outer ring keeps the "you are here" cue without
+   that conflict — composes additively over .pg-card's hover shadow too. */
+.pg-current{box-shadow:0 0 0 3px var(--accBg)}
+.pg-current:hover{box-shadow:0 0 0 3px var(--accBg),var(--sh)}
 .pg-tier-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .pg-tier{font-size:15px;font-weight:600;color:var(--tx)}
 .pg-tier-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--accBg);color:var(--tx2);letter-spacing:.02em}
