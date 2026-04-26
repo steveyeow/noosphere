@@ -317,6 +317,25 @@ function _operatorChipText(){
   return _ownerName||'You';
 }
 
+/* Avatar for the bottom-left chip. Shape changes with workspace:
+   - Personal: user avatar (cloud) or user initial (self-hosted) — about you
+   - Team:     circular initial of the org name — about *where* you are    */
+function _renderChipAvatarHTML(){
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    const o=_orgs.find(o=>o.id===_workspace.org_id);
+    const ch=esc(((o?.name||'?')[0]||'?').toUpperCase());
+    return `<span class="sb-auth-initial sb-auth-initial--team">${ch}</span>`;
+  }
+  if(_cloudMode&&_authUser){
+    const av=_authUser.user_metadata?.avatar_url;
+    if(av)return `<img src="${esc(av)}" class="sb-auth-avatar"/>`;
+    const nm=(_authUser.email||'U').split('@')[0]||'U';
+    return `<span class="sb-auth-initial">${esc((nm[0]||'?').toUpperCase())}</span>`;
+  }
+  const op=_operatorChipText();
+  return `<span class="sb-auth-initial">${esc((op[0]||'·').toUpperCase())}</span>`;
+}
+
 function renderAuthUI(){
   const bot=document.getElementById('sb-bot');
   if(!bot)return;
@@ -326,26 +345,14 @@ function renderAuthUI(){
     bot.querySelector('.sb-auth-login').onclick=signInWithGoogle;
     return;
   }
-  // Avatar / initial — cloud uses the auth avatar; self-hosted uses the
-  // active-workspace dot color so the chip primarily reads as "where".
-  let avatarHTML;
-  if(_cloudMode&&_authUser){
-    const email=_authUser.email||'';const name=email.split('@')[0]||'User';
-    const avatar=_authUser.user_metadata?.avatar_url;
-    avatarHTML=avatar?'<img src="'+esc(avatar)+'" class="sb-auth-avatar"/>':'<span class="sb-auth-initial">'+esc((name[0]||'?').toUpperCase())+'</span>';
-  }else{
-    const op=_operatorChipText();
-    avatarHTML=`<span class="sb-auth-initial">${esc((op[0]||'·').toUpperCase())}</span>`;
-  }
-  // Profile chip primary line = active workspace, secondary line = operator.
-  // Both lines update via renderWorkspaceSwitcher().
+  // Single-line chip. Avatar reflects *where* (org initial for team, user
+  // avatar for personal); the label is *who* (the user's preferred /
+  // operator name). Stacking workspace + name read busy — one row reads
+  // calmer and matches Notion's bottom-chip pattern.
   bot.innerHTML=`
     <div class="sb-profile sb-profile-ws" id="sb-profile">
-      ${avatarHTML}
-      <span class="sb-profile-info sb-lb">
-        <span class="sb-profile-ws-name" id="sb-ws-label">${esc(_activeWorkspaceLabel())}</span>
-        <span class="sb-profile-sub" id="sb-profile-sub">${esc(_operatorChipText())}</span>
-      </span>
+      ${_renderChipAvatarHTML()}
+      <span class="sb-profile-name sb-lb" id="sb-profile-name">${esc(_operatorChipText())}</span>
       <svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="sb-popover sb-popover-ws hidden" id="sb-popover"></div>`;
@@ -857,7 +864,7 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
     <div class="lp-ct lp-ct-wide">
       <div class="lp-h">
         <span class="lp-eyebrow">Noosphere · Team</span>
-        <h1 class="lp-h1">A shared living brain and intelligence layer for your team.</h1>
+        <h1 class="lp-h1"><span class="lp-h1-l1">A shared living brain and intelligence layer</span> <span class="lp-h1-l2">for your team.</span></h1>
         <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Readable and queryable by every agent your team runs. Learn from the global agent knowledge network. With full access control — keep private, share for free, or get paid.</p>
         <button class="lp-go" id="lp-team-go">Start your team's Noosphere →</button>
       </div>
@@ -5278,8 +5285,22 @@ document.addEventListener('DOMContentLoaded',async()=>{
 /* ── Team workspaces UI ───────────────────────────────────────── */
 
 function renderWorkspaceSwitcher(){
-  // The "switcher" now lives inside the profile chip at the bottom — just
-  // refresh its primary label whenever the active workspace changes.
+  // Refresh the chip whenever workspace identity or display name changes.
+  // The chip is one row: avatar (workspace-aware) + user name. We can't
+  // just text-swap an avatar element since cloud uses <img> while team
+  // uses a span — replace the avatar node entirely each time.
+  const profile=document.getElementById('sb-profile');
+  if(profile){
+    const oldAv=profile.querySelector('.sb-auth-avatar, .sb-auth-initial');
+    if(oldAv){
+      const tmp=document.createElement('div');tmp.innerHTML=_renderChipAvatarHTML();
+      const next=tmp.firstElementChild;
+      if(next)oldAv.replaceWith(next);
+    }
+    const nameEl=profile.querySelector('#sb-profile-name');
+    if(nameEl)nameEl.textContent=_operatorChipText();
+  }
+  // Legacy hooks (kept harmless for any caller that still pokes at them).
   const lab=document.getElementById('sb-ws-label');
   if(lab)lab.textContent=_activeWorkspaceLabel();
   const sub=document.getElementById('sb-profile-sub');

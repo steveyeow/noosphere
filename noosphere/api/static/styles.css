@@ -1351,12 +1351,15 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .lp-team-tile-cta:hover{opacity:.85}
 
 /* ── Landing: dedicated /team page ── */
-.lp-team .lp-hero-team{min-height:auto;padding-bottom:48px}
-.lp-ct-wide{flex-direction:column;align-items:flex-start;padding:120px clamp(32px,5vw,80px) 40px;gap:48px;max-width:1100px;margin:0 auto}
+.lp-team .lp-hero-team{min-height:auto;padding-bottom:0}
+.lp-team .lp-hero-team + .lp-sec-bring{padding-top:56px}
+.lp-ct-wide{flex-direction:column;align-items:flex-start;padding:96px clamp(32px,5vw,80px) 24px;gap:48px;max-width:1280px;margin:0 auto;min-height:auto}
 .lp-eyebrow{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);padding:4px 10px;border:1px solid var(--brd);border-radius:12px;margin-bottom:16px;background:var(--accSoft)}
-.lp-team .lp-h{flex:1 1 auto;max-width:720px}
+.lp-team .lp-h{flex:1 1 auto;max-width:1120px}
 .lp-team .lp-h::before{display:none}
 .lp-team .lp-h1{font-size:clamp(32px,5vw,48px);line-height:1.15;margin-bottom:18px}
+.lp-team .lp-h1 .lp-h1-l1,.lp-team .lp-h1 .lp-h1-l2{display:block}
+@media(max-width:960px){.lp-team .lp-h1 .lp-h1-l1,.lp-team .lp-h1 .lp-h1-l2{display:inline}}
 .lp-team .lp-sub{font-size:17px;line-height:1.6;max-width:680px;margin-bottom:28px}
 .lp-team-funnel{display:flex;align-items:center;gap:24px;width:100%;padding:24px clamp(16px,3vw,32px);border:1px solid var(--brd);border-radius:14px;background:var(--bg2);flex-wrap:wrap}
 .lp-funnel-col{flex:1;min-width:240px}
@@ -1373,13 +1376,17 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 
 /* ── Team workspaces ───────────────────────────────────────────── */
 
-/* Bottom profile chip when it's also the workspace switcher: primary line
-   = active workspace name, secondary line = operator. Two-line layout
-   without growing taller than the standard sb-profile chip. */
+/* Bottom profile chip — single row: avatar (workspace-aware) + user name.
+   In an org workspace the avatar shows the team initial; in personal it
+   shows the user avatar / initial. The label is the user's preferred name
+   either way — workspace identity is conveyed via the avatar shape, the
+   row stays calm. */
 .sb-profile.sb-profile-ws{align-items:center}
-.sb-profile-ws .sb-profile-info{display:flex;flex-direction:column;justify-content:center;line-height:1.2;gap:1px}
-.sb-profile-ws-name{font-size:13px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
-.sb-profile-sub{font-size:11px;color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+.sb-profile-name{flex:1;font-size:13px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Team-mode avatar variant: rounded square (matches the popover card) so
+   it visually reads as "place" rather than "person". */
+.sb-auth-initial--team{border-radius:7px;background:var(--bg2);border:1px solid var(--brd);font-family:'Libre Baskerville',Georgia,serif;font-weight:500;color:var(--tx)}
+.sidebar.collapsed .sb-profile-name{display:none}
 
 /* Popover — accommodates the workspaces section + actions. Slightly wider
    than the personal-mode popover so the role label fits without wrapping. */
