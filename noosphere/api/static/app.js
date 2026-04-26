@@ -2978,11 +2978,14 @@ function _refreshComposerPlaceholder(){
     }else if(_composerMode==='create'){
       input.placeholder='What\'s on your mind? — "harness engineering", "founder playbook"';
     }else{
-      // Enrich — target a specific KB
+      // Enrich — talk to / grow a specific KB. Lead with the chat verb (the
+      // primary affordance), then surface the three "add material" doors —
+      // note / URL / file — in the same order the + popover lists them, so
+      // the placeholder maps cleanly to the menu the user sees below.
       if(picked){
-        input.placeholder=`Chat to enrich "${picked.name}", or add a URL or file`;
+        input.placeholder=`Chat to enrich "${picked.name}" — or add a note, URL, or file`;
       }else{
-        input.placeholder='Pick a knowledge base below — chat to enrich, or add a URL or file';
+        input.placeholder='Pick a knowledge base below — chat to enrich, or add a note, URL, or file';
       }
     }
   }
@@ -3215,7 +3218,7 @@ async function renderCorpus(id,sessionId){
         const sug=_compileSuggestionsFor(c);
         cvComposerInput.placeholder=`Topic to compile for "${c.name}" — e.g. ${sug}`;
       }else{
-        cvComposerInput.placeholder=`Chat to enrich ${c.name}, or add a URL or file`;
+        cvComposerInput.placeholder=`Chat to enrich ${c.name} — or add a note, URL, or file`;
       }
     }
   };
