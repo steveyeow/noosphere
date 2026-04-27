@@ -66,6 +66,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lp-footer-social{display:inline-flex;align-items:center;gap:14px}
 .lp-footer-ico{display:inline-flex;align-items:center;justify-content:center;color:var(--tx3);transition:color .15s;text-decoration:none}
 .lp-footer-ico:hover{color:var(--tx)}
+.lp-footer-mission{flex:1;text-align:center;font-family:'Libre Baskerville',Georgia,serif;font-style:italic;font-size:13px;color:var(--tx3);letter-spacing:.01em;padding:0 24px}
 
 /* ── Landing sections (S2–S5) ──
    Typography-forward design — most sections use clean row lists rather
