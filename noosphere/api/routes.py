@@ -671,24 +671,29 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request, backgrou
     return corpus
 
 
-def _safe_update_corpus_embedding(corpus_id: str):
-    """Best-effort wrapper used by BackgroundTasks. Swallows any error so a
-    failing embed call (network blip, quota miss, model misconfigured)
-    can't surface as an unhandled task exception in the logs."""
+def _safe_update_corpus_embeddings_batch(corpus_ids: list[str]):
+    """BackgroundTasks wrapper — embeds N corpora in a SINGLE API call.
+
+    Replaces the previous one-task-per-corpus pattern that fired N
+    sequential embedder requests in rapid succession (and consumed N
+    rate-limit slots). With Gemini free-tier RPM caps, that fan-out was
+    the actual reason production stayed at embedded=0 — every backfill
+    request burned through the per-minute budget on probes alone.
+    """
+    if not corpus_ids:
+        return
     try:
-        from noosphere.core.corpus_embedding import update_corpus_embedding
-        ok = update_corpus_embedding(corpus_id)
-        # Bumped from debug → info/warning so silent backfill failures
-        # actually surface in production logs. Without this an operator
-        # has no way to tell "tasks queued but never ran" apart from
-        # "tasks ran but every embed call failed".
-        if ok:
-            logger.info("[corpus_embed] backfilled %s", corpus_id)
-        else:
-            logger.warning("[corpus_embed] backfill returned False for %s "
-                           "(empty profile or embedder failure)", corpus_id)
+        from noosphere.core.corpus_embedding import update_corpus_embeddings_batch
+        result = update_corpus_embeddings_batch(corpus_ids)
+        if result["succeeded"]:
+            logger.info("[corpus_embed] batch backfilled %d/%d (embedder=%s)",
+                        len(result["succeeded"]), len(corpus_ids), result.get("embedder"))
+        if result["failed"]:
+            sample = result["failed"][0]
+            logger.warning("[corpus_embed] batch had %d failures (sample: %s: %s)",
+                           len(result["failed"]), sample.get("id"), sample.get("error"))
     except Exception as e:
-        logger.warning("[corpus_embed] background embedding raised for %s: %s", corpus_id, e)
+        logger.warning("[corpus_embed] batch embedding raised: %s", e)
 
 
 @router.post("/admin/recompute-embeddings")
@@ -725,76 +730,38 @@ async def api_admin_recompute_embeddings(request: Request, limit: int = 50):
         "LIMIT ?",
         (limit,),
     ).fetchall()
+    name_by_id = {r["id"]: r["name"] for r in rows}
+    if not rows:
+        return {"attempted": 0, "succeeded": 0, "failed": 0,
+                "embedder": None, "results": []}
 
-    from noosphere.core.corpus_embedding import (
-        compute_corpus_embedding,
-        build_corpus_profile_text,
-    )
-    from noosphere.core.embeddings import get_embedder
-    from noosphere.core.db import pg_binary
+    # Use the batched helper — one API call carries every corpus,
+    # so a backfill of 50 corpora is 1 RPM hit, not 50.
+    from noosphere.core.corpus_embedding import update_corpus_embeddings_batch
+    batch = update_corpus_embeddings_batch([r["id"] for r in rows])
 
-    # Resolve the embedder once for the whole run so all corpora pick up
-    # the same provider — saves N round-trip auth probes.
-    try:
-        embedder = get_embedder()
-        embedder_name = embedder.model_name()
-    except Exception as e:
-        return {"attempted": 0, "succeeded": 0, "failed": len(rows),
-                "embedder": None, "embedder_error": str(e)[:300],
-                "results": [{"id": r["id"], "name": r["name"], "status": "failed",
-                             "error": "no embedder available"} for r in rows]}
-
+    succ_set = set(batch["succeeded"])
+    fail_by_id = {f["id"]: f["error"] for f in batch["failed"]}
     results = []
-    succ = 0
-    fail = 0
     for r in rows:
         cid = r["id"]
-        # Re-fetch the full corpus row so build_corpus_profile_text has
-        # all fields. Going through corpus_embedding.update_corpus_embedding
-        # would do this for us, but we want to capture the explicit
-        # exception — not the silent-False return — for the diagnostic.
-        full = conn.execute("SELECT * FROM corpora WHERE id=?", (cid,)).fetchone()
-        if not full:
-            fail += 1
-            results.append({"id": cid, "name": r["name"], "status": "failed",
-                            "error": "corpus row not found"})
-            continue
-        corpus_dict = dict(full)
-        profile = build_corpus_profile_text(corpus_dict)
-        if not profile:
-            fail += 1
-            results.append({"id": cid, "name": r["name"], "status": "skipped",
-                            "error": "empty profile text"})
-            continue
-        try:
-            embed_result = compute_corpus_embedding(corpus_dict, embedder=embedder)
-            if not embed_result:
-                fail += 1
-                results.append({"id": cid, "name": r["name"], "status": "failed",
-                                "error": "compute returned None"})
-                continue
-            vec_bytes, norm, _dim, _model = embed_result
-            conn.execute(
-                "UPDATE corpora "
-                "SET corpus_vector=?, corpus_vector_norm=?, "
-                "    corpus_vector_dirty_since=NULL "
-                "WHERE id=?",
-                (pg_binary(vec_bytes), norm, cid),
-            )
-            conn.commit()
-            succ += 1
-            results.append({"id": cid, "name": r["name"], "status": "success",
-                            "profile_chars": len(profile)})
-        except Exception as e:
-            fail += 1
-            results.append({"id": cid, "name": r["name"], "status": "failed",
-                            "error": str(e)[:300]})
+        if cid in succ_set:
+            results.append({"id": cid, "name": name_by_id[cid], "status": "success"})
+        elif cid in fail_by_id:
+            err = fail_by_id[cid]
+            status = "skipped" if err == "empty profile text" else "failed"
+            results.append({"id": cid, "name": name_by_id[cid],
+                            "status": status, "error": err})
+        else:
+            # Shouldn't happen — batch should account for every input.
+            results.append({"id": cid, "name": name_by_id[cid],
+                            "status": "failed", "error": "missing from batch result"})
 
     return {
         "attempted": len(rows),
-        "succeeded": succ,
-        "failed": fail,
-        "embedder": embedder_name,
+        "succeeded": len(succ_set),
+        "failed": len(batch["failed"]),
+        "embedder": batch.get("embedder"),
         "results": results,
     }
 
@@ -819,7 +786,15 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
     # The corpus dicts here have `corpus_vector` stripped (it's raw
     # bytes that break FastAPI's encoder), so we can't read the column
     # off of them directly — query the storage side with a single SELECT.
-    _BACKFILL_CAP = 8
+    # Per-cycle cap on backfill. Lowered from 8 → 3 because the original
+    # 8 was a cost-bound argument ("don't trash the embedder API on a
+    # 500-corpus deployment") but production hit Gemini free-tier RPM
+    # before we even had 8 corpora. With the new batched embed (one API
+    # call carries the whole cap) the cost argument is moot anyway —
+    # 3 is just enough to make steady progress on a fresh deployment
+    # without burning a whole RPM slot on a single graph view, leaving
+    # room for the occasional dirty-refresh.
+    _BACKFILL_CAP = 3
     try:
         _ids = [c["id"] for c in corpora]
         if _ids:
@@ -842,8 +817,12 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
                 f"LIMIT {_BACKFILL_CAP}",
                 tuple(_ids),
             ).fetchall()
-            for _r in _rows:
-                background_tasks.add_task(_safe_update_corpus_embedding, _r["id"])
+            # Dispatch a SINGLE batched task — one embedder API call
+            # carries all rows. Avoids the previous per-row task fan-out
+            # that hit RPM limits even with 8 inputs.
+            ids_to_embed = [_r["id"] for _r in _rows]
+            if ids_to_embed:
+                background_tasks.add_task(_safe_update_corpus_embeddings_batch, ids_to_embed)
     except Exception as _bf_err:
         logger.debug("backfill scan skipped: %s", _bf_err)
     nodes = []

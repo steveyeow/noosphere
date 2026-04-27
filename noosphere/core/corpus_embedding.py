@@ -220,6 +220,103 @@ def update_corpus_embedding(corpus_id: str, *, embedder: Optional[EmbeddingProvi
     return True
 
 
+def update_corpus_embeddings_batch(corpus_ids: list[str]) -> dict:
+    """Embed and store profile vectors for several corpora in a single
+    embedder API call. Strictly faster + cheaper than calling
+    update_corpus_embedding() in a loop:
+
+      - One embed() invocation regardless of N (Gemini's
+        batchEmbedContents accepts up to 100 inputs per request, so a
+        backfill of 8 corpora = 1 RPM hit, not 8).
+      - Single get_embedder() probe — auth/geo-block check once.
+      - Multi-key rotation in GeminiEmbedder operates on the whole
+        batch, so one exhausted key still serves the rest.
+
+    Returns {"succeeded": [...ids], "failed": [{"id":..., "error":...}],
+            "embedder": "<model_name>" | None}.
+    Best-effort: empty list of ids → empty result; embedder unavailable
+    → all ids reported as failed with the same error message; partial
+    DB write failures are bucketed per-corpus.
+    """
+    out = {"succeeded": [], "failed": [], "embedder": None}
+    if not corpus_ids:
+        return out
+
+    conn = get_conn()
+    placeholders = ",".join(["?"] * len(corpus_ids))
+    rows = conn.execute(
+        f"SELECT * FROM corpora WHERE id IN ({placeholders})",
+        tuple(corpus_ids),
+    ).fetchall()
+
+    # Pre-compute profile texts. Skip corpora whose profiles are empty
+    # (no name + no description + nothing) — they'd produce a useless
+    # embedding and waste a slot in the API batch.
+    pending: list[tuple[str, str]] = []  # (corpus_id, profile_text)
+    for r in rows:
+        cd = dict(r)
+        text = build_corpus_profile_text(cd)
+        if not text:
+            out["failed"].append({"id": cd["id"], "error": "empty profile text"})
+            continue
+        pending.append((cd["id"], text))
+
+    if not pending:
+        return out
+
+    # Resolve embedder once.
+    try:
+        embedder = get_embedder()
+        out["embedder"] = embedder.model_name()
+    except Exception as e:
+        msg = f"no embedder available: {str(e)[:200]}"
+        for cid, _ in pending:
+            out["failed"].append({"id": cid, "error": msg})
+        return out
+
+    # Single batched API call.
+    try:
+        texts = [t for _, t in pending]
+        arr = embedder.embed(texts)
+    except Exception as e:
+        msg = str(e)[:300]
+        for cid, _ in pending:
+            out["failed"].append({"id": cid, "error": msg})
+        return out
+
+    if arr is None or len(arr) != len(pending):
+        for cid, _ in pending:
+            out["failed"].append({
+                "id": cid,
+                "error": f"embedder returned wrong shape: got {0 if arr is None else len(arr)}, expected {len(pending)}",
+            })
+        return out
+
+    # Persist each vector. Per-row try/except so a single bad write
+    # doesn't lose the rest.
+    from noosphere.core.db import pg_binary
+    for (cid, _), vec in zip(pending, arr):
+        try:
+            v = np.asarray(vec, dtype=np.float32)
+            norm = float(np.linalg.norm(v))
+            if not np.isfinite(norm) or norm == 0:
+                out["failed"].append({"id": cid, "error": "zero/non-finite norm"})
+                continue
+            payload = pg_binary(vector_to_blob(v))
+            conn.execute(
+                "UPDATE corpora "
+                "SET corpus_vector=?, corpus_vector_norm=?, "
+                "    corpus_vector_dirty_since=NULL "
+                "WHERE id=?",
+                (payload, norm, cid),
+            )
+            out["succeeded"].append(cid)
+        except Exception as e:
+            out["failed"].append({"id": cid, "error": f"db write failed: {str(e)[:200]}"})
+    conn.commit()
+    return out
+
+
 def mark_corpus_embedding_dirty(corpus_id: str) -> None:
     """Flag a corpus as needing a profile-vector refresh. Cheap UPDATE
     — does NOT call the embedder. The next /corpora/network view
