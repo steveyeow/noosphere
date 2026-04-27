@@ -849,7 +849,68 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
             "access_level": c.get("access_level", "public"),
             "task_types": c.get("task_types", []),
             "autonomy_level": c.get("autonomy_level", 0),
+            "kind": "local",
         })
+
+    # Merge in remote corpora from registered_corpora — populated by the
+    # registry layer when this node federates with a Noosphere registry.
+    # These are public-by-construction (registries only accept non-private
+    # entries) but we filter again defensively. They render as additional
+    # nodes in the graph; tag-overlap edges form naturally between local
+    # and remote tokens. No semantic edges (we don't have remote vectors).
+    # IDs are prefixed `r/<endpoint>/<corpus_id>` so they don't collide
+    # with local IDs and the frontend can detect "this is a remote node,
+    # don't try to /corpus/:id navigate" on click.
+    try:
+        _conn = get_conn()
+        remote_rows = _conn.execute(
+            "SELECT * FROM registered_corpora WHERE access_level != 'private' "
+            "ORDER BY updated_at DESC"
+        ).fetchall()
+        # Avoid emitting a remote node that's actually our own (this node's
+        # corpora may be in the registry too if we're configured to register).
+        local_corpus_ids = {c["id"] for c in corpora}
+        for r in remote_rows:
+            rd = dict(r)
+            if rd.get("corpus_id") in local_corpus_ids:
+                continue
+            r_tags = rd.get("tags") or []
+            if isinstance(r_tags, str):
+                try:
+                    r_tags = _json.loads(r_tags)
+                except Exception:
+                    r_tags = []
+            r_task_types = rd.get("task_types") or []
+            if isinstance(r_task_types, str):
+                try:
+                    r_task_types = _json.loads(r_task_types)
+                except Exception:
+                    r_task_types = []
+            r_tokens = []
+            for t in r_tags:
+                r_tokens.extend([x.strip().lower() for x in str(t).replace(",", " ").split() if x.strip()])
+            r_name = rd.get("name") or "Untitled"
+            r_initials = "".join(w[0].upper() for w in r_name.split()[:2]) if r_name else "?"
+            nodes.append({
+                "id": f"r/{rd.get('node_endpoint', '')}/{rd.get('corpus_id', '')}",
+                "name": r_name,
+                "slug": rd.get("slug") or "",
+                "description": rd.get("description") or "",
+                "author": rd.get("author") or "",
+                "tags": r_tags, "tokens": r_tokens, "initials": r_initials,
+                "document_count": rd.get("document_count", 0),
+                "chunk_count": rd.get("chunk_count", 0),
+                "word_count": rd.get("word_count", 0),
+                "status": rd.get("status", "draft"),
+                "access_level": rd.get("access_level", "public"),
+                "task_types": r_task_types,
+                "autonomy_level": rd.get("autonomy_level", 0),
+                "kind": "remote",
+                "node_endpoint": rd.get("node_endpoint") or "",
+                "remote_corpus_id": rd.get("corpus_id") or "",
+            })
+    except Exception as _re:
+        logger.debug("registered_corpora merge skipped: %s", _re)
 
     # Edge computation runs in two layered passes so the graph stays
     # connected regardless of which signals are populated on which corpora:

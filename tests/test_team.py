@@ -427,6 +427,73 @@ def test_invite_accept_blank_display_name_falls_back(isolated_db):
     assert r.json().get("display_name") in (None, "")
 
 
+def test_corpora_network_merges_registered_remote_nodes(isolated_db):
+    """/corpora/network should union local corpora with registered_corpora
+    so federated/remote KBs appear in the Noosphere graph."""
+    a = _client(user_id="alice")
+    # Local public corpus.
+    a.post("/api/v1/corpora", json={"name": "Local KB", "access_level": "public"})
+
+    # Seed a remote registered_corpus directly via DB.
+    from noosphere.core.db import get_conn
+    conn = get_conn()
+    now = "2026-04-27T00:00:00+00:00"
+    conn.execute(
+        "INSERT OR REPLACE INTO registered_nodes (endpoint, first_seen_at, last_seen_at)"
+        " VALUES (?,?,?)",
+        ("https://other.noosphere.dev", now, now),
+    )
+    conn.execute(
+        """INSERT INTO registered_corpora (
+            id, node_endpoint, corpus_id, name, slug, description, author,
+            tags, document_count, chunk_count, word_count,
+            access_level, status, registered_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ("rc1", "https://other.noosphere.dev", "remote_corp_id_1",
+         "Remote Garden", "remote-garden", "An external KB", "alice@other",
+         '["plants","biology"]', 12, 50, 8000,
+         "public", "ready", now, now),
+    )
+    conn.commit()
+
+    r = a.get("/api/v1/corpora/network")
+    assert r.status_code == 200
+    nodes = r.json().get("nodes", [])
+    kinds = {n.get("kind") for n in nodes}
+    assert "local" in kinds and "remote" in kinds, f"network missing remote node: {kinds}"
+    remote = [n for n in nodes if n.get("kind") == "remote"]
+    assert any(n["name"] == "Remote Garden" for n in remote)
+    one = next(n for n in remote if n["name"] == "Remote Garden")
+    assert one["node_endpoint"] == "https://other.noosphere.dev"
+    assert one["id"].startswith("r/")
+    # Tag overlap edge should connect remote and local if they share tags;
+    # without shared tags here we just confirm no crash.
+
+
+def test_corpora_network_skips_private_remote_nodes(isolated_db):
+    """Private rows in registered_corpora must not leak via /corpora/network."""
+    a = _client(user_id="alice")
+    from noosphere.core.db import get_conn
+    conn = get_conn()
+    now = "2026-04-27T00:00:00+00:00"
+    conn.execute(
+        "INSERT OR REPLACE INTO registered_nodes (endpoint, first_seen_at, last_seen_at)"
+        " VALUES (?,?,?)",
+        ("https://other.noosphere.dev", now, now),
+    )
+    conn.execute(
+        """INSERT INTO registered_corpora (
+            id, node_endpoint, corpus_id, name,
+            access_level, registered_at, updated_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        ("rc-private", "https://other.noosphere.dev", "secret",
+         "Should Not Leak", "private", now, now),
+    )
+    conn.commit()
+    nodes = a.get("/api/v1/corpora/network").json().get("nodes", [])
+    assert not any(n.get("name") == "Should Not Leak" for n in nodes)
+
+
 def test_corpora_network_global_not_workspace_scoped(isolated_db):
     """Noosphere = the world: /corpora/network returns the same node set
     regardless of which workspace header is sent."""

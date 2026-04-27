@@ -2968,7 +2968,18 @@ async function drawGraphIn(container,corpora,existingCanvas){
   // Suppress click navigation if the gesture was actually a pan — without
   // this guard, ending a pan on top of a node would teleport the user
   // into that corpus by accident.
-  cv.onclick=()=>{if(!drag&&hov&&panMoved<5)location.hash='#/corpus/'+hov.id};
+  cv.onclick=()=>{
+    if(drag||!hov||panMoved>=5)return;
+    // Remote (federated) nodes don't have a local /corpus/:id route — show
+    // their origin in a toast instead of navigating to a 404. A future pass
+    // can deep-link to the remote node's public page.
+    if(hov.kind==='remote'){
+      const origin=hov.node_endpoint||'remote noosphere';
+      toast(`${hov.name} · from ${origin}`,'success');
+      return;
+    }
+    location.hash='#/corpus/'+hov.id;
+  };
   cv.ondblclick=e=>{e.preventDefault();autoFit()};
   cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}if(pan)pan=null};
   // Wheel = zoom anchored at cursor. The "exp(-deltaY * factor)" curve
