@@ -175,7 +175,13 @@ def compute_corpus_embedding(
         return None
     try:
         if embedder is None:
-            embedder = get_embedder()
+            # probe=False: skip the per-provider ping that get_embedder()
+            # does by default. On tight free-tier RPM caps the probe
+            # alone burns the rate budget before we reach the real
+            # embed call. If the chosen provider is misconfigured we
+            # find out from the real call below — same error class,
+            # one fewer API hit.
+            embedder = get_embedder(probe=False)
         arr = embedder.embed([text])
         if arr is None or len(arr) == 0:
             return None
@@ -264,9 +270,17 @@ def update_corpus_embeddings_batch(corpus_ids: list[str]) -> dict:
     if not pending:
         return out
 
-    # Resolve embedder once.
+    # Resolve embedder WITHOUT the auth probe. The probe in get_embedder()
+    # makes a ping API call per configured provider (gemini, openai,
+    # zhipu) before doing useful work — fast-fails on bad keys / geo-
+    # blocks, but on tight free-tier RPM caps the probe alone burns the
+    # rate budget before we ever reach the real batch. probe=False
+    # returns the first configured provider blindly; if its keys are
+    # exhausted we'll find out from the real batch call below, which
+    # surfaces the actual error rather than the probe's stale ping
+    # error. Same trade Feynman makes for its 50-mind embed runs.
     try:
-        embedder = get_embedder()
+        embedder = get_embedder(probe=False)
         out["embedder"] = embedder.model_name()
     except Exception as e:
         msg = f"no embedder available: {str(e)[:200]}"
@@ -274,14 +288,48 @@ def update_corpus_embeddings_batch(corpus_ids: list[str]) -> dict:
             out["failed"].append({"id": cid, "error": msg})
         return out
 
-    # Single batched API call.
+    # Single batched API call. With Gemini's batchEmbedContents this
+    # carries up to 100 texts in one HTTP request → one RPM hit total.
+    # If this provider's keys are exhausted, fall through to the next
+    # provider in the chain (OpenAI → Zhipu), batching against each.
+    # Mirrors the probe's chain semantics but on real work, not pings.
+    texts = [t for _, t in pending]
+    arr = None
+    last_err = None
+    chain_attempts: list[str] = []
     try:
-        texts = [t for _, t in pending]
         arr = embedder.embed(texts)
     except Exception as e:
-        msg = str(e)[:300]
+        last_err = e
+        chain_attempts.append(f"{embedder.model_name()}: {str(e)[:160]}")
+        # Try the rest of the chain.
+        from noosphere.core.embeddings import (
+            GEMINI_API_KEY, OPENAI_API_KEY, ZHIPU_API_KEY,
+            GeminiEmbedder, OpenAIEmbedder, ZhipuEmbedder,
+        )
+        candidates = []
+        if GEMINI_API_KEY: candidates.append(("gemini", GeminiEmbedder))
+        if OPENAI_API_KEY: candidates.append(("openai", OpenAIEmbedder))
+        if ZHIPU_API_KEY: candidates.append(("zhipu", ZhipuEmbedder))
+        # Skip the one we already tried.
+        for name, cls in candidates:
+            if cls is type(embedder):
+                continue
+            try:
+                alt = cls()
+                arr = alt.embed(texts)
+                embedder = alt
+                out["embedder"] = alt.model_name()
+                last_err = None
+                break
+            except Exception as e2:
+                last_err = e2
+                chain_attempts.append(f"{name}: {str(e2)[:160]}")
+                continue
+    if arr is None:
+        msg = "embed batch failed across providers: " + " / ".join(chain_attempts)
         for cid, _ in pending:
-            out["failed"].append({"id": cid, "error": msg})
+            out["failed"].append({"id": cid, "error": msg[:300]})
         return out
 
     if arr is None or len(arr) != len(pending):
