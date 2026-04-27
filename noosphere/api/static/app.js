@@ -656,63 +656,82 @@ function hideRP(){document.getElementById('rpanel').classList.add('hidden')}
 // links, producing a densely woven network rather than a sparse scatter.
 // Live corpora from the registry prepend to this list (see drawLPGraph);
 // this curated set is the floor.
+// Curated knowledge-wiki names — every entry is a *content body* (a wiki,
+// a collection of letters/essays/lectures, a domain), never a bare person
+// name. Noosphere's product is wikis-as-agents, not minds-as-agents.
+// Tags use Feynman-style multi-word specificity (e.g. "ancient philosophy"
+// not bare "philosophy") to keep the edge density Feynman-like (~150 edges
+// across 53 nodes); over-shared bare tags cause edge explosion.
 const DM_FALLBACK=[
-  // Product / startups / growth
+  // Product / startups
   {n:"Lenny's Newsletter",d:'product, growth, startups, management'},
-  {n:'Paul Graham',d:'startups, philosophy, writing, essays'},
-  {n:'YC Startup School',d:'startups, growth, product, fundraising'},
-  {n:'First Round Review',d:'startups, management, product, leadership'},
-  {n:'Product Management',d:'product, management, strategy, leadership'},
-  {n:'Growth Marketing',d:'growth, marketing, startups, analytics'},
-  {n:'Naval Ravikant',d:'startups, philosophy, wealth, decision-making'},
-  {n:'Marc Andreessen',d:'venture capital, software, startups, techno-optimism'},
+  {n:'YC Startup School',d:'startups, fundraising, product, leadership'},
+  {n:'First Round Review',d:'startups, management, leadership, hiring'},
+  {n:'A16Z Memos',d:'venture capital, software, technology, techno-optimism'},
+  {n:'Paul Graham Essays',d:'startups, essays, programming, hackers'},
+  {n:'Naval Almanack',d:'wealth, decision-making, principles, leverage'},
   // AI / ML / agents
-  {n:'AI Research Digest',d:'AI, ML, research, deep learning'},
+  {n:'AI Research Digest',d:'AI, ML, deep learning, neural networks'},
   {n:'Karpathy Notes',d:'AI, neural networks, deep learning, teaching'},
-  {n:'LLM Prompting',d:'AI, prompting, writing, tools'},
-  {n:'Sam Altman',d:'AI, startups, technology, venture capital'},
-  {n:'Jensen Huang',d:'technology, semiconductors, AI, computing'},
+  {n:'LLM Prompting',d:'AI, prompting, language models, tools'},
+  {n:'AI Coding',d:'AI, coding, cursor, software engineering'},
   // Science / research
-  {n:'Feynman Lectures',d:'physics, science, teaching, quantum mechanics'},
-  {n:'Darwin Archive',d:'biology, evolution, natural history, science'},
-  {n:'Einstein Letters',d:'physics, relativity, philosophy, science'},
-  {n:'Newton Principia',d:'physics, mathematics, classical mechanics, science'},
-  {n:'Climate Science',d:'climate, environment, data, science'},
-  {n:'Neuroscience',d:'neuroscience, psychology, biology, research'},
-  // Philosophy
-  {n:'Stoic Philosophy',d:'philosophy, ethics, ancient, Marcus Aurelius'},
-  {n:'Eastern Wisdom',d:'philosophy, Taoism, ancient, Confucius'},
-  {n:'Nietzsche',d:'philosophy, ethics, writing, existentialism'},
-  {n:'Kant Essays',d:'philosophy, ethics, epistemology, metaphysics'},
+  {n:'Feynman Lectures',d:'physics, quantum mechanics, teaching'},
+  {n:'Darwin Archive',d:'biology, evolution, natural history'},
+  {n:'Einstein Letters',d:'physics, relativity, philosophy of science'},
+  {n:'Newton Principia',d:'physics, classical mechanics, mathematics, optics'},
+  {n:'Climate Science',d:'climate, environment, earth science, data'},
+  // Philosophy — multi-word tags split the cluster
+  {n:'Stoic Philosophy',d:'ancient philosophy, stoicism, ethics, virtue'},
+  {n:'Eastern Wisdom',d:'eastern philosophy, taoism, confucianism, ethics'},
+  {n:'Kant Essays',d:'modern philosophy, epistemology, metaphysics, ethics'},
+  {n:'Nietzsche Texts',d:'modern philosophy, existentialism, ethics, cultural criticism'},
   // Finance / investing
-  {n:'Crypto Trading',d:'crypto, trading, markets, finance'},
-  {n:'Charlie Munger',d:'investing, mental models, markets, philosophy'},
-  {n:'Macro Research',d:'economics, macroeconomics, finance, markets'},
-  {n:'Warren Buffett',d:'investing, value investing, markets, business'},
+  {n:'Munger Almanack',d:'investing, mental models, multidisciplinary thinking'},
+  {n:'Buffett Letters',d:'investing, value investing, business analysis'},
+  {n:'Crypto Trading',d:'crypto, trading, markets, decentralized finance'},
+  {n:'Harness Engineering',d:'AI agents, harness, evals, prompt engineering'},
   // Design / craft
-  {n:'Design Patterns',d:'software, design, engineering, craft'},
-  {n:'Type Design',d:'design, typography, craft, art'},
-  {n:'UX Research',d:'design, research, product, psychology'},
+  {n:'Design Patterns',d:'software design, engineering, programming'},
+  {n:'Type Design',d:'typography, design craft, lettering'},
+  {n:'UX Research',d:'design research, product, user psychology'},
   // History / culture
-  {n:'World History',d:'history, culture, politics, civilization'},
-  {n:'Ancient Rome',d:'history, politics, philosophy, civilization'},
-  {n:'Chinese Dynasties',d:'history, culture, politics, philosophy'},
-  // Professional / niche
-  {n:'Legal Strategy',d:'legal, business, strategy, writing'},
-  {n:'Medical Notes',d:'medicine, research, clinical, biology'},
-  {n:'Chess Theory',d:'chess, strategy, games, mathematics'},
-  {n:'Game Design',d:'games, design, psychology, craft'},
+  {n:'Ancient Rome',d:'roman history, politics, civilization'},
+  {n:'Chinese Dynasties',d:'chinese history, culture, governance'},
   // Writing / creative
-  {n:'Writing Craft',d:'writing, creative, narrative, craft'},
-  {n:'Poetry Notes',d:'writing, creative, narrative, art'},
-  // Psychology / self
-  {n:'Behavioral Econ',d:'psychology, economics, decision-making, research'},
-  {n:'Kahneman Notes',d:'psychology, decision-making, biases, economics'},
-  // Health
-  {n:'Longevity',d:'medicine, biology, research, health'},
-  // Startup exits
-  {n:'Steve Jobs',d:'technology, product, design, leadership'},
-  {n:'Elon Musk',d:'technology, engineering, space, first principles'},
+  {n:'Writing Craft',d:'writing, narrative, creative craft'},
+  {n:'Reading Notes',d:'books, learning, knowledge work'},
+  // Psychology
+  {n:'Kahneman Notes',d:'cognitive psychology, behavioral economics, decision-making'},
+  {n:'Jung Archetypes',d:'depth psychology, mythology, archetypes'},
+  // Tech / programming
+  {n:'Hacker News Digest',d:'technology, hackers, startups, programming'},
+  {n:'Indie Hackers',d:'startups, bootstrapping, indie business'},
+  {n:'Substack Reads',d:'writing, essays, journalism, blogging'},
+  {n:'Rust Book',d:'rust, systems programming, software engineering'},
+  {n:'Tailwind Docs',d:'web design, css, frontend, technology'},
+  // Investment extensions
+  {n:'Howard Marks Memos',d:'investing, market cycles, risk'},
+  {n:'Bogle Index Notes',d:'index investing, passive funds, markets'},
+  // Ancient texts
+  {n:'Aurelius Meditations',d:'stoicism, ancient philosophy, ethics, virtue'},
+  {n:'Sun Tzu Art of War',d:'military strategy, leadership, eastern philosophy'},
+  {n:'Aristotle Ethics',d:'ancient philosophy, ethics, virtue, logic'},
+  {n:'Tao Te Ching',d:'eastern philosophy, taoism, metaphysics, ethics'},
+  // Science extensions
+  {n:'Dawkins Selfish Gene',d:'evolutionary biology, genetics, sociobiology'},
+  {n:'Marathon Training',d:'running, endurance, fitness, training'},
+  {n:'Hawking Lectures',d:'physics, cosmology, theoretical physics, black holes'},
+  // Literature
+  {n:'Borges Ficciones',d:'literature, magical realism, metaphysics, writing'},
+  {n:'Hemingway Letters',d:'literature, writing, narrative prose, modernism'},
+  // Cognitive / risk
+  {n:'Pinker Notes',d:'linguistics, human nature, rationality'},
+  {n:'Taleb Antifragile',d:'risk, probability, antifragility, epistemology'},
+  // Other knowledge bodies
+  {n:'Chinese Cooking',d:'cooking, chinese cuisine, recipes, craft'},
+  {n:'Coffee Brewing',d:'coffee, brewing, espresso, craft'},
+  {n:'Hofstadter GEB',d:'recursion, formal systems, mathematics, cognitive science'},
 ];
 
 // SVG icon snippets reused across landing sections. Line-only, no
@@ -735,8 +754,8 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
     <div class="lp-cv" id="lp-cv"></div>
     <div class="lp-ct">
       <div class="lp-h">
-        <h1 class="lp-h1">Publish your knowledge to the agent internet.</h1>
-        <p class="lp-sub">Turn your thoughts, skills, reading notes, questions you're exploring into living knowledge bases — agent-readable, connected to a global network. Keep them private, share them free, or charge per query.</p>
+        <h1 class="lp-h1">Build your living knowledge wiki, publish to the agent internet.</h1>
+        <p class="lp-sub">Turn your thoughts, skills, reading notes, and open questions into a living wiki — agent-readable, connected to and learning from a global agent network. Keep it private, share it free, or charge per query.</p>
         <button class="lp-go" id="lp-go">Get Started →</button>
       </div>
       <div class="lp-term" id="lp-term">
@@ -748,7 +767,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
 
   <section class="lp-sec lp-sec-bring">
     <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Write it. Bring it. Let it grow.</h2>
+      <h2 class="lp-sec-h">Build your living wiki.</h2>
       <p class="lp-sec-sub">Notes you write, questions you explore, files and feeds you bring in — Noosphere folds them all into living corpora that grow richer over time.</p>
       <div class="lp-cards">
         <div class="lp-card">
@@ -1114,21 +1133,14 @@ function animateLPTerm(){
   }
   step();
 }
-async function drawLPGraph(){
+function drawLPGraph(){
   const co=document.getElementById('lp-cv');if(!co)return;
-  // Build node list: curated DM_FALLBACK floor + up to 12 live corpora prepended.
-  let DM=DM_FALLBACK.slice();
-  try{
-    const r=await fetch(`${API}/corpora`);
-    const live=await r.json();
-    if(Array.isArray(live)&&live.length){
-      const liveNodes=live.slice(0,12).map(c=>{
-        const tg=Array.isArray(c.tags)?c.tags:[];
-        return{n:c.name,d:tg.join(', ')};
-      });
-      DM=[...liveNodes,...DM].slice(0,48);
-    }
-  }catch(e){}
+  // Curated mock data only — live corpora from /corpora would have foreign
+  // tags that don't overlap with the curated set, leaving them as orphan
+  // nodes on the perimeter. The landing graph is a brand visual, not a
+  // live snapshot. (Feynman does the same: hardcoded LP_MINDS list.)
+  // 53 nodes, matching Feynman 1:1.
+  const DM=DM_FALLBACK.slice(0,53);
 
   const tk=m=>(m.d||'').split(/[,;\/&]+/).map(d=>d.trim().toLowerCase()).filter(Boolean);
   const ns=DM.map((m,i)=>({
@@ -1140,30 +1152,22 @@ async function drawLPGraph(){
     tk:tk(m),
   }));
 
-  // Dense tag-overlap linking. Every shared token (even partial match)
-  // counts as a link — produces a visibly woven network.
+  // Tag-overlap linking only — no random-edge floor. Edges come from real
+  // domain overlap; if a node has no overlap it stays loosely tethered.
   const lk=[];
   for(let i=0;i<ns.length;i++)for(let j=i+1;j<ns.length;j++){
     const shared=ns[i].tk.filter(t=>ns[j].tk.some(u=>t===u||t.includes(u)||u.includes(t)));
     if(shared.length)lk.push({source:ns[i].id,target:ns[j].id,s:shared.length});
   }
-  // Guarantee minimum density even if tags don't overlap.
-  const minLinks=Math.floor(ns.length*2);
-  while(lk.length<minLinks){
-    const a=Math.floor(Math.random()*ns.length);
-    let b=Math.floor(Math.random()*ns.length);
-    if(a===b)b=(b+1)%ns.length;
-    const id1=ns[a].id,id2=ns[b].id;
-    if(!lk.find(l=>(l.source===id1&&l.target===id2)||(l.source===id2&&l.target===id1))){
-      lk.push({source:id1,target:id2,s:1});
-    }
+  // Star-fallback only when literally zero overlaps exist.
+  if(!lk.length&&ns.length>1){
+    for(let i=1;i<ns.length;i++)lk.push({source:ns[0].id,target:ns[i].id,s:.3});
   }
 
   const dp=devicePixelRatio||1;
   const W=co.clientWidth||800,H=co.clientHeight||600;
-  // Bigger nodes than before — Feynman uses BASE_R = 20–30. More presence,
-  // better for reading labels.
-  const BR=Math.max(14,Math.min(22,W/(ns.length*2.2)));
+  // Match Feynman BASE_R = 20–30
+  const BR=Math.max(20,Math.min(30,W/(ns.length*2)));
   const cv=document.createElement('canvas');
   cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';
   co.appendChild(cv);
@@ -1176,15 +1180,49 @@ async function drawLPGraph(){
     for(let i=0;i<count;i++)pts.push({l,t:Math.random(),sp:.001+Math.random()*.003,sz:1+Math.random()*1.5,op:.3+Math.random()*.5});
   });
 
+  // Feynman 1:1 — fixed avoid zone for hero text (heroW=300, heroH=200
+  // positioned at W*0.06+150). Tried adapting to our actual .lp-h rect
+  // (367×453) but that's 16% of the canvas vs Feynman's 3% — node
+  // simulation can't escape such a large zone in our smaller canvas.
+  // Some hero text spills outside this zone; the .lp-h::before radial
+  // gradient softens any nodes that drift behind, which is the design.
+  const heroW=300,heroH=200;
+  const heroCx=W*0.06+heroW/2,heroCy=H/2;
+  const heroHalfW=heroW/2+30,heroHalfH=heroH/2+10;
+  const clearZones=[{cx:heroCx,cy:heroCy,hw:heroHalfW,hh:heroHalfH}];
+  function makeAvoidForce(){
+    let nodes;
+    function force(){
+      for(const n of nodes){
+        for(const z of clearZones){
+          const dx=n.x-z.cx,dy=n.y-z.cy;
+          const ox=z.hw-Math.abs(dx),oy=z.hh-Math.abs(dy);
+          if(ox>0&&oy>0){
+            if(ox<oy){const sg=dx>=0?1:-1;n.vx+=sg*ox*0.08;n.vx*=.85;}
+            else{const sg=dy>=0?1:-1;n.vy+=sg*oy*0.08;n.vy*=.85;}
+          }
+        }
+      }
+    }
+    force.initialize=function(n){nodes=n;};
+    return force;
+  }
 
-
+  // Spread initial positions across the canvas. d3's default phyllotaxis
+  // packs everyone near (0,0); with Feynman's weak forceX/Y (.01) that
+  // doesn't get redistributed before alpha decays. Random initial spread
+  // gives the same final distribution Feynman gets organically on its
+  // larger canvas.
+  const graphCx=W*0.55;
+  ns.forEach(n=>{n.x=graphCx+(Math.random()-.5)*W*.7;n.y=H/2+(Math.random()-.5)*H*.7;});
   const sim=d3.forceSimulation(ns)
-    .force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(100,300-d.s*70)).strength(d=>.06+d.s*.12))
-    .force('charge',d3.forceManyBody().strength(-600).distanceMax(900))
-    .force('center',d3.forceCenter(W/2,H/2).strength(.015))
-    .force('collision',d3.forceCollide().radius(BR+18))
-    .force('x',d3.forceX(W/2).strength(.01))
+    .force('link',d3.forceLink(lk).id(d=>d.id).distance(d=>Math.max(80,280-d.s*70)).strength(d=>.08+d.s*.15))
+    .force('charge',d3.forceManyBody().strength(-600).distanceMax(800))
+    .force('center',d3.forceCenter(graphCx,H/2).strength(.02))
+    .force('collision',d3.forceCollide().radius(BR+20))
+    .force('x',d3.forceX(graphCx).strength(.01))
     .force('y',d3.forceY(H/2).strength(.01))
+    .force('avoid',makeAvoidForce())
     .alphaDecay(.03).velocityDecay(.35);
 
   let hov=null,mp=null;
@@ -1206,22 +1244,22 @@ async function drawLPGraph(){
     cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';
     cx.fillRect(0,0,W,H);
 
-    // Links
+    // Links — match Feynman alpha/lineWidth
     for(const l of lk){
       const s=l.source,t=l.target;
       cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);
-      cx.strokeStyle=dk?`rgba(170,185,210,${.14+l.s*.10})`:`rgba(140,155,180,${.14+l.s*.10})`;
-      cx.lineWidth=.5+l.s*.3;
+      cx.strokeStyle=dk?`rgba(170,185,210,${.12+l.s*.08})`:`rgba(140,155,180,${.12+l.s*.08})`;
+      cx.lineWidth=.6+l.s*.4;
       cx.stroke();
     }
 
-    // Particles
+    // Particles — match Feynman 0.45 alpha
     for(const p of pts){
       p.t+=p.sp;if(p.t>1)p.t-=1;
       const s=p.l.source,t=p.l.target;
       const px=s.x+(t.x-s.x)*p.t,py=s.y+(t.y-s.y)*p.t;
       cx.beginPath();cx.arc(px,py,p.sz,0,Math.PI*2);
-      cx.fillStyle=dk?`rgba(200,220,255,${p.op*.5})`:`rgba(130,150,200,${p.op*.5})`;
+      cx.fillStyle=dk?`rgba(200,220,255,${p.op*.45})`:`rgba(130,150,200,${p.op*.45})`;
       cx.fill();
     }
 
@@ -1245,17 +1283,17 @@ async function drawLPGraph(){
       const rr=r*pulse;
       const[cr,cg,cb]=hR(n.color);
 
-      // Glow
-      const glowR=rr*2.4;
-      const grad=cx.createRadialGradient(n.x,n.y,rr*.4,n.x,n.y,glowR);
-      grad.addColorStop(0,`rgba(${cr},${cg},${cb},${hovered?.16:.06})`);
+      // Glow — match Feynman alpha
+      const glowR=rr*2.5;
+      const grad=cx.createRadialGradient(n.x,n.y,rr*.5,n.x,n.y,glowR);
+      grad.addColorStop(0,`rgba(${cr},${cg},${cb},${hovered?.15:.05})`);
       grad.addColorStop(1,'rgba(255,255,255,0)');
       cx.beginPath();cx.arc(n.x,n.y,glowR,0,Math.PI*2);cx.fillStyle=grad;cx.fill();
 
       // Hover ring
       if(hovered){
         cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);
-        cx.strokeStyle=`rgba(${cr},${cg},${cb},.55)`;cx.lineWidth=2;cx.stroke();
+        cx.strokeStyle=`rgba(${cr},${cg},${cb},.5)`;cx.lineWidth=2;cx.stroke();
       }
 
       // Node ball
@@ -1265,13 +1303,16 @@ async function drawLPGraph(){
 
       // Initials
       cx.fillStyle='rgba(255,255,255,.95)';
-      cx.font=`700 ${rr*.55}px Inter,sans-serif`;
+      cx.font=`700 ${rr*.6}px Inter,sans-serif`;
       cx.textAlign='center';cx.textBaseline='middle';
       cx.fillText(n.ini,n.x,n.y);
 
-      // Name label
+      // Name label — single line only. Feynman renders a domain subtitle
+      // beneath each node but on our smaller canvas it doubles the visual
+      // weight per node and the network reads as cluttered. Names alone
+      // are enough to convey "this is a wiki on X".
       cx.fillStyle=dk?`rgba(245,245,247,${hovered?.95:.8})`:`rgba(30,35,50,${hovered?.9:.7})`;
-      cx.font=`600 ${hovered?11:10}px 'Libre Baskerville',Georgia,serif`;
+      cx.font=`600 ${hovered?12:11}px 'Libre Baskerville',Georgia,serif`;
       cx.fillText(n.name,n.x,n.y+rr+14);
     }
 

@@ -32,11 +32,16 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 /* Radial-gradient backdrop behind hero text so it stays legible on top of
    the densely-woven background network. Same trick Feynman uses. */
 .lp-h::before{content:'';position:absolute;inset:-60px -80px -40px -60px;z-index:-1;background:radial-gradient(ellipse at 40% 50%,var(--lpBg) 0%,var(--lpBg) 55%,transparent 95%);pointer-events:none;opacity:.96}
-.lp-h1{font-family:'Libre Baskerville',Georgia,serif;font-size:36px;line-height:1.25;font-weight:700;margin-bottom:16px}
-.lp-sub{font-size:15px;line-height:1.6;color:var(--tx2);margin-bottom:24px}
+.lp-h1{font-family:'Libre Baskerville',Georgia,serif;font-size:34px;line-height:1.25;font-weight:700;margin-bottom:16px;text-wrap:balance}
+.lp-sub{font-size:15px;line-height:1.6;color:var(--tx2);margin-bottom:24px;text-wrap:pretty}
 .lp-go{display:inline-flex;align-items:center;gap:6px;padding:10px 24px;border-radius:24px;border:none;background:var(--btnBg);color:var(--btnC);font-size:15px;font-weight:500;cursor:pointer;transition:opacity .15s}.lp-go:hover{opacity:.8}
-.lp-term{flex:0 1 540px;min-width:340px;background:var(--bg2);border:1px solid var(--brd);border-radius:12px;box-shadow:var(--shL);overflow:hidden}
-.lp-term-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--brd)}
+/* Glass-morphism terminal card — replicates Feynman's chat card so the
+   network behind shows through as soft blurred color blobs. */
+.lp-term{flex:0 1 540px;min-width:340px;background:rgba(255,255,255,.22);backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);border:1px solid rgba(255,255,255,.2);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.04),inset 0 1px 0 rgba(255,255,255,.2);overflow:hidden}
+.lp-term-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:rgba(0,0,0,.04);border-bottom:1px solid rgba(255,255,255,.08)}
+.dark .lp-term{background:rgba(44,44,46,.2);border-color:rgba(255,255,255,.04);box-shadow:0 8px 40px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.03)}
+.dark .lp-term-bar{background:rgba(0,0,0,.15);border-bottom-color:rgba(255,255,255,.04)}
+@media(prefers-color-scheme:dark){:root:not(.light) .lp-term{background:rgba(44,44,46,.2);border-color:rgba(255,255,255,.04);box-shadow:0 8px 40px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.03)}:root:not(.light) .lp-term-bar{background:rgba(0,0,0,.15);border-bottom-color:rgba(255,255,255,.04)}}
 .lp-term-dot{width:10px;height:10px;border-radius:50%}.lp-term-dot.red{background:#ff5f57}.lp-term-dot.ylw{background:#febc2e}.lp-term-dot.grn{background:#28c840}
 .lp-term-title{margin-left:auto;margin-right:auto;font-size:11px;font-weight:500;color:var(--tx3);font-family:var(--mono)}
 .lp-term-body{padding:16px 18px;height:340px;overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.7;scrollbar-width:none}.lp-term-body::-webkit-scrollbar{display:none}
@@ -1353,13 +1358,12 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 /* ── Landing: dedicated /team page ── */
 .lp-team .lp-hero-team{min-height:auto;padding-bottom:0}
 .lp-team .lp-hero-team + .lp-sec-bring{padding-top:56px}
-.lp-ct-wide{flex-direction:column;align-items:flex-start;padding:96px clamp(32px,5vw,80px) 24px;gap:48px;max-width:1280px;margin:0 auto;min-height:auto}
+.lp-ct-wide{flex-direction:column;align-items:flex-start;padding:96px clamp(32px,5vw,80px) 24px;gap:48px;max-width:1100px;margin:0 auto;min-height:auto}
 .lp-eyebrow{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);padding:4px 10px;border:1px solid var(--brd);border-radius:12px;margin-bottom:16px;background:var(--accSoft)}
-.lp-team .lp-h{flex:1 1 auto;max-width:1120px}
+.lp-team .lp-h{flex:1 1 auto;max-width:720px}
 .lp-team .lp-h::before{display:none}
 .lp-team .lp-h1{font-size:clamp(32px,5vw,48px);line-height:1.15;margin-bottom:18px}
-.lp-team .lp-h1 .lp-h1-l1,.lp-team .lp-h1 .lp-h1-l2{display:block}
-@media(max-width:960px){.lp-team .lp-h1 .lp-h1-l1,.lp-team .lp-h1 .lp-h1-l2{display:inline}}
+@media(max-width:540px){.lp-h1-br{display:none}}
 .lp-team .lp-sub{font-size:17px;line-height:1.6;max-width:680px;margin-bottom:28px}
 .lp-team-funnel{display:flex;align-items:center;gap:24px;width:100%;padding:24px clamp(16px,3vw,32px);border:1px solid var(--brd);border-radius:14px;background:var(--bg2);flex-wrap:wrap}
 .lp-funnel-col{flex:1;min-width:240px}
@@ -1371,8 +1375,11 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .lp-funnel-target{display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px;padding:18px 22px;background:var(--accSoft);border-left:3px solid var(--tx);border-radius:0 8px 8px 0}
 .lp-funnel-target span{font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:700;color:var(--tx)}
 .lp-funnel-target small{font-size:13px;color:var(--tx2)}
+.lp-funnel-target-list{list-style:none;padding:0;margin:10px 0 0;display:flex;flex-direction:column;gap:6px}
+.lp-funnel-target-list li{font-size:13.5px;color:var(--tx2);padding-left:16px;position:relative;line-height:1.45}
+.lp-funnel-target-list li::before{content:'';position:absolute;left:0;top:7px;width:6px;height:6px;background:var(--tx2);border-radius:1px}
 @media(max-width:720px){.lp-team-funnel{flex-direction:column;align-items:stretch}.lp-funnel-arrow{transform:rotate(90deg);align-self:center}}
-.lp-sec-bring .lp-team-funnel{margin:24px 0 40px}
+.lp-sec-network .lp-team-funnel{margin:24px 0 40px}
 
 /* ── Team workspaces ───────────────────────────────────────────── */
 
