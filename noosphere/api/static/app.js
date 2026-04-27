@@ -832,7 +832,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       <div class="lp-team-tile">
         <div class="lp-team-tile-text">
           <h2 class="lp-sec-h">For teams →</h2>
-          <p class="lp-sec-sub">A shared living brain and intelligence layer for your team. Captures from Slack, meetings, and tickets at the edge — synthesizes through compile and distill — answers every member and every agent from one shared source of truth.</p>
+          <p class="lp-sec-sub">A shared living brain for your team. Captures from Slack, meetings, and tickets at the edge; synthesized through compile and distill; readable and queryable by every member and every agent.</p>
         </div>
         <a href="#/team" class="lp-team-tile-cta">See team Noosphere →</a>
       </div>
@@ -864,17 +864,10 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
     <div class="lp-ct lp-ct-wide">
       <div class="lp-h">
         <span class="lp-eyebrow">Noosphere · Team</span>
-        <h1 class="lp-h1"><span class="lp-h1-l1">A shared living brain and intelligence layer</span> <span class="lp-h1-l2">for your team.</span></h1>
-        <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill. Readable and queryable by every agent your team runs. Learn from the global agent knowledge network. With full access control — keep private, share for free, or get paid.</p>
+        <h1 class="lp-h1">A shared living brain<br class="lp-h1-br"/>for your team.</h1>
+        <p class="lp-sub">Capture from the edge — Slack, email, meetings, decisions, customer calls. Synthesize with compile and distill — readable and queryable by every agent your team runs. Learn from the global agent knowledge network. With full access control — keep private, share for free, or get paid. Build the intelligence layer for your team.</p>
         <button class="lp-go" id="lp-team-go">Start your team's Noosphere →</button>
       </div>
-    </div>
-  </section>
-
-  <section class="lp-sec lp-sec-bring">
-    <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Capture from the edge.</h2>
-      <p class="lp-sec-sub">Knowledge enters at the point of work — not as a separate authoring task. Every member contributes by doing their job; the system attributes and indexes automatically.</p>
       <div class="lp-team-funnel">
         <div class="lp-funnel-col">
           <div class="lp-funnel-h">Sources</div>
@@ -889,24 +882,40 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
           </ul>
         </div>
         <div class="lp-funnel-arrow">→</div>
-        <div class="lp-funnel-target"><span>Shared, living team brain</span><small>Queryable by every member &amp; agent</small></div>
+        <div class="lp-funnel-target">
+          <span>Intelligence layer for your team</span>
+          <ul class="lp-funnel-target-list">
+            <li>Captures every edge</li>
+            <li>Agent-readable</li>
+            <li>Self-compiling</li>
+            <li>Learns from the network</li>
+            <li>You control access</li>
+          </ul>
+        </div>
       </div>
+    </div>
+  </section>
+
+  <section class="lp-sec lp-sec-bring">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">Capture from the edge.</h2>
+      <p class="lp-sec-sub">Knowledge enters at the point of work — not as a separate authoring task. Every member contributes by doing their job; the system attributes and indexes automatically.</p>
       <div class="lp-cards">
         <div class="lp-card">
-          <h3 class="lp-card-h">Slack <code>/noosphere</code></h3>
-          <p class="lp-card-p">Save a thread or message into the right corpus with a slash command. Auto-attributed to the saver.</p>
+          <h3 class="lp-card-h">Slack &amp; team chat</h3>
+          <p class="lp-card-p">Save a thread, channel, or decision into the right corpus with a single slash command — auto-attributed to the contributor.</p>
         </div>
         <div class="lp-card">
-          <h3 class="lp-card-h">Per-corpus email</h3>
-          <p class="lp-card-p">Each corpus gets a unique forwarding address. Pipe customer email, sales notes, alerts straight in.</p>
+          <h3 class="lp-card-h">Email &amp; customer feedback</h3>
+          <p class="lp-card-p">Each corpus gets its own forwarding address. Pipe customer email, sales notes, support threads, and alerts straight in.</p>
         </div>
         <div class="lp-card">
-          <h3 class="lp-card-h">Meeting transcripts</h3>
-          <p class="lp-card-p">Paste or forward Granola, Otter, or Fireflies output. Decisions and discussion stay queryable forever.</p>
+          <h3 class="lp-card-h">Meetings &amp; calls</h3>
+          <p class="lp-card-p">Paste or forward transcripts from Granola, Otter, or Fireflies. Decisions, customer calls, and standups stay queryable forever.</p>
         </div>
         <div class="lp-card">
-          <h3 class="lp-card-h">Org connectors</h3>
-          <p class="lp-card-p">One Notion, Drive, GitHub, or Gmail OAuth covers the whole team. Install once; everyone benefits.</p>
+          <h3 class="lp-card-h">Docs, drives &amp; tickets</h3>
+          <p class="lp-card-p">One OAuth covers Notion, Google Drive, GitHub, Linear, Jira, and Gmail across the whole team. Install once; every member benefits.</p>
         </div>
       </div>
     </div>
@@ -914,8 +923,8 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
 
   <section class="lp-sec lp-sec-agent">
     <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Synthesis is the system's job.</h2>
-      <p class="lp-sec-sub">Compile recipes built for orgs turn raw substrate into briefings every member (and every agent) can ask against.</p>
+      <h2 class="lp-sec-h">A brain that compiles itself as the team works.</h2>
+      <p class="lp-sec-sub">Every message, ticket, decision, and call extends the team brain. Compile recipes turn that raw substrate into briefings every member — and every agent — can ask against. The longer the team works, the smarter the brain gets.</p>
       <div class="lp-tool-list">
         <div class="lp-tool"><code>weekly digest</code><span>What shipped, what shifted, what's blocked — auto-compiled across all org corpora.</span></div>
         <div class="lp-tool"><code>decision log</code><span>Extract decisions and rationale from threads, meetings, design docs.</span></div>
@@ -924,16 +933,27 @@ function renderLPTeam(){const el=document.getElementById('page-landing');el.inne
         <div class="lp-tool"><code>ops dashboards</code><span>Saved queries rendered as cards: hiring, sales, eng, anything.</span></div>
         <div class="lp-tool"><code>distill</code><span>Org-aware interview templates capture tacit founder/expert knowledge before it leaves.</span></div>
       </div>
-      <p class="lp-sec-foot">Every output is grounded in your org's actual record — with citations back to the Slack message, ticket, or transcript it came from. <strong>No hallucinated org memory.</strong></p>
     </div>
   </section>
 
   <section class="lp-sec lp-sec-network">
     <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Self-improving by design.</h2>
-      <p class="lp-sec-sub">A per-org dashboard surfaces queries returning low confidence or no results. Output is a prioritized list: ingest these sources, interview these people via Distill, compile these topics. Gaps surface themselves and turn into next-actions.</p>
-      <div class="lp-callout">
-        <strong>What we don't know yet.</strong> The team brain doesn't just store — it tells you what's missing. Failed queries become the roadmap for what to capture next.
+      <h2 class="lp-sec-h">Plug into the global knowledge network.</h2>
+      <p class="lp-sec-sub">Your team's brain isn't a silo. Every agent your team runs queries domain corpora, peer-team expertise, and public knowledge bases through the same interface that hits your internal record. External knowledge flows in — without leaving your workspace.</p>
+      <div class="lp-team-funnel lp-network-funnel">
+        <div class="lp-funnel-col">
+          <div class="lp-funnel-h">Global knowledge network</div>
+          <ul class="lp-funnel-list">
+            <li>Domain expert corpora</li>
+            <li>Peer-team expertise</li>
+            <li>Public knowledge bases</li>
+            <li>Specialty &amp; consulting practices</li>
+            <li>Research labs &amp; archives</li>
+            <li>Open-source documentation</li>
+          </ul>
+        </div>
+        <div class="lp-funnel-arrow">→</div>
+        <div class="lp-funnel-target"><span>Every agent your team runs</span><small>Queries the network through your team brain</small></div>
       </div>
     </div>
   </section>
@@ -1827,30 +1847,50 @@ function renderHome(){
    Notion-style below-composer shelf. Left column shows recently-touched KBs
    as one-tap jumps back; right column shows write-starters that seed Write
    mode with a pre-filled title so users don't stare at a blank composer. */
-// Four daily-produced content shapes, each teaching a distinct Noosphere
-// value — not a generic write prompt:
+// Daily-produced content shapes — workspace-aware, since the moments worth
+// capturing differ between solo creators and teams.
+//
+// Personal — individual reflective surfaces:
 //   - Random thoughts          → volume capture; no judgment, just dump
 //   - Skill I'm learning       → growth over time; the KB accumulates expertise
 //   - Reading notes            → external input curation; you read, Noos keeps it
 //   - Question I'm chewing on  → long-lived unfinished content; traditional notes
 //                                apps are worst at this — Noosphere's retrieval
 //                                + living wiki surfaces old open questions when
-//                                new info arrives. This suggestion signals "you
-//                                don't have to finish writing to save it."
-const WRITE_SUGGESTIONS=[
+//                                new info arrives. Signals "you don't have to
+//                                finish writing to save it."
+//
+// Team — edge-of-work moments worth sharing into the team brain:
+//   - Meeting takeaway   → the artifact teams already produce daily; the brain
+//                          grows from what was decided, not just what was said
+//   - Decision we made   → context-rich rationale that future hires/agents need
+//   - Customer signal    → frontline observations (sales / support / research)
+//                          that otherwise stay in DMs and email
+//   - What I shipped     → async standup tone; lightweight, builds the
+//                          team's working memory without a status meeting
+const WRITE_SUGGESTIONS_PERSONAL=[
   {title:'Random thoughts'},
   {title:"Skill I'm learning"},
   {title:'Reading notes'},
   {title:"Question I'm chewing on"},
 ];
+const WRITE_SUGGESTIONS_TEAM=[
+  {title:'Meeting takeaway'},
+  {title:'Decision we made'},
+  {title:'Customer signal'},
+  {title:'What I shipped'},
+];
+function _writeSuggestions(){
+  return _workspace.kind==='org'?WRITE_SUGGESTIONS_TEAM:WRITE_SUGGESTIONS_PERSONAL;
+}
 // Minimal line-icon SVGs (no decorative emoji — Feynman aesthetic)
 const ICON_CHAT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 const ICON_PEN=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
 async function renderHomeTworow(enterWrite){
-  // Suggested — static list, render immediately
+  // Suggested — workspace-aware list, render immediately
   const sugEl=document.getElementById('home-col-suggested');
   if(sugEl){
-    sugEl.innerHTML=WRITE_SUGGESTIONS.map(s=>`<button class="home-col-item" type="button" data-title="${esc(s.title)}"><span class="home-col-ico">${ICON_PEN}</span><span class="home-col-nm">${esc(s.title)}</span></button>`).join('');
+    sugEl.innerHTML=_writeSuggestions().map(s=>`<button class="home-col-item" type="button" data-title="${esc(s.title)}"><span class="home-col-ico">${ICON_PEN}</span><span class="home-col-nm">${esc(s.title)}</span></button>`).join('');
     sugEl.querySelectorAll('.home-col-item').forEach(btn=>{
       btn.onclick=()=>enterWrite(btn.dataset.title);
     });
