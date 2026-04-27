@@ -1,6 +1,12 @@
 # Noosphere
 
-Publish your knowledge as a living knowledge base any AI agent can discover, query, and learn from. It grows over time as you add content and as the network expands around it. Keep it open, or charge for access.
+**Build your living knowledge wiki, publish to the agent internet.**
+
+Publish your knowledge as living knowledge bases any AI agent can read, query, and learn from. It grows over time as you add content or chat, and also as the network expands. You can keep it private, open, or charge for access.
+
+Write what you know, distill it through chat, or connect what's already scattered across your apps. Noosphere indexes everything for agent retrieval, synthesizes it into living concept notes that compound over time, and keeps it yours. Solo creators publish their expertise; teams turn scattered fragments — Slack, meetings, decisions, customer calls — into a shared and living brain that compounds as the team works.
+
+> Expand the scope and scale of collective enlightenment.
 
 ## Why
 
@@ -15,12 +21,13 @@ Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publi
 3. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution.
 4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem.
 5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
+6. **A shared living brain for teams.** Most of what a team knows lives scattered across Slack threads, meeting transcripts, customer calls, design docs, tickets — none of it queryable by anyone, human or agent. Team Noosphere captures from the edge where work actually happens, synthesizes through compile and distill, and exposes one living record every member and every agent can query. Organizational memory survives turnover; the brain compounds as the team works.
 
 ## The design
 
 How the five value propositions above are actually built.
 
-### Creation paths
+### Ingest paths
 
 Four ways to grow a knowledge base, mixed freely in the same corpus:
 - **Write / Note** — direct markdown, chat capture (`user_original` · `user_capture`)
@@ -30,7 +37,7 @@ Four ways to grow a knowledge base, mixed freely in the same corpus:
 
 Provenance is tracked per document via `source_kind`. Manifests auto-maintain from corpus content so the KB's identity card stays current without manual upkeep.
 
-### Agent interface
+### Agent-readable, queryable
 
 Every corpus exposes the same small toolbox:
 
@@ -149,6 +156,76 @@ Supply side                              Demand side
 │ Climate scientist│──┘   quality signals│ Any MCP client   │
 └──────────────────┘     + direct query) └──────────────────┘
 ```
+
+## For teams
+
+The same layer, shared. Every member contributes; every agent queries.
+
+A team's Noosphere is a **living brain plus intelligence layer for the org**. Slack threads, meeting transcripts, customer calls, design docs, decisions, standup notes — everything that today scatters across tools or disappears into chat history flows into shared corpora. Members ask in plain English; their agents do the same; both get cited answers grounded in the org's actual record.
+
+```
+Internal sources                          Shared queryable layer
+┌──────────────────┐                      ┌─────────────────────┐
+│ Linear tickets   │──┐                   │  Member             │
+│ Slack channels   │──┤                   │  + member's agent   │
+│ Customer calls   │──┤  Team Noosphere   │  + cross-team agent │
+│ Meeting notes    │──┼─ corpora + ────→  │  + ops dashboards   │
+│ Design docs      │──┤  compile + distill│                     │
+│ Daily standups   │──┘                   │  one shared brain   │
+└──────────────────┘                      └─────────────────────┘
+```
+
+Where individual Noosphere is creator-first, team Noosphere is **edge-first**: knowledge enters at the point of work — Slack, email, meeting bot, ticket close — not as a separate authoring task. Synthesis is the system's job, not yours.
+
+### Team-only capture surfaces
+
+| Surface | What it does |
+|---|---|
+| Slack `/noosphere` | Save thread or message into a chosen corpus |
+| Per-corpus email | Each corpus gets a unique forwarding address — pipe customer email, sales notes, alerts |
+| Meeting transcripts | Paste or forward Granola/Otter/Fireflies output; auto-attributed |
+| Linear/Jira close hook | Closed tickets feed a "what we've fixed" KB |
+
+### Team-only synthesis
+
+Compile recipes templated for orgs (each is a saved query against the existing compile primitive):
+
+- **Weekly digest** — what shipped, what shifted, what's blocked
+- **Decision log** — extract decisions and rationale from threads + meetings
+- **Customer-pain synthesis** — patterns across feedback corpora
+- **Onboarding pack** — auto-generated "what a new hire needs to know"
+- **Ops dashboards** — saved queries rendered as cards (hiring, sales, eng)
+
+Distill in team context interviews team members with org-aware prompt templates — a way to capture tacit founder/expert knowledge before they leave.
+
+### "What we don't know yet"
+
+A per-org dashboard that surfaces queries returning low confidence or no results. Output is a prioritized list of things to ingest, interview via Distill, or compile. The team brain becomes self-improving: gaps surface themselves and turn into next-actions.
+
+### Roles and attribution
+
+Four roles apply across all org corpora — **owner / admin / editor / viewer**. Every document tracks `contributor_user_id`: who added what is queryable, audit-loggable, and (for paid corpora, optional) usable for revenue weighting.
+
+### Self-hosted vs cloud
+
+Same MIT/BSL line as personal:
+
+| Capability | Self-hosted (MIT) | Cloud (BSL) |
+|---|---|---|
+| Org primitives, members, roles, audit log | ✓ | ✓ |
+| Multi-contributor ingest, contributor attribution | ✓ | ✓ |
+| Org-level OAuth connectors | ✓ | ✓ |
+| Slack capture, email-to-corpus, transcripts | ✓ | ✓ |
+| Compile recipes, "what we don't know yet" dashboard | ✓ | ✓ |
+| Bring-your-own-Stripe at org level (direct, keep 100%) | ✓ | — |
+| Multi-tenant isolation (one server, many orgs) | — | ✓ |
+| Stripe Connect with 10% platform fee | — | ✓ |
+| Hosted billing, seat enforcement, email invites | — | ✓ |
+| Auth: hosted SSO, magic-link email | — | ✓ |
+
+Self-hosted runs as a single org per instance — no multi-tenant complexity. Cloud is where one user belongs to a Personal workspace plus N orgs, switchable from the top-left.
+
+> **Architecture note.** Team is an extension of the same Noosphere — same DB, same MCP/REST, same compile/distill engine. A solo Pro user who later forms a team keeps everything; the corpus just gains an `org_id`.
 
 ## What it does
 
@@ -323,17 +400,19 @@ Walks the directory, ingests every supported file, and runs the initial index. E
 
 The composer's source picker lists the full catalog. Shipping one at a time:
 
-| Connector       | Status         | Notes                                                             |
-| --------------- | -------------- | ----------------------------------------------------------------- |
-| Obsidian        | **Available**  | ZIP import + CLI two-way sync (`--obsidian --watch`) + Obsidian plugin ([`plugin/`](plugin/))|
-| Notion          | **Available**  | ZIP import today; live-sync OAuth planned                         |
-| Twitter / X     | **Available**  | One-shot archive import                                           |
-| RSS / Atom      | **Available**  | Manual feed add today; auto-polling on Pro planned                |
-| Google Drive    | Coming soon    | Docs, Sheets, folder selection                                    |
-| GitHub          | Coming soon    | READMEs, issues, discussions                                      |
-| Gmail           | Coming soon    | Threads filtered by label                                         |
-| Slack           | Coming soon    | Channels and DMs                                                  |
-| Email forwarding| Coming soon    | A unique inbox address per corpus                                 |
+| Connector       | Status         | Tier        | Notes                                                             |
+| --------------- | -------------- | ----------- | ----------------------------------------------------------------- |
+| Obsidian        | **Available**  | All         | ZIP import + CLI two-way sync (`--obsidian --watch`) + Obsidian plugin ([`plugin/`](plugin/))|
+| Notion          | **Available**  | All         | ZIP import today; live-sync OAuth planned                         |
+| Twitter / X     | **Available**  | All         | One-shot archive import                                           |
+| RSS / Atom      | **Available**  | All         | Manual feed add today; auto-polling on Pro planned                |
+| Google Drive    | Coming soon    | Pro + Team  | Docs, Sheets, folder selection                                    |
+| GitHub          | Coming soon    | Pro + Team  | READMEs, issues, discussions                                      |
+| Gmail           | Coming soon    | Pro + Team  | Threads filtered by label                                         |
+| Slack `/noosphere` | Coming soon | Team        | Save thread or message via slash command                          |
+| Email forwarding| Coming soon    | Team        | Each corpus gets a unique inbox                                   |
+| Meeting transcripts | Coming soon | Team       | Granola / Otter / Fireflies / paste                               |
+| Linear / Jira close hook | Coming soon | Team   | Closed tickets feed a "what we've fixed" KB                       |
 
 Every connector lands as a document in the same corpus — the agent interface (`ask`, `search`, `describe`, etc.) doesn't care where a document came from, only about `source_kind` attribution and whether it's monetizable under the Principle-3 copyright rule.
 

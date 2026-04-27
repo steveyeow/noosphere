@@ -2,7 +2,9 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-Noosphere lets you publish your knowledge — papers, blogs, newsletters, notes — as a living knowledge base any AI agent can discover, query, and cite. It grows over time as you add content. Share it free, keep it private, or charge for access.
+Noosphere lets you publish your knowledge as living knowledge bases any AI agent can read, query, and learn from. It grows over time as you add content or chat, and also as the network expands. You can keep it private, open, or charge for access.
+
+Write what you know, distill it through chat, or connect what's already scattered across your apps. Noosphere indexes everything for agent retrieval, synthesizes it into living concept notes that compound over time, and keeps it yours. Solo creators publish their expertise; teams turn scattered fragments — Slack, meetings, decisions, customer calls — into a shared and living brain that compounds as the team works.
 
 ---
 
@@ -231,6 +233,163 @@ All layers are needed:
 - **MCP** is the agent-native discovery and tool-use protocol that sits on top
 
 MCP and REST API share the same core logic. The CLI calls the same core functions directly.
+
+---
+
+## Team workspaces
+
+Noosphere works in two contexts: a personal workspace (one user, their corpora) and team workspaces (an organization, its members, its corpora). **Both are the same product** — same DB, same MCP/REST, same compile/distill engine. A solo Pro user who later forms a team keeps everything; the corpus just gains an `org_id`.
+
+### Mental model
+
+A user account is personal-first. Everyone has a Personal workspace (Free or Pro). A user can additionally belong to N **org workspaces** (Team tier), switchable from a top-left workspace switcher (Notion-style). A corpus belongs to exactly one scope — either `owner_id` (personal) XOR `org_id` (team). Personal corpora are never auto-shared with any org.
+
+### Why teams need this
+
+A team's organizational memory today is scattered across Slack, Notion, meeting tools, ticket systems, customer-feedback inboxes, sales transcripts. None of it is queryable by agents — and most of it isn't queryable by the team either, except by remembering who said what in which channel. A team Noosphere captures from the edge (where work happens), synthesizes through compile + distill, and exposes one shared brain to every member and every agent.
+
+This is the same shape Karpathy's LLM Wiki and Garry Tan's GBrain take individually — extended to a multi-contributor context. Where individual Noosphere is creator-first, team Noosphere is **edge-first**: knowledge enters at the point of work, not as a separate authoring task.
+
+### Three team archetypes
+
+Same product, different access-level mixes per corpus:
+
+| Archetype | Example | Primary value | Monetization |
+|---|---|---|---|
+| Internal org brain | Eng team, ops team, startup | Memory that survives turnover; queryable ops | None — the brain is the product |
+| Mixed | Newsletter team, research lab | Internal corpora alongside public/paid expertise corpora | Per-corpus, optional |
+| Knowledge supplier | Domain practice (e.g. specialty consulting) | Team explicitly builds corpora to sell | Yes; per-contributor weights |
+
+We don't fork tiers for these — they're the same Team plan with different `access_level` choices.
+
+### Data model
+
+```sql
+organizations(
+  id UUID PK, slug TEXT UNIQUE, name TEXT,
+  tier TEXT DEFAULT 'team',
+  billing_customer_id TEXT,
+  stripe_connect_account_id TEXT,    -- cloud only; null in self-hosted
+  settings_json TEXT,
+  created_at, updated_at
+);
+
+organization_members(
+  org_id FK, user_id FK,
+  role TEXT,                          -- owner | admin | editor | viewer
+  invited_by TEXT, joined_at TEXT,
+  PRIMARY KEY (org_id, user_id)
+);
+
+audit_logs(
+  id UUID PK, org_id TEXT, actor_user_id TEXT,
+  action TEXT,                        -- corpus.create | doc.ingest | member.invite | access.change | ...
+  resource_type TEXT, resource_id TEXT,
+  metadata_json TEXT, ip_addr TEXT, created_at TEXT
+);
+
+ALTER TABLE corpora    ADD COLUMN org_id TEXT NULL;
+-- constraint: (owner_id IS NOT NULL) XOR (org_id IS NOT NULL)
+
+ALTER TABLE documents  ADD COLUMN contributor_user_id TEXT NULL;
+-- for org-owned corpora, tracks who ingested each doc
+```
+
+### Roles
+
+Four roles apply across every org corpus. v1 has no per-corpus ACL overrides:
+
+| Role | Members | Corpora | Settings | Audit log |
+|---|---|---|---|---|
+| owner | manage | full | all | view |
+| admin | manage | full | all except billing | view |
+| editor | view | create / ingest / compile | corpus-level access | — |
+| viewer | view | read-only (and queries via personal agent) | — | — |
+
+The existing per-route check (`owner_id == current_user_id`) extends to: user is corpus owner OR user is a member of `corpus.org_id` with role ≥ editor for writes, ≥ viewer for reads.
+
+### Team-only capture surfaces
+
+These don't make sense for a single user; they're only available in org workspaces.
+
+| Surface | What it does | Source kind |
+|---|---|---|
+| Slack `/noosphere` slash command | Save a thread or message into a chosen corpus | `user_capture` |
+| Per-corpus email forwarding | Each corpus gets a unique inbox; forward customer email, sales notes, alerts | `user_capture` |
+| Meeting transcripts | Paste or forward Granola/Otter/Fireflies output | `user_capture` |
+| Linear/Jira close hook | Closed tickets feed a "what we've fixed" KB | `user_capture` |
+
+All capture writes record `contributor_user_id`. Authoring (Write) remains available, but the team-tier emphasis is on **capture from the edge, synthesis by the system** — not coordinated authoring.
+
+### Team-only synthesis
+
+Compile recipes templated for orgs (each is a saved query against the existing compile primitive):
+
+- **Weekly digest** — what shipped, what shifted, what's blocked
+- **Decision log** — extract decisions and rationale from threads + meetings
+- **Customer-pain synthesis** — patterns across feedback corpora
+- **Onboarding pack** — auto-generated "what a new hire needs to know"
+- **Ops dashboards** — saved queries rendered as cards (hiring, sales, eng)
+
+Distill in team context interviews team members with org-aware prompt templates. Output is `source_kind=user_original` with `contributor_user_id` set — a way to capture tacit founder/expert knowledge before they leave.
+
+### Self-improving: "What we don't know yet"
+
+A per-org dashboard that surfaces low-confidence or zero-result queries from members and their agents. Output is a prioritized backlog: ingest these sources, interview these people via Distill, compile these topics. The team brain becomes self-driving: gaps surface, get filled, compound.
+
+### Self-hosted vs Cloud
+
+Same MIT/BSL line as personal:
+
+| Capability | Self-hosted (MIT) | Cloud (BSL) |
+|---|---|---|
+| Org primitives, members, roles, audit log | ✓ | ✓ |
+| Multi-contributor ingest, contributor attribution | ✓ | ✓ |
+| Org-level OAuth connectors | ✓ | ✓ |
+| Slack capture, email-to-corpus, transcripts | ✓ | ✓ |
+| Compile recipes, "what we don't know yet" dashboard | ✓ | ✓ |
+| Bring-your-own-Stripe at org level (direct, keep 100%) | ✓ | — |
+| Multi-tenant isolation (one server, many orgs) | — | ✓ |
+| Stripe Connect with 10% platform fee | — | ✓ |
+| Hosted billing, seat enforcement, email invites | — | ✓ |
+| Auth: minimal (single OIDC or basic password) | ✓ | — |
+| Auth: hosted SSO, magic-link email | — | ✓ |
+
+Self-hosted runs as a single org per instance — no multi-tenant complexity. Cloud is where one user belongs to a Personal workspace plus N orgs.
+
+### Roadmap
+
+Sequenced; deliverables gated on product clarity, not engineering hours.
+
+| Tag | Deliverable |
+|---|---|
+| **T-1** | Org primitives: orgs, members, invites, roles, workspace switcher, `corpora.org_id`, `documents.contributor_user_id`, role checks on all write/read paths, audit-log writes |
+| **T-2** | Org-level connectors: Notion / Drive / GitHub OAuth at org scope, shared connector configs |
+| **T-3** | Team-native capture: Slack `/noosphere`, per-corpus email forwarding, meeting transcript ingest |
+| **T-4** | Team compile recipes (weekly digest, decision log, customer-pain, onboarding pack), "What we don't know yet" dashboard |
+| **T-5** | Team Distill: org-aware interview templates, contributor attribution |
+| **T-6** | Per-contributor revenue weights (manual distribution by org owner; no auto-payout in v1) |
+
+#### T-1 sub-task breakdown (the foundation everything else depends on)
+
+| # | Task | Notes |
+|---|---|---|
+| **T-1.1** | Schema migration | New tables `organizations`, `organization_members`, `audit_logs`. New columns `corpora.org_id NULL`, `documents.contributor_user_id NULL`. Constraint `(corpora.owner_id IS NOT NULL) XOR (corpora.org_id IS NOT NULL)`. SQLite (self-hosted) and PostgreSQL (cloud) variants. |
+| **T-1.2** | Org models + CRUD | New module `noosphere/core/orgs.py`. Endpoints: `POST /orgs`, `GET /orgs/:id`, `PATCH /orgs/:id`, `DELETE /orgs/:id`. Slug uniqueness, owner = creator. |
+| **T-1.3** | Member ops + invites | Endpoints: `POST/GET/PATCH/DELETE /orgs/:id/members`, `POST /orgs/:id/invites`, `POST /orgs/invites/:token/accept`. Cloud uses email; self-hosted uses shared link tokens. |
+| **T-1.4** | Permission middleware | New helper `current_user_can(action, resource)` extending the existing `owner_id == user_id` check in `noosphere/api/routes.py`. Corpus writes: owner OR org member with role ≥ editor. Reads: ≥ viewer. Org settings: ≥ admin. Billing: owner only. Apply to **every** corpus mutation endpoint — no exceptions. |
+| **T-1.5** | Audit-log writes | Hook `audit_logs.insert()` async on: `corpus.create/delete`, `doc.ingest`, `member.invite/remove/role_change`, `access.change`, `corpus.transfer`. Endpoint `GET /orgs/:id/audit-logs` paginated, owner/admin only. No advanced filtering UI in v1. |
+| **T-1.6** | Workspace switcher (frontend) | Top-left of `#/main` shell: Personal · Org A · Org B · `+ Create org`. Switching changes active workspace context (corpus list, network search scope, settings). Active workspace stored in `localStorage`. |
+| **T-1.7** | Org creation + member-management UI | Modal: name + slug. Post-create redirects to org workspace and prompts to invite. Org settings page lists members + role dropdown + invite-by-email. |
+| **T-1.8** | Workspace-context threading | Every API call attaches `X-Noosphere-Workspace: personal\|org:<id>` header. Server returns 403 if requested resource doesn't match active workspace. Corpus list, network search, all settings endpoints — scope by header. **High scope-leak risk; needs explicit tests.** |
+| **T-1.9** | Contributor attribution UI | Document list shows contributor name when in org workspace. Per-corpus `Contributors` view (count of docs per member). Personal workspace: hidden. |
+| **T-1.10** | Tests | Permission boundary: personal user cannot read/write org corpus and vice versa. Scope leak: API request with mismatched workspace header rejected. Migration round-trip on existing data with NULL `org_id`. XOR constraint enforced. Role transitions (editor → viewer revokes write). |
+
+T-1 is done when: a self-hosted user can create an org, invite a teammate via shared link, both ingest into the same corpus, both see contributor names on documents, and a third non-member is correctly rejected — all with audit log entries recorded.
+
+### Pricing
+
+Team tier: **$49/seat/month**, 3–50 seats, unlimited corpora. All access levels available — including paid (10% platform fee on cloud, 0% self-hosted). Monetization is not the team headline; it's a quiet option in corpus settings, identical to the personal flow.
 
 ---
 
