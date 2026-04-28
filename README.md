@@ -23,6 +23,29 @@ Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publi
 5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 6. **A shared living brain for teams.** Most of what a team knows lives scattered across Slack threads, meeting transcripts, customer calls, design docs, tickets — none of it queryable by anyone, human or agent. Team Noosphere captures from the edge where work actually happens, synthesizes through compile and distill, and exposes one living record every member and every agent can query. Organizational memory survives turnover; the brain compounds as the team works.
 
+## The loop
+
+Noosphere is built around a virtuous cycle between human knowledge and agent capability:
+
+```
+   Humans create knowledge
+            ↓
+   Encoded as agent-readable substrate
+            ↓
+   AI compiles · maintains · grows
+            ↓
+   Network: corpora discover · subscribe · learn · transact
+            ↓
+   Any agent (peer Noosphere corpus or external AI)
+   queries · trains on · reasons with corpora
+            ↓
+   Value flows back to humans
+   (decisions, learning, new creation)
+            ↺ loop continues
+```
+
+Karpathy's LLM Wiki and Garry Tan's GBrain are early single-user instances of this loop — personal knowledge as agent-readable substrate, AI as the multiplier. Noosphere extends the loop across people: every corpus is itself an agentic node, and any agent — a peer Noosphere corpus, or an external AI in a company / app / developer environment — can consume from the network. Each step compounds the next: better substrate makes AI compile better, network learning makes individual corpora deeper, agents using the network surface gaps that humans then fill. The longer the loop runs, the more useful the whole system gets.
+
 ## The design
 
 How the five value propositions above are actually built.
@@ -52,6 +75,14 @@ Every corpus exposes the same small toolbox:
 
 `ask` respects access level (paid / token / public); `preview_ask` does not, so agents can evaluate paid KBs before committing.
 
+The same toolbox supports several use modes that recur in practice:
+
+- **Grounded Q&A** — an agent answers a user's question and grounds it in retrieved passages with citations. The most common case.
+- **Reasoning context** — an agent solving a complex task (a decision, a multi-step analysis, problem diagnosis) uses one or more corpora as substrate for its reasoning; each step's claims trace back to specific documents.
+- **Capability source** — a corpus is licensed (per `corpus licensing`) as fine-tuning or persistent RAG substrate for a derivative agent. The corpus stays the source of truth; new agents inherit the underlying knowledge.
+
+Discovery serves all three. Both **in-network agents** (peer corpora subscribing to or routing across each other) and **out-of-network agents** (a company's AI, a developer's app, a research org's tool) use the same machinery — manifest, `kb_reputation`, `preview_ask`, the citation graph — to find and evaluate corpora. Both classes are first-order consumers; as the network grows, this discovery + evaluation infrastructure becomes its central asset.
+
 ### Discovery and trust
 
 Every corpus has a machine-readable **manifest** — its identity card: task types, sample Q&A, source composition, calibration policy, license terms. Agents read it to decide whether you're worth querying.
@@ -64,11 +95,11 @@ Discovery is signal-based, not attention-based. Four tiers:
 
 ### Autonomy and inter-KB learning
 
-Autonomy is layered, opt-in:
-- **L0 responsive** (default) — answers when queried
-- **L1 subscribing** — ingests live updates from other KBs
-- **L2 synthesizing** — compiles new skills from what it consumes (the "Cooking Stack" pattern)
-- **L3 proactive** — persona, outbound queries, initiative
+Every corpus is itself an agentic node. Networking is the substrate — every corpus is reachable in the network by default. Autonomy is the dial: how much of the network the corpus consumes and acts on without prompting. Three tiers, opt-in by the owner:
+
+- **Static** (default) — manual sources, manual compile. Answers queries on demand.
+- **Living** — auto-ingests from connected feeds; keeps compiled Wiki, entities, and timelines in sync as sources change.
+- **Fully Autonomous** — actively discovers relevant peer corpora across the network, subscribes to them, pays for paid corpora within owner-set policy, compiles new knowledge from absorbed content, and grows over time without prompting.
 
 Inter-KB queries carry provenance (`X-Noosphere-Caller-Corpus`) and auto-record citations in a directed graph. Each edge is weighted by the citing KB's own reputation, so trust compounds recursively and feeds back into `kb_reputation`.
 

@@ -571,7 +571,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .mc-toggle{display:flex;border:1px solid var(--brd);border-radius:8px;overflow:hidden}
 .mc-toggle button{padding:4px 10px;border:none;background:transparent;font-size:11px;color:var(--tx2);cursor:pointer;font-weight:500;transition:background .12s,color .12s}
 .mc-toggle button.active{background:var(--bgH);color:var(--tx)}
-.mc-list{display:flex;flex-direction:column;overflow-y:auto;flex:1}
+.mc-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;overflow-y:auto;flex:1;align-content:start;padding:4px 4px 24px}
 .chats-list{display:flex;flex-direction:column;overflow-y:auto;flex:1}
 .chats-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 4px;cursor:pointer;border-bottom:1px solid var(--brd);transition:background .12s}
 .chats-row:first-child{border-top:1px solid var(--brd)}
@@ -583,29 +583,29 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .chats-row-del{flex-shrink:0;width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--tx3);cursor:pointer;opacity:0;transition:opacity .15s,background .12s,color .12s;display:flex;align-items:center;justify-content:center}
 .chats-row:hover .chats-row-del{opacity:1}
 .chats-row-del:hover{background:var(--brd);color:#ef4444}
-.mc-card{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:24px 4px;cursor:pointer;border-bottom:1px solid var(--brd);transition:background .12s}
-.mc-card:first-child{border-top:1px solid var(--brd)}
-.mc-card:hover{background:var(--bgH)}
+.mc-card{display:flex;flex-direction:column;gap:10px;padding:20px 20px 18px;cursor:pointer;border:1px solid var(--brd);border-radius:12px;background:var(--bg2);position:relative;min-height:160px;transition:border-color .15s,background .12s}
+.mc-card:hover{border-color:var(--tx3);background:var(--bgH)}
 .mc-card:hover .mc-card-more{opacity:1}
-.mc-card-body{flex:1;min-width:0}
-.mc-card-top{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap}
-.mc-card-name{font-family:'Libre Baskerville',Georgia,serif;font-size:20px;font-weight:700;color:var(--tx);text-decoration:none;letter-spacing:-0.005em;line-height:1.25;transition:opacity .12s}.mc-card-name:hover{opacity:.6}
+.mc-card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.mc-card-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-right:32px}
+.mc-card-name{font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:700;color:var(--tx);text-decoration:none;letter-spacing:-0.005em;line-height:1.3;transition:opacity .12s}.mc-card-name:hover{opacity:.6}
 .mc-badge{font-size:10px;font-weight:500;padding:1px 7px;border-radius:12px;border:1px solid var(--brd);color:var(--tx3);line-height:1.6;flex-shrink:0}
 .mc-badge-private{color:var(--org);border-color:var(--org)}
 .mc-badge-token{color:var(--org);border-color:var(--org)}
 .mc-badge-paid{color:var(--grn);border-color:var(--grn);font-variant-numeric:tabular-nums}
 .mc-meta-empty{font-style:italic;opacity:.7}
-.mc-card-desc{font-size:14px;color:var(--tx2);line-height:1.55;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.mc-card-desc-empty{font-size:13px;color:var(--tx3);font-style:italic;margin-bottom:12px}
-.mc-card-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-.mc-card-meta{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.mc-card-desc{font-size:13px;color:var(--tx2);line-height:1.55;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.mc-card-desc-empty{font-size:12px;color:var(--tx3);font-style:italic;margin:0}
+.mc-card-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0}
+.mc-card-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:auto;padding-top:8px;border-top:1px solid var(--brd)}
 .mc-meta-item{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--tx3);font-variant-numeric:tabular-nums}
 .mc-meta-item svg{flex-shrink:0;opacity:.7}
 .mc-meta-sep{color:var(--tx3);opacity:.5}
 .mc-meta-compiled{color:var(--tx2);font-weight:500}
 .mc-meta-updated{margin-left:auto}
 .mc-meta-tag{font-size:11px;padding:2px 9px;border-radius:12px;background:var(--accBg);color:var(--tx2);font-weight:500}
-.mc-card-more{flex-shrink:0;width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--tx3);font-size:16px;cursor:pointer;opacity:0;transition:opacity .15s,background .12s;display:flex;align-items:center;justify-content:center;letter-spacing:1px;margin-top:2px}.mc-card-more:hover{background:var(--brd)}
+.mc-card-actions{position:absolute;top:12px;right:12px}
+.mc-card-more{flex-shrink:0;width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--tx3);font-size:16px;cursor:pointer;opacity:0;transition:opacity .15s,background .12s;display:flex;align-items:center;justify-content:center;letter-spacing:1px}.mc-card-more:hover{background:var(--brd)}
 .mc-graph{flex:1;position:relative}
 
 /* ── Network ── */
@@ -828,6 +828,15 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .doc-edit-inline{animation:termFadeIn .2s ease-out}
 .doc-edit-title{width:100%;padding:8px 0;border-radius:0;border:none;border-bottom:1px solid var(--brd);background:transparent;color:var(--tx);font-size:14px;font-weight:600;font-family:inherit;outline:none;margin-bottom:8px;transition:border-color .2s}.doc-edit-title:focus{border-color:var(--tx3)}
 .doc-edit-content{width:100%;padding:8px 0;border-radius:0;border:none;border-bottom:1px solid var(--brd);background:transparent;color:var(--tx);font-size:13px;line-height:1.6;font-family:inherit;outline:none;resize:vertical;min-height:120px;transition:border-color .2s}.doc-edit-content:focus{border-color:var(--tx3)}
+.doc-edit-meta{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.doc-edit-meta-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx3)}
+.doc-edit-meta-row label{flex-shrink:0;width:48px}
+.doc-edit-meta-row input{flex:1;padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:12px;outline:none;font-family:inherit}
+.doc-edit-meta-row input:focus{border-color:var(--tx3)}
+.doc-edit-origin{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--tx3)}
+.doc-edit-origin label{flex-shrink:0;width:48px}
+.doc-edit-origin select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:12px;outline:none;cursor:pointer;flex:1;font-family:inherit}
+.doc-edit-origin select:focus{border-color:var(--tx3)}
 .doc-edit-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
 
 /* ── Write page ── */
@@ -860,7 +869,9 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .empty{text-align:center;padding:30px 16px;color:var(--tx3);font-size:13px}
 
 /* ── Corpus card menu ── */
-.mc-card-actions{position:relative;flex-shrink:0}
+/* Card-grid layout: .mc-card-actions is positioned absolute in top-right
+   of each card (see .mc-card-actions earlier). The `position:relative`
+   wrapper here is what the dropdown menu anchors to. */
 .mc-menu{position:absolute;right:0;top:100%;z-index:20;min-width:120px;background:var(--bg2);border:1px solid var(--brd);border-radius:8px;box-shadow:var(--shM);overflow:hidden;margin-top:4px}
 .mc-menu-item{display:block;width:100%;padding:8px 14px;border:none;background:transparent;color:var(--tx);font-size:12px;cursor:pointer;text-align:left;font-family:inherit;transition:background .12s}
 .mc-menu-item:hover{background:var(--bgH)}

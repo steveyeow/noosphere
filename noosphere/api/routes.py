@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, U
 from pydantic import BaseModel
 
 from noosphere import __version__
-from noosphere.core.corpus import LOCAL_OWNER_ID, list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus, source_composition
+from noosphere.core.corpus import LOCAL_OWNER_ID, DuplicateCorpusName, list_corpora, list_user_corpora, get_corpus, get_corpus_by_slug, create_corpus, update_corpus, delete_corpus, source_composition
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
@@ -251,6 +251,11 @@ class TerminalRequest(BaseModel):
     # never reaches /terminal, but we accept it here defensively so a
     # future move of that logic to the backend doesn't break the schema.
     mode: str = "enrich"
+    # Active corpus when sent from a corpus-scoped composer (corpus detail
+    # page dock, or the home composer with a chip selection). When set, the
+    # URL/note path skips the "Which corpus?" picker and ingests directly,
+    # and the route persists the round-trip as a chat session.
+    corpus_id: Optional[str] = None
 
 
 class CreateCorpusRequest(BaseModel):
@@ -272,11 +277,29 @@ class UpdateCorpusRequest(BaseModel):
     access_level: Optional[str] = None
     tags: Optional[list[str]] = None
     owned_handles: Optional[list[str]] = None
+    # Settable at create — historically locked once the corpus existed, so a
+    # typo at create time stuck. All four are user-visible (language gates
+    # search behavior; license + author surface in the public manifest).
+    language: Optional[str] = None
+    license_: Optional[str] = None
+    author_name: Optional[str] = None
+    author_url: Optional[str] = None
 
 
 class UpdateDocumentRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
+    # Source attribution — kept editable post-import so users can correct a
+    # doc that was misclassified at ingest time (e.g. a JS-blocked URL that
+    # came in as external_public but the user later pastes their own text).
+    # Validated against the same allow-list used at ingest time.
+    source_kind: Optional[str] = None
+    # date and metadata are extracted at ingest from HTML <meta> tags / file
+    # frontmatter and are frequently wrong (LLM-generated dummies, missing
+    # or misformatted). Allow post-hoc edits so users don't have to delete
+    # and re-ingest just to fix an author or publish date.
+    date: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 class IngestURLRequest(BaseModel):
@@ -386,14 +409,108 @@ async def api_terminal(req: TerminalRequest, request: Request):
     owner_id = actor_uid if _is_cloud() else ""
     org_id = active_org if kind == "org" else ""
     quota_check = (lambda: _check_corpus_limit(request)) if req.mode == "create" else None
-    return handle_terminal_input(
+    result = handle_terminal_input(
         req.input, req.context,
         mode=req.mode,
         owner_id=owner_id,
         org_id=org_id,
         contributor_user_id=actor_uid,
         quota_check=quota_check,
+        corpus_id=req.corpus_id,
     )
+
+    # Persist the round-trip as a chat session when scoped to a known corpus,
+    # so the user finds it in the Chats sidebar afterward. Only persist when
+    # the corpus actually resolved (skip mid-flow picker prompts and unknown
+    # ids) and never persist Create-mode (it's about to land on a different
+    # corpus the user has not opened yet).
+    if req.corpus_id and req.mode != "create":
+        ctx = result.get("context") or {}
+        if ctx.get("state") != "pick_corpus":
+            persisted = _persist_terminal_chat(
+                corpus_id=req.corpus_id,
+                user_input=req.input,
+                lines=result.get("lines") or [],
+                session_id=(req.context or {}).get("session_id"),
+            )
+            if persisted:
+                ctx["session_id"] = persisted
+                result["context"] = ctx
+                result["session_id"] = persisted
+
+    return result
+
+
+def _persist_terminal_chat(
+    *,
+    corpus_id: str,
+    user_input: str,
+    lines: list,
+    session_id: str | None,
+) -> str | None:
+    """Mirror the corpus chat path: append user + assistant rows so /terminal
+    interactions inside a corpus surface in the Chats sidebar like any other
+    chat. Returns the session id (new or extended), or None if the corpus
+    can't be resolved.
+    """
+    import uuid
+    from datetime import datetime, timezone
+
+    corpus = get_corpus(corpus_id)
+    if not corpus:
+        return None
+
+    conn = get_conn()
+    now = datetime.now(timezone.utc).isoformat()
+
+    if session_id:
+        # Verify the session still exists — the row could have been deleted
+        # (cascade from corpus delete, manual /chat-sessions/{id} DELETE, or
+        # workspace switch). Without this check, we silently INSERT messages
+        # against a dead session_id and the user's "continued" conversation
+        # would never appear in the sidebar.
+        existing = conn.execute(
+            "SELECT id FROM chat_sessions WHERE id=? AND corpus_id=?",
+            (session_id, corpus["id"]),
+        ).fetchone()
+        if not existing:
+            session_id = None  # fall through to create-fresh path
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        title = (user_input or "").strip()[:80] or "Conversation"
+        conn.execute(
+            "INSERT INTO chat_sessions (id, corpus_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (session_id, corpus["id"], title, now, now),
+        )
+    else:
+        conn.execute("UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id))
+
+    conn.execute(
+        "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), session_id, "user", user_input, now),
+    )
+
+    # Flatten the assistant response — terminal returns a list of typed lines
+    # (resp/option/card). Concatenate the human-readable text fields so the
+    # sidebar preview and the future re-open of this session show what Noos
+    # actually said.
+    assistant_text = "\n".join(
+        (ln.get("text") or "").strip()
+        for ln in lines
+        if isinstance(ln, dict) and ln.get("type") in ("resp", "option") and ln.get("text")
+    ).strip()
+    if not assistant_text:
+        # Cards are the only non-text line type carrying meaning — fall back
+        # to a one-liner so the row isn't empty.
+        assistant_text = "(action completed)"
+
+    conn.execute(
+        "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), session_id, "assistant", assistant_text, now),
+    )
+    conn.commit()
+    return session_id
 
 
 def _resolve_corpus(corpus_id: str) -> dict:
@@ -641,11 +758,22 @@ async def api_create_corpus(req: CreateCorpusRequest, request: Request, backgrou
     if resolved_access is None:
         resolved_access = "private" if scope_org_id else "public"
 
-    corpus = create_corpus(
-        req.name, description=req.description, author_name=req.author_name,
-        tags=req.tags, access_level=resolved_access, language=req.language,
-        owner_id=owner_id, org_id=scope_org_id,
-    )
+    try:
+        corpus = create_corpus(
+            req.name, description=req.description, author_name=req.author_name,
+            tags=req.tags, access_level=resolved_access, language=req.language,
+            owner_id=owner_id, org_id=scope_org_id,
+        )
+    except DuplicateCorpusName as dup:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "duplicate_corpus_name",
+                "message": f"A corpus named '{dup.name}' already exists in this workspace.",
+                "existing_corpus_id": dup.existing_id,
+                "name": dup.name,
+            },
+        )
 
     if scope_org_id:
         orgs_mod.log_audit(
@@ -1009,6 +1137,35 @@ async def api_get_corpus(corpus_id: str, request: Request):
     return corpus
 
 
+# ── llms.txt / llms-full.txt (https://llmstxt.org) ────────────────────
+# Per-corpus static-text views for any LLM/agent that wants to read the
+# corpus in one fetch — no API integration, no exporter. Reuses the same
+# access gating as the JSON corpus endpoint; private corpora 403.
+
+@router.get("/corpora/{corpus_id}/llms.txt")
+async def api_llms_index(corpus_id: str, request: Request):
+    """Markdown index of the corpus — title, description, document list."""
+    from fastapi.responses import PlainTextResponse
+    from noosphere.core.llmstxt import render_llms_index
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    docs = get_documents(corpus["id"])
+    text = render_llms_index(corpus, docs, base_path="/api/v1")
+    return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
+
+
+@router.get("/corpora/{corpus_id}/llms-full.txt")
+async def api_llms_full(corpus_id: str, request: Request):
+    """Full-text dump — corpus header followed by every published document inlined."""
+    from fastapi.responses import PlainTextResponse
+    from noosphere.core.llmstxt import render_llms_full
+    corpus = _resolve_corpus(corpus_id)
+    _check_corpus_access(corpus, request)
+    docs = get_documents(corpus["id"])
+    text = render_llms_full(corpus, docs)
+    return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
+
+
 def _corpus_source_kind_breakdown(corpus_id: str) -> dict[str, int]:
     """Count documents per source_kind for a corpus.
 
@@ -1081,12 +1238,28 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    # The pydantic model uses license_ (license is reserved), but the DB
+    # column is "license". Rename on the way in so update_corpus's allow-list
+    # accepts it.
+    if "license_" in updates:
+        updates["license"] = updates.pop("license_")
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     new_access_level = updates.get("access_level")
-    if new_access_level and new_access_level != corpus.get("access_level"):
+    cur_access = corpus.get("access_level")
+    if new_access_level and new_access_level != cur_access:
         _require_originals_for_public_access(corpus_id, new_access_level)
     result = update_corpus(corpus_id, **updates)
+    # Access-level demotion to private should not silently leave existing
+    # access tokens working — revoke them so the user's private flip is a
+    # real boundary, not just a UI label change.
+    if new_access_level == "private" and cur_access in ("public", "token", "paid"):
+        try:
+            conn = get_conn()
+            conn.execute("DELETE FROM access_tokens WHERE corpus_id=?", (corpus_id,))
+            conn.commit()
+        except Exception:
+            pass
     # Keep the pinned manifest doc in sync with the canonical fields so the
     # README-as-doc view reflects edits immediately (description, tags,
     # access_level, calibration_policy, etc.).
@@ -1181,6 +1354,9 @@ async def api_get_document(corpus_id: str, doc_id: str, request: Request):
     return doc
 
 
+_VALID_SOURCE_KINDS = ("user_original", "external_public", "external_subscription")
+
+
 @router.patch("/corpora/{corpus_id}/documents/{doc_id}")
 async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
@@ -1188,6 +1364,8 @@ async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRe
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if "source_kind" in updates and updates["source_kind"] not in _VALID_SOURCE_KINDS:
+        raise HTTPException(status_code=400, detail=f"source_kind must be one of {_VALID_SOURCE_KINDS}")
     result = update_document(doc_id, **updates)
     if not result:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -1227,43 +1405,64 @@ async def api_upload_files(
     _check_quota(request, "index")
     _check_document_limit(request, corpus["id"])
     results = []
+    errors: list[dict] = []
     for f in files:
-        ext = (f.filename or "").rsplit(".", 1)[-1].lower()
+        fname = f.filename or "Untitled"
+        ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
         raw = await f.read()
 
-        if ext == "pdf":
-            body = _extract_pdf_text(raw)
-            title = (f.filename or "Untitled").rsplit(".", 1)[0]
-            metadata, doc_type = {}, "paper"
-        elif ext == "docx":
-            body = _extract_docx_text(raw)
-            title = (f.filename or "Untitled").rsplit(".", 1)[0]
-            metadata, doc_type = {}, "doc"
-        elif ext == "csv":
-            content = raw.decode("utf-8", errors="replace")
-            body = _extract_csv_text(content)
-            title = (f.filename or "Untitled").rsplit(".", 1)[0]
-            metadata, doc_type = {}, "data"
-        elif ext in ("json", "jsonl"):
-            content = raw.decode("utf-8", errors="replace")
-            if ext == "jsonl":
-                import json as _j
-                lines = [_j.loads(line) for line in content.strip().splitlines() if line.strip()]
-                body = _extract_json_text(_json.dumps(lines))
+        try:
+            if ext == "pdf":
+                body = _extract_pdf_text(raw)
+                title = fname.rsplit(".", 1)[0]
+                metadata, doc_type = {}, "paper"
+            elif ext == "docx":
+                body = _extract_docx_text(raw)
+                title = fname.rsplit(".", 1)[0]
+                metadata, doc_type = {}, "doc"
+            elif ext == "csv":
+                content = raw.decode("utf-8", errors="replace")
+                body = _extract_csv_text(content)
+                title = fname.rsplit(".", 1)[0]
+                metadata, doc_type = {}, "data"
+            elif ext in ("json", "jsonl"):
+                content = raw.decode("utf-8", errors="replace")
+                if ext == "jsonl":
+                    import json as _j
+                    lines = [_j.loads(line) for line in content.strip().splitlines() if line.strip()]
+                    body = _extract_json_text(_json.dumps(lines))
+                else:
+                    body = _extract_json_text(content)
+                title = fname.rsplit(".", 1)[0]
+                metadata, doc_type = {}, "data"
             else:
-                body = _extract_json_text(content)
-            title = (f.filename or "Untitled").rsplit(".", 1)[0]
-            metadata, doc_type = {}, "data"
-        else:
-            content = raw.decode("utf-8", errors="replace")
-            if not content.strip():
-                continue
-            from noosphere.core.ingest import _extract_markdown_metadata, _extract_markdown_title
-            metadata, body = _extract_markdown_metadata(content)
-            title = metadata.get("title") or _extract_markdown_title(body) or (f.filename or "Untitled").rsplit(".", 1)[0]
-            doc_type = "doc" if ext in ("md", "markdown", "html", "htm") else "note"
+                content = raw.decode("utf-8", errors="replace")
+                if not content.strip():
+                    errors.append({"file": fname, "error": "file is empty"})
+                    continue
+                from noosphere.core.ingest import _extract_markdown_metadata, _extract_markdown_title
+                metadata, body = _extract_markdown_metadata(content)
+                title = metadata.get("title") or _extract_markdown_title(body) or fname.rsplit(".", 1)[0]
+                doc_type = "doc" if ext in ("md", "markdown", "html", "htm") else "note"
+        except Exception as e:
+            errors.append({"file": fname, "error": f"could not extract text: {e}"})
+            continue
 
         if not body or not body.strip():
+            errors.append({"file": fname, "error": "no readable text extracted (empty or unsupported encoding)"})
+            continue
+
+        # PDFs and DOCX files extract junk when the source is corrupted, image-only,
+        # or password-protected — yielding a few stray words from headers/watermarks.
+        # Reject anything under 10 words from binary formats so the user sees the
+        # failure instead of finding a useless "document" later. Plain-text formats
+        # have no floor — short notes are legitimate.
+        word_count = len(body.split())
+        if ext in ("pdf", "docx") and word_count < 10:
+            errors.append({
+                "file": fname,
+                "error": f"only {word_count} words extracted — likely corrupted, scanned-image-only, or password-protected",
+            })
             continue
 
         tags_str = metadata.get("tags", "") if isinstance(metadata, dict) else ""
@@ -1288,7 +1487,12 @@ async def api_upload_files(
                     metadata={"corpus_id": corpus["id"], "title": d["title"], "source": "upload"},
                     ip_addr=_client_ip(request),
                 )
-    return {"uploaded": len(results), "documents": results}
+    return {
+        "uploaded": len(results),
+        "failed": len(errors),
+        "documents": results,
+        "errors": errors,
+    }
 
 
 # ── URL ingestion ──
@@ -2627,22 +2831,60 @@ async def api_list_chat_sessions(request: Request, limit: int = 20):
 
 
 @router.get("/chat-sessions/{session_id}")
-async def api_get_chat_session(session_id: str):
-    """Get a chat session with all its messages."""
+async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 0):
+    """Get a chat session with its messages, paginated.
+
+    ``limit`` is capped at 1000 to keep a single response bounded — sessions
+    longer than that are rare today, but unbounded reads of the messages
+    table would slow the UI noticeably and were a real risk on long-lived
+    chats. Citation titles are re-resolved against the current document
+    rows so renames/deletes stop showing stale labels in past replies.
+    """
+    limit = max(1, min(int(limit), 1000))
+    offset = max(0, int(offset))
     conn = get_conn()
     session = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (session_id,)).fetchone()
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
-    messages = conn.execute(
-        "SELECT id, role, content, citations_json, created_at FROM chat_messages WHERE session_id=? ORDER BY created_at ASC",
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM chat_messages WHERE session_id=?",
         (session_id,),
+    ).fetchone()["n"]
+    messages = conn.execute(
+        "SELECT id, role, content, citations_json, created_at FROM chat_messages "
+        "WHERE session_id=? ORDER BY created_at ASC LIMIT ? OFFSET ?",
+        (session_id, limit, offset),
     ).fetchall()
     result = dict(session)
+    result["message_count"] = total
     result["messages"] = []
     for m in messages:
         msg = dict(m)
         if msg.get("citations_json"):
-            msg["citations"] = _json.loads(msg["citations_json"])
+            cites = _json.loads(msg["citations_json"])
+            # Resolve titles fresh: a doc renamed since the chat happened
+            # would otherwise display its stale title forever. A deleted
+            # doc gets a clear "[deleted]" marker rather than a dangling
+            # stale name pointing nowhere.
+            if isinstance(cites, list):
+                doc_ids = [c.get("document_id") for c in cites if isinstance(c, dict) and c.get("document_id")]
+                if doc_ids:
+                    placeholders = ",".join("?" for _ in doc_ids)
+                    rows = conn.execute(
+                        f"SELECT id, title FROM documents WHERE id IN ({placeholders})",
+                        doc_ids,
+                    ).fetchall()
+                    title_by_id = {r["id"]: r["title"] for r in rows}
+                    for c in cites:
+                        if not isinstance(c, dict):
+                            continue
+                        did = c.get("document_id")
+                        if did and did in title_by_id:
+                            c["document_title"] = title_by_id[did]
+                        elif did:
+                            c["document_title"] = "[deleted source]"
+                            c["deleted"] = True
+            msg["citations"] = cites
         msg.pop("citations_json", None)
         result["messages"].append(msg)
     return result

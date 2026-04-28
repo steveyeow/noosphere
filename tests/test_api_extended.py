@@ -120,8 +120,11 @@ def test_index_blocked_for_agents(client, corpus):
 
 @patch("httpx.get")
 def test_ingest_url_api(mock_get, client, corpus):
+    # Body must clear the min-content-length floor in ingest._reject_blocked_fetch
+    # (≥50 words) — anything shorter is rejected as a probable login/paywall.
+    body_words = " ".join(["lorem ipsum dolor sit amet"] * 20)
     mock_resp = MagicMock()
-    mock_resp.text = "<html><head><title>Test Page</title></head><body><p>Some content about testing and knowledge.</p></body></html>"
+    mock_resp.text = f"<html><head><title>Test Page</title></head><body><p>{body_words}</p></body></html>"
     mock_resp.raise_for_status = MagicMock()
     mock_get.return_value = mock_resp
     r = client.post(
@@ -131,6 +134,42 @@ def test_ingest_url_api(mock_get, client, corpus):
     assert r.status_code == 200
     data = r.json()
     assert "id" in data
+
+
+@patch("httpx.get")
+def test_ingest_url_rejects_blocked_login_wall(mock_get, client, corpus):
+    """Paste an X.com-style JS-disabled fallback page → ingest fails loudly
+    instead of storing the wall HTML as a 'document'. Regression guard for
+    the bug Steve hit on https://x.com/.../status/."""
+    mock_resp = MagicMock()
+    mock_resp.text = (
+        "<html><head><title>X</title></head><body>"
+        "<p>JavaScript is not available.</p>"
+        "<p>We've detected that JavaScript is disabled in this browser.</p>"
+        "</body></html>"
+    )
+    mock_resp.raise_for_status = MagicMock()
+    mock_get.return_value = mock_resp
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/ingest-url",
+        json={"url": "https://x.com/example/status/123"},
+    )
+    assert r.status_code >= 400
+
+
+@patch("httpx.get")
+def test_ingest_url_rejects_too_short_body(mock_get, client, corpus):
+    """A 200 OK with only a few words extracted is almost always a paywall;
+    refuse rather than file the snippet as a real article."""
+    mock_resp = MagicMock()
+    mock_resp.text = "<html><body><p>Subscribe to read.</p></body></html>"
+    mock_resp.raise_for_status = MagicMock()
+    mock_get.return_value = mock_resp
+    r = client.post(
+        f"/api/v1/corpora/{corpus['id']}/ingest-url",
+        json={"url": "https://example.com/paywalled"},
+    )
+    assert r.status_code >= 400
 
 
 # ── Stats ──
@@ -737,12 +776,17 @@ def test_ingest_url_sets_author_from_meta(client, corpus, monkeypatch):
     from noosphere.core.ingest import ingest_url
     import httpx
 
+    # Body kept ≥50 words so the new content-length check in
+    # ingest._reject_blocked_fetch (which catches login/paywall pages)
+    # doesn't reject this otherwise-valid mock article.
+    _body = " ".join(["one should read widely and often"] * 12)
+
     class _Resp:
         status_code = 200
         text = (
             '<html><head><title>How to Read</title>'
             '<meta name="author" content="Paul Graham" /></head>'
-            '<body><h1>How to Read</h1><p>One should read widely.</p></body></html>'
+            f'<body><h1>How to Read</h1><p>{_body}</p></body></html>'
         )
         def raise_for_status(self):
             pass
@@ -783,3 +827,213 @@ def test_compile_endpoint_mock(client, corpus_with_doc, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json().get("doc_type") == "concept"
+
+
+# ── llms.txt / llms-full.txt (https://llmstxt.org) ────────────────────
+
+
+def _public_corpus_with_docs(client, name="LLMs Test"):
+    """Helper: public corpus with one user_original + one external_public doc."""
+    from noosphere.core.ingest import ingest_text
+    r = client.post("/api/v1/corpora", json={
+        "name": name,
+        "description": "A corpus for testing llms.txt rendering.",
+        "tags": ["test"],
+        "access_level": "public",
+    })
+    assert r.status_code == 200
+    c = r.json()
+    ingest_text(c["id"], title="Original Note", content="Body of my own note.", source_kind="user_original")
+    ingest_text(c["id"], title="External Blog", content="Imported third-party content.", source_kind="external_public")
+    return c
+
+
+def test_llmstxt_index_public_corpus(client):
+    c = _public_corpus_with_docs(client)
+    r = client.get(f"/api/v1/corpora/{c['id']}/llms.txt")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    body = r.text
+    assert body.startswith(f"# {c['name']}")
+    assert "> A corpus for testing llms.txt rendering." in body
+    # Originals included; external_* filtered out (mirrors EXTERNAL_ALLOWED_SOURCE_KINDS).
+    assert "Original Note" in body
+    assert "External Blog" not in body
+    assert "- Documents: 1" in body
+
+
+def test_llmstxt_full_public_corpus(client):
+    c = _public_corpus_with_docs(client, name="Full Dump Corpus")
+    r = client.get(f"/api/v1/corpora/{c['id']}/llms-full.txt")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    body = r.text
+    assert body.startswith(f"# {c['name']}")
+    assert "## Original Note" in body
+    assert "Body of my own note." in body
+    # External material must not appear in either header or body.
+    assert "External Blog" not in body
+    assert "Imported third-party content." not in body
+
+
+def test_llmstxt_empty_corpus_returns_valid_header(client):
+    r = client.post("/api/v1/corpora", json={"name": "Empty One", "access_level": "public"})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+    for path in ("llms.txt", "llms-full.txt"):
+        r2 = client.get(f"/api/v1/corpora/{cid}/{path}")
+        assert r2.status_code == 200, f"{path} failed: {r2.status_code} {r2.text}"
+        assert r2.text.startswith("# Empty One")
+        assert "_No documents yet._" in r2.text
+
+
+def test_llmstxt_private_corpus_blocked_for_external_caller(client):
+    r = client.post("/api/v1/corpora", json={"name": "Private", "access_level": "private"})
+    cid = r.json()["id"]
+    # External caller (x-agent-id forces non-owner detection) must hit the gate.
+    r2 = client.get(
+        f"/api/v1/corpora/{cid}/llms.txt",
+        headers={"x-agent-id": "agent-1"},
+    )
+    assert r2.status_code == 403
+
+
+def test_llmstxt_token_corpus_requires_bearer(client):
+    from noosphere.core.tokens import create_token
+    r = client.post("/api/v1/corpora", json={"name": "Token KB", "access_level": "public"})
+    cid = r.json()["id"]
+    # Need at least one user_original to flip to token (publish guard).
+    from noosphere.core.ingest import ingest_text
+    ingest_text(cid, title="Mine", content="my body", source_kind="user_original")
+    client.patch(f"/api/v1/corpora/{cid}", json={"access_level": "token"})
+    tok = create_token(cid, label="t")["token"]
+
+    # Without bearer (and forcing external) → 401.
+    r1 = client.get(
+        f"/api/v1/corpora/{cid}/llms.txt",
+        headers={"x-agent-id": "agent-1"},
+    )
+    assert r1.status_code == 401
+
+    # With valid bearer → 200 + content.
+    r2 = client.get(
+        f"/api/v1/corpora/{cid}/llms.txt",
+        headers={"x-agent-id": "agent-1", "Authorization": f"Bearer {tok}"},
+    )
+    assert r2.status_code == 200
+    assert "Mine" in r2.text
+
+
+def test_llmstxt_nonexistent_corpus_returns_404(client):
+    r = client.get("/api/v1/corpora/does-not-exist/llms.txt")
+    assert r.status_code == 404
+    r2 = client.get("/api/v1/corpora/does-not-exist/llms-full.txt")
+    assert r2.status_code == 404
+
+
+# ── Site-root /llms.txt + /c/{slug}/llms.txt (agent-discovery surface) ──
+
+
+def test_site_llmstxt_lists_only_public_corpora(client):
+    """Site root /llms.txt advertises only the corpora a fresh agent can fetch."""
+    r1 = client.post("/api/v1/corpora", json={"name": "PubA", "access_level": "public"})
+    pub_a = r1.json()
+    r2 = client.post("/api/v1/corpora", json={"name": "PrivB", "access_level": "private"})
+    r3 = client.post("/api/v1/corpora", json={"name": "TokC", "access_level": "public"})
+    tok_c = r3.json()
+    # Need an original document before flipping to token (publish guard).
+    from noosphere.core.ingest import ingest_text
+    ingest_text(tok_c["id"], title="orig", content="body", source_kind="user_original")
+    client.patch(f"/api/v1/corpora/{tok_c['id']}", json={"access_level": "token"})
+
+    r = client.get("/llms.txt")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    body = r.text
+    assert body.startswith("# Noosphere")
+    assert "## Knowledge bases" in body
+    # Slug-based link to public corpus, no link to private/token.
+    assert f"/c/{pub_a['slug']}/llms.txt" in body
+    assert "PrivB" not in body
+    assert "TokC" not in body
+
+
+def test_site_llmstxt_empty_when_no_public_corpora(client):
+    # Fresh DB has no corpora; the empty-state still returns 200 with valid markdown.
+    r = client.get("/llms.txt")
+    assert r.status_code == 200
+    assert r.text.startswith("# Noosphere")
+    assert "_No public corpora yet._" in r.text
+
+
+def test_corpus_llmstxt_by_slug_matches_id_route(client):
+    c = _public_corpus_with_docs(client, name="Slug Match Test")
+    r_id = client.get(f"/api/v1/corpora/{c['id']}/llms.txt")
+    r_slug = client.get(f"/c/{c['slug']}/llms.txt")
+    assert r_id.status_code == 200
+    assert r_slug.status_code == 200
+    assert r_id.text == r_slug.text
+    # Both report text/markdown.
+    assert r_id.headers["content-type"].startswith("text/markdown")
+    assert r_slug.headers["content-type"].startswith("text/markdown")
+
+
+def test_corpus_llmstxt_by_slug_full_dump(client):
+    c = _public_corpus_with_docs(client, name="Slug Full Dump")
+    r = client.get(f"/c/{c['slug']}/llms-full.txt")
+    assert r.status_code == 200
+    assert "Body of my own note." in r.text
+    # External material remains filtered out via the slug route too.
+    assert "Imported third-party content." not in r.text
+
+
+def test_corpus_llmstxt_by_slug_private_blocked(client):
+    r = client.post("/api/v1/corpora", json={"name": "Slug Private", "access_level": "private"})
+    slug = r.json()["slug"]
+    # No owner bypass for the public llms.txt routes — private always 403.
+    r2 = client.get(f"/c/{slug}/llms.txt")
+    assert r2.status_code == 403
+
+
+def test_corpus_llmstxt_by_slug_unknown_returns_404(client):
+    r = client.get("/c/no-such-slug/llms.txt")
+    assert r.status_code == 404
+    r2 = client.get("/c/no-such-slug/llms-full.txt")
+    assert r2.status_code == 404
+
+
+# ── /sitemap.xml + /robots.txt — traditional + AI crawler discovery ──
+
+
+def test_sitemap_xml_lists_only_public_corpora(client):
+    """Sitemap advertises every public corpus (both index + full-text URLs)
+    plus the site-root /llms.txt; private corpora are absent."""
+    r1 = client.post("/api/v1/corpora", json={"name": "PubSitemap", "access_level": "public"})
+    pub = r1.json()
+    r2 = client.post("/api/v1/corpora", json={"name": "PrivSitemap", "access_level": "private"})
+    priv = r2.json()
+
+    r = client.get("/sitemap.xml")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/xml")
+    body = r.text
+    assert body.startswith('<?xml version="1.0"')
+    assert 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"' in body
+    # Site-root llms.txt is always present.
+    assert "/llms.txt</loc>" in body
+    # Public corpus appears (both index + full).
+    assert f"/c/{pub['slug']}/llms.txt</loc>" in body
+    assert f"/c/{pub['slug']}/llms-full.txt</loc>" in body
+    # Private corpus is absent.
+    assert priv["slug"] not in body
+
+
+def test_robots_txt_links_to_sitemap(client):
+    r = client.get("/robots.txt")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    body = r.text
+    assert "User-agent: *" in body
+    assert "Allow: /" in body
+    assert "Sitemap:" in body
+    assert "/sitemap.xml" in body

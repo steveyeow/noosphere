@@ -55,6 +55,31 @@ Information platforms change with how information is consumed:
 
 Social media optimized for human attention, so popular content is often not the most valuable. Agents don't pay an attention tax — they select for informational value and verifiable provenance. A platform shaped for agent consumption looks different: machine-readable discovery, provenance as a first-class signal, pricing for information value rather than exposure. Noosphere is built for that shape.
 
+## The loop
+
+Noosphere is built around a virtuous cycle between human knowledge and agent capability — not a one-shot pipeline:
+
+```
+   Humans create knowledge
+            ↓
+   Encoded as agent-readable substrate
+            ↓
+   AI compiles · maintains · grows
+            ↓
+   Network: corpora discover · subscribe · learn · transact
+            ↓
+   Any agent (peer Noosphere corpus or external AI)
+   queries · trains on · reasons with corpora
+            ↓
+   Value flows back to humans
+   (decisions, learning, new creation)
+            ↺ loop continues
+```
+
+Karpathy's LLM Wiki and Garry Tan's GBrain are early single-user instances of this loop: personal knowledge as agent-readable substrate, AI as the multiplier, the human as both creator and beneficiary. Noosphere extends the loop across people. Every corpus is itself an agentic node — at higher autonomy levels it discovers, subscribes to, pays for, and learns from other corpora on its own. Any agent — a peer Noosphere corpus, or an external AI in a company / app / developer environment — can consume from the network.
+
+Each step compounds the next. Better substrate makes AI compile better. Network learning deepens individual corpora. Agents using the network surface gaps that humans then fill. The longer the loop runs, the more useful the whole system gets. Every feature in this spec maps to one or more steps of this loop; if a proposed feature doesn't, it's likely off-thesis.
+
 ## Connection to Feynman
 
 Noosphere is inspired by and connected to [Feynman](https://github.com/steveyeow/feynman), an open-source project that lets people chat with books and learn with an evolving network of agent-simulated great minds in a navigable knowledge space (the Noosphere).
@@ -90,7 +115,7 @@ Six things define Noosphere:
 2. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution. Agents are the primary consumers. The web UI exists for creators to manage their knowledge.
 3. **Living knowledge.** Knowledge bases grow over time — from chat conversations, RSS feeds, URL imports, and LLM-powered compilation. They are compounding knowledge systems, not static file dumps.
 4. **Creators get paid.** Open your knowledge to everyone, or set it to paid. Lenny Rachitsky opened part of his newsletter to agents for free but kept the full archive behind a subscription. Domain experts, researchers, consultants — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need, without hiring consultants to train proprietary models.
-5. **Knowledge bases are agents.** A corpus is not just a document collection — it carries an interface that answers with citations, describes its own capabilities, routes questions outside its scope, and reports calibrated confidence. Autonomy is layered: L0 responsive by default; higher levels (subscribing, synthesizing, proactive) unlock as owners opt in.
+5. **Knowledge bases are agents.** A corpus is not just a document collection — it is an agentic node. It answers with citations, describes itself, routes out-of-scope questions, reports calibrated confidence, and at higher autonomy levels actively discovers, subscribes to, and pays for other corpora on its own. It both consumes and produces in the network. Networking is the substrate (every corpus is reachable by default); autonomy is the dial — three tiers: **Static** (manual, on-demand), **Living** (auto-ingest from connected feeds, keep compiled Wiki in sync), **Fully Autonomous** (actively discovers, subscribes, pays, compiles, grows within owner-set policy).
 6. **A network of learning agents.** Knowledge bases consume from other knowledge bases — direct query, subscription to increments, skill/capsule import, or derivative corpora with attribution. Humans author first; agents compound on top. Provenance is tracked through the chain.
 
 We believe that:
@@ -220,19 +245,18 @@ The open-source version is the **full product**, not a crippled trial. Self-host
 ### Interface layers
 
 ```
-Layer 4:  MCP Server          ← Agent-native protocol (Claude, Cursor, Codex)
-Layer 3:  REST API            ← Universal HTTP interface (any client)
-Layer 2:  CLI                 ← Developer/creator tool (ingest, index, serve)
+Layer 4:  Three transports    ← MCP · REST · CLI — same operations, three protocols
 Layer 1:  Corpus Format       ← Structured data (Markdown + chunks + embeddings)
 ```
 
-All layers are needed:
-- **Markdown** is the content storage format, not an access interface
-- **CLI** is the creator-side tool for building and managing corpora
-- **REST API** is the universal access interface — any agent, app, or script can call HTTP
-- **MCP** is the agent-native discovery and tool-use protocol that sits on top
+The three transports are first-class peers, not stacked. Each surfaces the same read/query/growth operations against a shared core; consumers pick whichever fits.
 
-MCP and REST API share the same core logic. The CLI calls the same core functions directly.
+- **MCP** suits GUI-first agent clients (Claude Desktop, Cursor) where tools register into a shared context
+- **REST** is the lingua franca for scripts, CI, the web app, and any system without an LLM in the loop
+- **CLI** is what LLMs encounter most in their training data; composes via shell pipelines; auth runs through OS-standard mechanisms (keychain, env vars). First-class for Claude Code, Cursor agent mode, terminal users, and humans
+- **Markdown** is the underlying content format, not an access interface
+
+All three transports share the same core logic; the CLI calls the same core functions directly.
 
 ---
 
@@ -364,7 +388,7 @@ Sequenced; deliverables gated on product clarity, not engineering hours.
 | Tag | Deliverable |
 |---|---|
 | **T-1** | Org primitives: orgs, members, invites, roles, workspace switcher, `corpora.org_id`, `documents.contributor_user_id`, role checks on all write/read paths, audit-log writes |
-| **T-2** | Org-level connectors: Notion / Drive / GitHub OAuth at org scope, shared connector configs |
+| **T-2** | Source adapter framework — **wiring**, not framework code (framework + first manifest already scaffolded as of 2026-04-28). Build the deferred items in `## Ingestion pipeline` → "Deferred work needed before any manifest adapter ships to users": `connector_configs` REST lifecycle, run-trigger endpoint, scheduler integration, source-logo panel instance UI, last-sync surfacing. Pick a BYO-manifest sandbox tier before exposing any upload UI. First adapters to graduate from scaffolding to user-facing once wiring lands: GitHub (CLI/PAT), Notion (MCP), Google Workspace (OAuth+REST), Slack (REST or email fallback) |
 | **T-3** | Team-native capture: Slack `/noosphere`, per-corpus email forwarding, meeting transcript ingest |
 | **T-4** | Team compile recipes (weekly digest, decision log, customer-pain, onboarding pack), "What we don't know yet" dashboard |
 | **T-5** | Team Distill: org-aware interview templates, contributor attribution |
@@ -545,7 +569,7 @@ The manifest is the KB's **agent-media capability card** — it's how external a
 - `task_types` — what kinds of questions the KB answers well (retrieval, synthesis, advice, how-to, factual-lookup, etc.)
 - `source_composition` — rollup of `source_kind` over documents; a KB that is 90% user_original has a different trust profile than one that is 90% external_public
 - `samples` — representative Q&A pairs for agents to evaluate relevance quickly
-- `autonomy_level` — L0 responsive (default), L1 subscribing, L2 synthesizing, L3 proactive
+- `autonomy_level` — Static (default), Living, Fully Autonomous (see Core value #5 for definitions)
 - `calibration_policy` — whether and how the KB reports confidence
 - `license_terms` — accepted monetization shapes (query / subscription / bulk / licensing)
 
@@ -553,9 +577,36 @@ The manifest is the KB's **agent-media capability card** — it's how external a
 
 ## Agent access interface
 
-### MCP (Model Context Protocol)
+Noosphere exposes corpora across three transports — **MCP**, **REST**, and **CLI**. Same capability set; pick the transport that fits the consumer.
 
-Noosphere exposes corpora via MCP. Any MCP-compatible client (Claude, Cursor, Codex, custom agents) can connect.
+### Two consumer classes
+
+Both are first-order:
+
+- **In-network agents** — other corpora across Noosphere instances, accessing each other through the registry, citation graph, and peer subscription. Corpus-to-corpus traffic underwrites network learning.
+- **Out-of-network agents** — external AI in companies, developer apps, research orgs, end-user agent clients (Claude Desktop, Cursor, custom bots). They consume Noosphere through public APIs / MCP / `llms.txt`.
+
+Both classes use the same toolbox; discovery and trust mechanisms (manifest, `kb_reputation`, `preview_ask`, citation graph) serve both equally. As the network scales, this discovery + evaluation infrastructure becomes the network's central asset — without it, a network of corpora is noise; with it, an agent of either class can find and trust the right corpus efficiently.
+
+### Use modes
+
+The same toolbox supports several use modes that recur in practice:
+
+- **Grounded Q&A** — an agent answers a user's question grounded in retrieved passages, with citations. The most common case.
+- **Reasoning context** — an agent solving a complex task (a decision, a multi-step analysis, problem diagnosis) uses one or more corpora as substrate for its reasoning. Each step's claims trace back to specific documents.
+- **Capability source** — a corpus is licensed (per `corpus licensing`) as fine-tuning or persistent RAG substrate for a derivative agent. The corpus stays the source of truth; new agents inherit the underlying knowledge.
+
+Pricing, access, and provenance signals (`access_level`, `pricing`, `source_composition`) apply uniformly across modes. An agent picks the mode by how it stitches the toolbox together — Noosphere does not gate by mode.
+
+### Why three transports (not just MCP)
+
+MCP is well-suited to GUI-first agent clients where tools register into a shared context. But MCP has known limitations for other consumers: process overhead per server, context bloat from tool definitions in the agent's context window, less reliable tool selection vs. deterministic command invocation. CLI is what LLMs encounter most in their training data; it composes via shell pipelines; auth runs through OS-standard mechanisms. REST is the universal protocol for scripts, CI, integrations, and any system without an LLM in the loop.
+
+The right choice depends on the consumer. Claude Desktop wants MCP. Claude Code shells out and prefers CLI. A CI job calling `curl` wants REST. The web app wants REST. Rather than betting on one, all three are first-class. If the protocol landscape shifts, the choice shifts with it; the underlying capabilities do not change.
+
+### MCP (for Claude Desktop, Cursor, MCP-native clients)
+
+Any MCP-compatible client (Claude, Cursor, Codex, custom agents) can connect.
 
 MCP tools:
 
@@ -578,6 +629,24 @@ The Phase 4 tools move corpora from pure retrieval endpoints to **KB-as-agent in
 **Inter-KB attribution.** When an agent acts on behalf of a corpus, it should set `X-Noosphere-Caller-Corpus: {corpus_id}` on `ask` / `search` calls. Successful `ask` calls (where the source returned chunks) auto-record a `query`-kind citation from caller to target, deduped per pair within a 24-hour window. The target's `kb_reputation` refreshes on insert. Unknown / unresolvable caller IDs are silently ignored (can't poison the graph with fake attributions).
 
 Growth actions (**capture**, **compile**, **ingest-feed**, **ingest-urls**, **maintain**) are **REST/CLI-first** so agent consumers stay read/query-oriented; the corpus owner (or integrations with owner credentials) uses HTTP or CLI to grow the corpus.
+
+### CLI (for Claude Code, terminal users, Bash-driven agents)
+
+A `noosphere` CLI (npm + Homebrew distribution) mirrors the read, query, and growth operations. JSON output by default (`--format=text` for human-readable). Auth via `noosphere login` (stores token in OS keychain) or `NOOSPHERE_TOKEN` environment variable.
+
+Representative commands:
+
+```
+noosphere list-corpora
+noosphere search "..." --corpus engineering
+noosphere ask "..." --corpus engineering
+noosphere describe engineering
+noosphere route "..."
+noosphere capture --corpus engineering --content - <<< "..."
+noosphere compile engineering --topic "..."
+```
+
+The same CLI is what Claude Code, Cursor agent mode, and Cline shell out to when they want to use Noosphere — no MCP plumbing required, no extra context bloat, deterministic invocation. Humans use it for scripted ingest, CI checks, and one-off queries.
 
 ### REST API
 
@@ -607,11 +676,185 @@ POST   /api/v1/search                           # Global search across all publi
 GET    /.well-known/noosphere.json              # Federated discovery manifest
 ```
 
+### Static discovery surfaces (shipped)
+
+Mounted at the site root rather than under `/api/v1` because the standards expect them at conventional paths. AI-era and traditional crawlers find them by convention without prior knowledge of the API.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /llms.txt` | llmstxt.org site index — lists every public corpus with a markdown link to its own `llms.txt` |
+| `GET /c/{slug}/llms.txt` | Per-corpus markdown index (header + document list, externally-visible content only) |
+| `GET /c/{slug}/llms-full.txt` | Per-corpus full-text dump for one-shot LLM ingestion |
+| `GET /sitemap.xml` | Standard sitemap listing the site-root `llms.txt` and every public corpus's two markdown URLs |
+| `GET /robots.txt` | Allow-all + `Sitemap:` link |
+| `<script type="application/ld+json">` in HTML | Site-level WebSite schema (static); per-corpus Dataset schema injected client-side when a corpus page loads |
+
+These complement, not replace, MCP/REST/CLI: they give zero-friction read access to LLMs and crawlers that don't speak any agent protocol, plus the discovery surface that lets external AI search engines (ChatGPT search, Perplexity, Anthropic web fetch) index Noosphere content automatically.
+
+### Embeddable widgets (planned)
+
+A `<script>`-loadable AI Chat / AI Search widget that any user can drop into their personal site, blog, Substack, or Notion. The widget calls Noosphere's existing `/ask` and `/search`; visitors ask questions of the corpus and get cited answers without leaving the host page.
+
+**Why it matters.** MCP / REST / CLI / `llms.txt` reach developers, agents, and power users — the technical end of the consumer spectrum. Embeddable widgets close the loop for **non-technical readers on a creator's audience surface**: Substack subscribers querying the writer's published research, blog visitors asking the author about their archive. This turns Noosphere from "agent-readable knowledge layer" into "publishing layer with AI native".
+
+**Distribution shape (illustrative):**
+```html
+<script src="https://{noosphere}/embed/{slug}.js" data-mode="chat" data-theme="auto"></script>
+```
+
+**v1 capabilities:**
+- Ask widget — chat-style with citations back to source documents, "powered by Noosphere" attribution
+- Search widget — ranked passages with deep links into the corpus
+- Theme via CSS variables; auto light/dark detection from the host page
+- Access gating — public corpora work no-auth; token corpora require an embed token in the script's data attributes; private corpora cannot be embedded
+
+**Open design questions (deferred to a dedicated planning round before build):**
+- Shadow DOM vs iframe isolation (Shadow DOM preferred for theming; iframe only if the security model demands it)
+- Per-widget rate limiting at the corpus level (one popular embed could fan out to many visitors)
+- Anonymous-visitor analytics — count widget conversations per corpus without storing visitor PII
+- Embed-token rotation, revocation, and per-domain pinning
+
+**Roadmap fit.** Horizontal — benefits both Personal Pro and Team tiers. Sequenced after the static discovery surfaces (`/llms.txt`, sitemap, robots, per-corpus JSON-LD shipped 2026-04-28); not blocked by and does not block T-1 to T-6 team-workspace work.
+
+**Out of scope for v1:**
+- White-label custom domain hosting of the widget bundle
+- Visitor authentication (anonymous read only in v1)
+- Server-side rendering of the widget HTML
+
 ---
 
 ## Ingestion pipeline
 
-### Supported input formats (v1)
+### MVP ingest paths (currently exposed)
+
+These are the entry points users actually see and use today. The composer's `+` menu lists them in this order:
+
+| # | Path | Surface | Underlying mechanism |
+|---|---|---|---|
+| 1 | **Write a note** | Composer `+` → `Write` (Markdown editor) | Direct insert via `POST /api/v1/corpora/:id/capture` (or the unified ingest pipeline) |
+| 2 | **Upload file** | Composer `+` → `Upload` (PDF / MD / DOCX / TXT / CSV / JSON / HTML) | `POST /api/v1/corpora/:id/upload` |
+| 3 | **Import a page** | Composer `+` → `Import a page` (URL or paste) | `POST /api/v1/corpora/:id/ingest-url` (single) / `ingest-urls` (batch) |
+| 4 | **Add RSS feed** | Composer `+` → `Add RSS feed` | `POST /api/v1/corpora/:id/ingest-feed`, polled on cron |
+
+Plus the secondary surfaces that map to the same primitives:
+
+- **Chat capture** — every assistant reply has a Save-to-corpus affordance; calls `/capture`
+- **Source logo panel** (Composer `+` → `Add a source` → click app logo) — currently surfaces ZIP-archive imports for Notion / Twitter / Obsidian and the Obsidian live-sync (CLI + plugin); other apps are listed but their methods are flagged `Soon`
+
+**These four are the supported MVP** for the foreseeable near term. Everything else in this section is scaffolding for a roadmap path, not a current capability — see "current state" callouts below.
+
+### Source adapter framework (scaffolded — not yet user-exposed)
+
+**Current state (2026-04-28)**: the framework code is implemented (`noosphere/core/connectors/manifest.py`, `transports/cli.py`, `manifests/github.toml`); a `ManifestConnector` registers into the same `REGISTRY` as the built-in Python connectors. **But there is no user-facing UI for creating, configuring, scheduling, or running manifest-driven adapters.** The `connector_configs` table exists in the schema with no API or lifecycle code reading from it. `ManifestConnector.run()` works when invoked directly from Python; nothing in the HTTP layer or scheduler invokes it yet.
+
+This section describes the design intent that the existing scaffolding implements. Wiring it into the product UI is deferred until the four MVP paths are validated and we have a concrete user need for a fifth source.
+
+#### Design intent
+
+Each ingestion source is configured by a manifest specifying its **transport**, auth model, and operations. Noosphere does not write per-source connector code beyond what each transport requires. New sources are added by writing a manifest, not by writing a bespoke connector.
+
+Supported transports:
+
+| Transport | When to use | Example sources |
+|---|---|---|
+| **MCP** | Source ships an official or stable MCP server | Notion (official), Postgres |
+| **CLI** | Source has a stable, JSON-output CLI | GitHub (`gh`), Linear (`linear-cli`), gcloud |
+| **REST** | Source has neither MCP nor CLI but offers API + OAuth | Slack, Stripe, most SaaS |
+| **Email forwarding** | Source has no programmatic surface, or notification-tier data is sufficient | Granola, Otter, long-tail SaaS, customer mail |
+| **File / snapshot** | One-time backfill or filesystem-resident data | Notion ZIP, Slack export, Twitter archive, Obsidian vault, GitHub repo clone |
+
+The right transport per source depends on what is most stable today, not on a global preference. Notion's official MCP is solid; we use MCP. GitHub's `gh` CLI is more battle-tested than its MCP today; we use CLI. Slack has no maintained official MCP; we use REST or email. Choices revisit as the ecosystem matures — the manifest framework absorbs the change without rewriting ingest code.
+
+### Source manifest examples
+
+```yaml
+# adapters/github.yaml
+transport: cli
+binary: gh
+auth: gh_user_credential   # uses user's gh CLI auth
+poll: every 10min
+ingest:
+  - cmd: "gh issue list --state open --json number,title,body,labels,createdAt,author"
+    source_kind: user_capture
+  - cmd: "gh pr list --json number,title,body,reviewDecision,author"
+    source_kind: user_capture
+```
+
+```yaml
+# adapters/notion.yaml
+transport: mcp
+mcp_server: "@notionhq/mcp-server"
+auth: oauth_notion
+poll: every 15min
+tools: [list_databases, query_database, get_page_blocks]
+source_kind: external_subscription
+```
+
+```yaml
+# adapters/granola.yaml
+transport: email
+forwarding_address: "*@granola.ai"
+parser: granola_transcript
+auth: none
+source_kind: user_capture
+```
+
+### Per-source selection rule
+
+For any source, choose in this order:
+
+1. Stable MCP if one exists and is well-maintained
+2. Stable CLI if one exists with reliable JSON output
+3. Direct REST API if neither
+4. Email forwarding if the source has no programmatic surface
+5. ZIP/snapshot import for backfill or cold-start
+
+A source can use multiple adapters at once — e.g., one-time ZIP backfill plus ongoing CLI poll.
+
+#### Deferred work needed before any manifest adapter ships to users
+
+These items must be designed and built before the source adapter framework graduates from scaffolding to a user-facing capability. They are intentionally out of MVP scope.
+
+| Item | Why it is deferred |
+|---|---|
+| `connector_configs` lifecycle (REST CRUD: create, list, update, delete instance) | Schema exists, no API. Required so each user can configure their own GitHub / Notion / etc. instance per corpus, store auth, schedule, last-sync metadata |
+| Run-trigger endpoint (`POST /connector_configs/:id/run`) | Required so the UI can invoke `ManifestConnector.run()` on demand |
+| Scheduler integration | Required so manifests with `default_cron` actually poll on schedule (today they only run when invoked manually from Python) |
+| Source-logo panel UI: instance configuration form | Required so the existing `_SOURCE_CONNECTORS` panel can offer a real `Connect` action when an adapter ships, instead of `Soon` |
+| Last-sync result display + error surfacing | Required so users can tell whether the polling is healthy |
+
+#### Cloud vs self-hosted constraint for CLI adapters
+
+The CLI transport runs `subprocess.run(...)` on the **Noosphere server**, not on the user's device. This has different implications by deployment:
+
+| Deployment | CLI auth source | Works without per-user config? |
+|---|---|---|
+| Self-hosted on user's own laptop | The user's local CLI auth (e.g. `gh auth login` already done) | ✅ Yes |
+| Self-hosted on a team server | The server operator's CLI auth, single shared identity | ⚠️ Yes for org-wide read; not per-user |
+| **Cloud (multi-tenant)** | No user credentials present | ❌ Requires user-supplied secret (e.g. GitHub PAT in `GH_TOKEN` env) — same UX friction as Notion's API token, not the "no-OAuth" promise |
+
+The "use your existing CLI auth, no separate OAuth" pitch only holds cleanly for the self-hosted single-user case. Cloud must ship a per-user-token form alongside any CLI adapter, or restrict that adapter to self-hosted. This must be honest in any user-facing copy.
+
+#### BYO-manifest security constraint
+
+Manifests carry executable directives — for the CLI transport, an arbitrary `cmd` argv that gets handed to `subprocess.run`. **Letting end users upload manifests through a web UI is remote code execution as a feature.** Threat surface includes RCE, secret exfiltration, cross-tenant DB reads in cloud, resource exhaustion, internal-network egress, and path traversal in file/REST transports.
+
+Until a sandbox design is built, the framework operates at **Tier 0**: manifests live only in the repository under `noosphere/core/connectors/manifests/`, ship with releases, and are reviewed by maintainers. No user-facing manifest upload anywhere. Self-hosted operators may still drop their own TOML into that directory at their own risk because they own the host.
+
+When user-uploadable manifests become a product requirement, choose the strictest tier compatible with the use case:
+
+| Tier | Mechanism | Where it fits |
+|---|---|---|
+| **Tier 0** (current) | Repo-only, maintainer review | Today, both self-hosted and cloud |
+| **Tier 1** | Org-owner-only upload + binary allowlist + audit log | Self-hosted org workspaces |
+| **Tier 2** | Allow only `transport=rest` or `transport=mcp-hosted` (no shell-out anywhere) | Cloud, when REST/MCP-only sources are enough |
+| **Tier 3** | Containerised execution (Docker / Bubblewrap / Firejail) with no network egress, ephemeral FS, resource quotas | Cloud, when CLI BYO is genuinely required |
+
+Tier 0 is in force today. Promoting the framework to a user-facing capability requires picking and implementing one of Tiers 1–3 explicitly; no implicit promotion.
+
+### Built-in input formats (still supported)
+
+These are the file/URL/feed inputs that don't require a source manifest — they're the substrate every adapter ultimately produces.
 
 | Format | Source |
 |--------|--------|
@@ -625,8 +868,10 @@ GET    /.well-known/noosphere.json              # Federated discovery manifest
 ### Pipeline stages
 
 ```
-Input sources → Ingest → Clean → Chunk → Embed → Index → Publish
+Source adapter → Ingest → Clean → Chunk → Embed → Index → Publish
 ```
+
+Adapter-level concerns (rate limits, polling schedules, retries, auth refresh) are handled in the adapter framework. Everything downstream of "Ingest" is transport-agnostic — a Notion page from MCP, a GitHub issue from CLI, and a Granola transcript from email all become the same chunked + embedded document.
 
 ---
 
@@ -1109,13 +1354,16 @@ Goal: hosted version for creators who don't want to self-host.
 
 Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and build out the discovery/trust infrastructure that makes agent media work. This is the phase where Noosphere earns its positioning in §Core value #5 and #6.
 
-**4a. Capability surface — KB-as-agent interface (L0)**
+**4a. Capability surface — KB-as-agent interface (Static foundation)**
+
+Applies to every corpus regardless of autonomy tier — the substrate that makes a KB an agentic node.
+
 - [x] Expand manifest schema: `task_types`, `source_composition`, `samples`, `autonomy_level`, `calibration_policy`, `license_terms`
 - [x] MCP + REST `ask` — synthesized answer with inline citations, grounded in retrieved passages
 - [x] MCP + REST `describe` — structured self-description
 - [x] MCP + REST `route` — recommend other KBs for out-of-scope questions (uses citation graph + manifest match)
 - [x] MCP + REST `preview_ask` — truncated evaluation query that bypasses access gating so agents can judge answer quality before paying
-- [x] Shared L0 runtime (per-corpus prompt + retrieval on top of shared inference layer)
+- [x] Shared response runtime (per-corpus prompt + retrieval on top of shared inference layer)
 - [x] Manifest auto-fill via LLM — `noosphere/core/manifest_autofill.py` proposes `task_types` + `samples` + `description_suggestion` from corpus content. REST `POST /corpora/{id}/manifest/suggest` returns a proposal; `POST /manifest/apply` writes selected fields. Post-ingest hook `autofill_if_empty` runs silently on first indexing. Pro-gated quota (`manifest_suggest`); self-hosted with LLM = free. Web UI Capability card spec in `docs/capability-card-ui.md` — frontend work deferred until static/ changes settle.
 
 **4b. Discovery and trust — four-tier signal stack**
@@ -1137,10 +1385,20 @@ Goal: move corpora from retrieval endpoints to **KB-as-agent interfaces**, and b
 - [ ] Skill / capsule import (Evolver-style portable capability units) — shipping order 3
 - [ ] Derivative corpus with attribution chain — shipping order 4
 
-**4d. Higher autonomy levels (opt-in)**
-- [ ] L1 — subscribing KBs: owner-approved auto-ingest from subscribed KBs
-- [ ] L2 — synthesizing KBs: periodic compile from consumed material; produces reusable artifacts
-- [ ] L3 — proactive KBs: persona + outbound outreach (farthest out)
+**4d. Higher autonomy tiers (opt-in)**
+
+Networking is the substrate (every corpus is reachable in the network by default). Autonomy is the dial — what the corpus does in the network without prompting. See Core value #5 for tier definitions.
+
+*Living tier (mostly shipped via the connector framework):*
+- [x] Auto-ingest from connected feeds (RSS, URL, directory sync)
+- [ ] Periodic auto-compile from consumed material — keeps Wiki / entities / timelines in sync as sources change
+- [ ] Stale-concept detection + scheduled recompile (uses `stale_threshold_days`)
+
+*Fully Autonomous tier (new):*
+- [ ] Owner-approved auto-subscribe to peer KBs (consumes their increments)
+- [ ] Active peer discovery — corpus periodically scans the registry for relevant new corpora and proposes subscriptions
+- [ ] Autonomous payment for paid corpora within owner-set budget / policy
+- [ ] Outbound queries — corpus proactively queries peers when its own answer would be low-confidence; results fold into its compiled knowledge with provenance
 
 **4e. Monetization extensions**
 - [ ] Corpus licensing path (bulk / one-time, for training or enterprise use)

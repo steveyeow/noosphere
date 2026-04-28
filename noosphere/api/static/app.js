@@ -116,6 +116,19 @@ function handleQuotaError(res,body){
   return true;
 }
 
+/* Map a 409 from POST /corpora into a friendly toast that lets the user
+   open the existing corpus instead of failing silently. Returns true when
+   handled so callers can short-circuit their generic error path. */
+function handleDuplicateCorpus(res,body){
+  if(!res||res.status!==409)return false;
+  const det=body&&body.detail;
+  if(!det||typeof det!=='object'||det.code!=='duplicate_corpus_name')return false;
+  const existingId=det.existing_corpus_id;
+  toast(det.message||'A corpus with that name already exists.','error',
+    existingId?{label:'Open',onclick:()=>{location.hash='#/corpus/'+existingId}}:undefined);
+  return true;
+}
+
 /* Pre-intercept a Pro-only action for Free users, saving a round-trip.
    Returns true if the user is Free (modal opened, caller should bail).
 
@@ -568,7 +581,38 @@ async function route(){const h=location.hash||'#/';stopAll();
   }
   else renderHome();
 }
-function stopAll(){if(_lpAnim){cancelAnimationFrame(_lpAnim);_lpAnim=null}if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}if(_termAnim){cancelAnimationFrame(_termAnim);_termAnim=null}}
+function stopAll(){if(_lpAnim){cancelAnimationFrame(_lpAnim);_lpAnim=null}if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}if(_termAnim){cancelAnimationFrame(_termAnim);_termAnim=null}_setCorpusJsonLD(null)}
+// Inject schema.org Dataset JSON-LD for the active corpus so AI crawlers
+// (ChatGPT search, Perplexity, Anthropic web fetch) and traditional search
+// engines see structured metadata when they execute the SPA. Pass null to
+// clear — called from stopAll() on every view switch so stale JSON-LD never
+// outlives the corpus it described.
+function _setCorpusJsonLD(c){
+  const old=document.getElementById('corpus-jsonld');
+  if(old)old.remove();
+  if(!c)return;
+  const slug=c.slug||c.id;
+  const base=location.origin;
+  const ld={
+    "@context":"https://schema.org",
+    "@type":"Dataset",
+    "name":c.name||"",
+    "description":c.description||"",
+    "url":`${base}/c/${slug}`,
+    "distribution":[
+      {"@type":"DataDownload","encodingFormat":"text/markdown","contentUrl":`${base}/c/${slug}/llms.txt`},
+      {"@type":"DataDownload","encodingFormat":"text/markdown","contentUrl":`${base}/c/${slug}/llms-full.txt`},
+    ],
+  };
+  if(c.license)ld.license=c.license;
+  if(c.author_name)ld.creator={"@type":"Person","name":c.author_name};
+  if(Array.isArray(c.tags)&&c.tags.length)ld.keywords=c.tags.join(", ");
+  const s=document.createElement('script');
+  s.type='application/ld+json';
+  s.id='corpus-jsonld';
+  s.text=JSON.stringify(ld);
+  document.head.appendChild(s);
+}
 async function loadC(){try{const r=await fetch(`${API}/corpora`);_corpora=await r.json()}catch(e){_corpora=[]}}
 async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.json();_ownerName=d.name||'';
   // Only extract a first name we're confident about: space-separated (e.g. "Steve Yao" → "Steve")
@@ -809,12 +853,11 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   <section class="lp-sec lp-sec-network">
     <div class="lp-sec-inner">
       <h2 class="lp-sec-h">Get connected, learn from a global agent network.</h2>
-      <p class="lp-sec-sub">Every knowledge base is itself an agent on the network. KBs don't just answer queries — at higher autonomy levels they subscribe to peer KBs, synthesize new skills from what they consume, and grow smarter as the network grows around them.</p>
+      <p class="lp-sec-sub">Every knowledge base is itself an agentic node. Networking is the substrate — every corpus is reachable in the network by default. Autonomy is the dial: three tiers controlling how much of the network the corpus consumes and acts on without prompting.</p>
       <div class="lp-autonomy">
-        <div class="lp-level"><span class="lp-level-lbl">L0</span><span class="lp-level-nm">Responsive</span><span class="lp-level-dc">Answers when queried (default).</span></div>
-        <div class="lp-level"><span class="lp-level-lbl">L1</span><span class="lp-level-nm">Subscribing</span><span class="lp-level-dc">Ingests live updates from other KBs.</span></div>
-        <div class="lp-level"><span class="lp-level-lbl">L2</span><span class="lp-level-nm">Synthesizing</span><span class="lp-level-dc">Compiles new skills from consumed sources.</span></div>
-        <div class="lp-level"><span class="lp-level-lbl">L3</span><span class="lp-level-nm">Proactive</span><span class="lp-level-dc">Persona, outbound queries, initiative.</span></div>
+        <div class="lp-level"><span class="lp-level-nm">Static</span><span class="lp-level-dc">Manual sources · manual compile. Answers queries on demand.</span></div>
+        <div class="lp-level"><span class="lp-level-nm">Living</span><span class="lp-level-dc">Auto-ingests from connected feeds; keeps compiled Wiki, entities, and timelines in sync as sources change.</span></div>
+        <div class="lp-level"><span class="lp-level-nm">Fully Autonomous</span><span class="lp-level-dc">Actively discovers peer corpora, subscribes, pays within owner-set policy, and grows knowledge over time.</span></div>
       </div>
       <p class="lp-sec-foot">Every inter-KB query carries provenance. Citations record in a directed graph weighted by the citing KB's own reputation — trust compounds recursively.</p>
       <div class="lp-callout">
@@ -1686,10 +1729,11 @@ function renderHome(){
         if(!r.ok){
           // Route through the unified quota handler so 429s render with an
           // Upgrade CTA (toast w/ action button for resource limits, full
-          // paywall modal for daily quota_exceeded). Falls back to a plain
-          // toast for non-quota errors (auth, validation).
+          // paywall modal for daily quota_exceeded). 409 → "open existing"
+          // affordance via handleDuplicateCorpus. Falls back to a plain toast
+          // for everything else (auth, validation).
           const d=await r.json().catch(()=>({}));
-          if(!handleQuotaError(r,d)){
+          if(!handleQuotaError(r,d)&&!handleDuplicateCorpus(r,d)){
             const msg=(d.detail&&typeof d.detail==='object'?d.detail.message:d.detail)||`HTTP ${r.status}`;
             toast(msg,'error');
           }
@@ -1802,7 +1846,22 @@ function renderHome(){
       wrap.innerHTML='<input type="text" id="new-corpus-input" placeholder="e.g. Research notes" style="flex:1;font-size:13px;border:1px solid var(--brd);border-radius:8px;padding:6px 10px;background:var(--bg2);color:var(--tx);outline:none" /><button class="btn-sm" id="new-corpus-btn">Create</button>';
       output.appendChild(wrap);
       const ni=document.getElementById('new-corpus-input');ni.focus();
-      async function doCreate(){const name=ni.value.trim();if(!name)return;wrap.remove();try{const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,access_level:'public'})});const c=await r.json();await loadC();addLine(output,'card',null,null,{type:'card',label:name,status:'CREATED',detail:'New knowledge base created',corpus_id:c.id});renderSBChats()}catch(e){addLine(output,'resp','Failed: '+e.message)}input.focus()}
+      async function doCreate(){
+        const name=ni.value.trim();if(!name)return;wrap.remove();
+        try{
+          const r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,access_level:'public'})});
+          if(!r.ok){
+            const d=await r.json().catch(()=>({}));
+            if(handleDuplicateCorpus(r,d)){input.focus();return}
+            const msg=(d.detail&&typeof d.detail==='object'?d.detail.message:d.detail)||`HTTP ${r.status}`;
+            addLine(output,'resp','Failed: '+msg);input.focus();return;
+          }
+          const c=await r.json();await loadC();
+          addLine(output,'card',null,null,{type:'card',label:name,status:'CREATED',detail:'New knowledge base created',corpus_id:c.id});
+          renderSBChats();
+        }catch(e){addLine(output,'resp','Failed: '+e.message)}
+        input.focus();
+      }
       document.getElementById('new-corpus-btn').onclick=doCreate;ni.onkeydown=e=>{if(e.key==='Enter')doCreate();if(e.key==='Escape'){wrap.remove();input.focus()}};
       return;
     }
@@ -1811,11 +1870,32 @@ function renderHome(){
     addLine(output,'prompt',val);
     const loadId='ld-'+Date.now();
     addLine(output,'thinking','Thinking…',loadId);
+    // Restore the typed text if the request fails — we cleared the input above
+    // so the prompt line could echo it, but if the network fails the user has
+    // nothing to retry with otherwise. Cleared once the request returns OK.
+    const restoreDraft=()=>{
+      if(input.value)return;  // user already typed something else, don't clobber
+      input.value=val;
+      autosize();
+    };
     try{
-      const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx,mode:_composerMode})});
+      const r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:val,context:_termCtx,mode:_composerMode,corpus_id:_homeScope||null})});
+      if(!r.ok){
+        document.getElementById(loadId)?.remove();
+        const errBody=await r.json().catch(()=>({}));
+        const msg=(errBody.detail&&typeof errBody.detail==='object'?errBody.detail.message:errBody.detail)||`HTTP ${r.status}`;
+        addLine(output,'resp','Error: '+msg+' — your message is restored, press Send to retry.');
+        restoreDraft();
+        input.disabled=false;input.focus();_sending=false;
+        return;
+      }
       const d=await r.json();
       document.getElementById(loadId)?.remove();
       _termCtx=d.context||{};
+      // Surface freshly-persisted chat sessions in the sidebar — the backend
+      // only writes a session when the request was scoped to a corpus, so
+      // we re-render lazily on each turn that returns one.
+      if(d.session_id)renderSBChats();
       for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
       if(d.context?.action==='open_write'){enterWrite()}
       if(d.context?.action==='open_upload'){showTermUpload(output,input,_homeScope)}
@@ -1838,7 +1918,11 @@ function renderHome(){
         updateChip();
         renderSBChats();
       }
-    }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+err.message)}
+    }catch(err){
+      document.getElementById(loadId)?.remove();
+      addLine(output,'resp','Error: '+err.message+' — your message is restored, press Send to retry.');
+      restoreDraft();
+    }
     input.disabled=false;input.focus();
     _sending=false;
   }
@@ -2420,13 +2504,24 @@ function showTermUpload(output,input,defaultCorpus,opts){
         const d=await r.json();
         wrap.remove();
         if(!r.ok){reportErr('Upload failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        // Per-file errors — surface them so the user knows which file(s)
+        // didn't make it. We previously reported the batch count and the
+        // user couldn't tell that, say, file 3 was a corrupted PDF.
+        const failedList=d.errors||[];
+        if(failedList.length){
+          for(const fe of failedList){
+            toast(`${fe.file}: ${fe.error}`,'error');
+          }
+        }
         // Fire-and-forget processing. Debouncer coalesces consecutive ingests
         // into one index run; corpus detail page has a Re-process button for
         // recovery if anything ever fails silently.
         ensureIndexed(cid);
         await loadC();
         const corpus=_corpora.find(c=>c.id===cid);
-        reportOK(`Added ${d.uploaded||nFiles} file${nFiles>1?'s':''}`,{type:'card',label:'Files Added',status:'READY',detail:corpus?corpus.name:'My Knowledge',val:`${nFiles} file${nFiles>1?'s':''} added — ingesting in background`,corpus_id:cid});
+        const ok=d.uploaded||0;
+        const okMsg=ok?`Added ${ok} file${ok>1?'s':''}`:'No files added';
+        reportOK(okMsg,{type:'card',label:'Files Added',status:ok?'READY':'EMPTY',detail:corpus?corpus.name:'My Knowledge',val:failedList.length?`${ok} added · ${failedList.length} skipped`:`${ok} file${ok>1?'s':''} added — ingesting in background`,corpus_id:cid});
       }catch(e){wrap.remove();reportErr('Upload failed: '+e.message)}
       if(input&&!onComplete)input.focus();
     };
@@ -3877,9 +3972,26 @@ function showAddSourcePicker(ctx){
 }
 
 /* ══════ CORPUS DETAIL + CHAT ══════ */
+
+// Safe wrapper around renderCorpus — when any inline doc editor is open, the
+// full re-render would wipe in-progress edits. Skip the re-render in that
+// case; callers should already toast their own success message, and stale
+// counts/badges are an acceptable papercut compared to data loss.
+function renderCorpusSafe(id, sessionId){
+  if(document.querySelector('#content .doc-item.editing')){
+    console.warn('[renderCorpus] skipped — inline editor is open; user data preserved');
+    return;
+  }
+  return renderCorpus(id, sessionId);
+}
+
 async function renderCorpus(id,sessionId){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
+  // Public corpora get structured metadata so AI/search crawlers can index
+  // the corpus (Dataset schema). Private corpora skip this — there's nothing
+  // to advertise to external crawlers.
+  if((c.access_level||'public')!=='private')_setCorpusJsonLD(c);
   let docs=[];try{const r=await fetch(`${API}/corpora/${id}/documents`);if(r.ok)docs=await r.json()}catch(e){}
   let an={};try{const r=await fetch(`${API}/corpora/${id}/analytics?limit=5`);if(r.ok)an=await r.json()}catch(e){}
   ct.classList.add('content--corpus');
@@ -3937,18 +4049,35 @@ async function renderCorpus(id,sessionId){
   const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
   ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
-  document.getElementById('cv-desc-edit').onclick=()=>{
+  // Description editor — surgical (no renderCorpus). Snapshot the read-only
+  // markup, swap in the input, and restore (with the new value on save) so
+  // any inline source editor open elsewhere on the page survives.
+  const _DESC_EDIT_BTN_HTML=`<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
+  const _renderCvDescReadOnly=(wrap,desc)=>{
+    const safe=esc(desc||'');
+    const cls=desc?'cv-desc':'cv-desc cv-desc-empty';
+    const txt=desc?safe:'Add a description...';
+    wrap.innerHTML=`<p class="${cls}" id="cv-desc">${txt}</p>${_DESC_EDIT_BTN_HTML}`;
+    document.getElementById('cv-desc-edit').onclick=_bindDescEdit;
+  };
+  function _bindDescEdit(){
     const wrap=document.querySelector('.cv-desc-wrap');
     const cur=c.description||'';
     wrap.innerHTML=`<input type="text" class="cv-desc-input" id="cv-desc-inp" value="${esc(cur)}" placeholder="Add a description..." /><div class="cv-desc-inp-actions"><button class="btn-sm" id="cv-desc-sv">Save</button><button class="btn-sm-ghost" id="cv-desc-cc">Cancel</button></div>`;
     document.getElementById('cv-desc-inp').focus();
-    document.getElementById('cv-desc-cc').onclick=()=>renderCorpus(id);
+    document.getElementById('cv-desc-cc').onclick=()=>_renderCvDescReadOnly(wrap,cur);
     document.getElementById('cv-desc-sv').onclick=async()=>{
       const v=document.getElementById('cv-desc-inp').value.trim();
-      if(v===cur){renderCorpus(id);return}
-      try{await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});await loadC();renderCorpus(id)}catch(e){toast('Failed to save description')}
+      if(v===cur){_renderCvDescReadOnly(wrap,cur);return}
+      try{
+        await fetch(`${API}/corpora/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v})});
+        c.description=v;
+        await loadC();
+        _renderCvDescReadOnly(wrap,v);
+      }catch(e){toast('Failed to save description');_renderCvDescReadOnly(wrap,cur)}
     };
-  };
+  }
+  document.getElementById('cv-desc-edit').onclick=_bindDescEdit;
   // Composer is the SOLE action surface on the corpus page. Section "+ Add"
   // and "Compile" buttons are discoverable shortcuts that just trigger the
   // composer in the right state — no inline panels under those buttons.
@@ -4061,7 +4190,28 @@ async function renderCorpus(id,sessionId){
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
     if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;
-    try{await fetch(`${API}/corpora/${id}/documents/${did}`,{method:'DELETE'});renderCorpus(id)}catch(e){toast('Failed to delete document')}
+    try{
+      await fetch(`${API}/corpora/${id}/documents/${did}`,{method:'DELETE'});
+      // Surgical: pull the row out of the DOM and update the section count
+      // instead of full-page renderCorpus (which would wipe any inline source
+      // editor the user has open elsewhere).
+      const item=btn.closest('.doc-item');
+      const list=item?.parentElement;
+      const isWiki=list?.id==='cv-wiki-docs';
+      item?.remove();
+      docs=docs.filter(d=>d.id!==did);
+      const remaining=isWiki?docs.filter(d=>d.doc_type==='concept'||d.doc_type==='manifest').length
+                             :docs.filter(d=>d.doc_type!=='concept'&&d.doc_type!=='manifest').length;
+      const subEl=document.querySelector(isWiki?'.cv-sec-wiki .cv-st-sub':'.cv-sec-raw .cv-st-sub');
+      if(subEl)subEl.textContent=isWiki?(remaining?remaining+' · synthesis':'synthesis'):(remaining?remaining+' · substrate':'substrate');
+      // If the section just emptied out, drop in the empty-state copy. Mirrors
+      // renderCorpus's empty-state for these sections.
+      if(remaining===0&&list){
+        list.innerHTML=isWiki
+          ?'<div class="empty">No concept notes yet — Compile to synthesize from your sources.</div>'
+          :'<div class="empty">No sources yet — + Add to import URLs, upload files, or import an archive.</div>';
+      }
+    }catch(e){toast('Failed to delete document')}
   }});
   ct.querySelectorAll('.doc-edit-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const item=btn.closest('.doc-item');if(!item)return;
@@ -4184,6 +4334,19 @@ async function renderCorpusSettings(id){
     {l:'preview_ask',u:`${host}/api/v1/corpora/${c.id}/preview_ask`,d:'Cheap dry-run — tests fit before a paid ask.'},
     {l:'search',u:`${host}/api/v1/corpora/${c.id}/search`,d:'Raw chunk search — lower-level than ask.'},
   ];
+  // Plain-text views for any LLM/agent that just wants to read this corpus
+  // in one fetch — paste the URL into ChatGPT / Claude / Cursor with no
+  // adapter. Slug-based URLs (per llmstxt.org convention) read better when
+  // shared. Hidden for private corpora since the URL would 403 anyway.
+  // Token/paid gates work the same as other endpoints (caller adds bearer).
+  if(al!=='private'){
+    const llmsHint=(al==='token'||al==='paid')?' Requires a bearer token.':' Any LLM can fetch directly.';
+    const slug=c.slug||c.id;
+    endpoints.push(
+      {l:'llms.txt',u:`${host}/c/${slug}/llms.txt`,d:'Markdown index for AI agents (per llmstxt.org).'+llmsHint},
+      {l:'llms-full.txt',u:`${host}/c/${slug}/llms-full.txt`,d:'Full-text dump — paste into any LLM to load the whole corpus as context.'+llmsHint},
+    );
+  }
   // Unified row pattern (Obsidian-style settings list): name + description on
   // the left, primary control on the right. Connect rows put the URL + Copy
   // on the right; Maintenance rows put a single action button on the right.
@@ -4425,11 +4588,29 @@ async function renderEntity(corpusId,entityId){
   const rBtn=document.getElementById('ep-recompile-btn');if(rBtn)rBtn.onclick=()=>doCompile('ep-recompile-btn');
 }
 
+// Source kind options shown on Sources rows. Mirrors the upload panels at
+// app.js:2393 / 2435 so import-time and edit-time vocabularies stay in sync.
+const SOURCE_KIND_OPTIONS=[
+  {value:'user_original',label:'My original content'},
+  {value:'external_public',label:'Public external reference'},
+  {value:'external_subscription',label:'Subscription / paid external'},
+];
+
 function showDocInlineEdit(corpusId,item,doc){
   const existing=item.querySelector('.doc-bd');if(existing)existing.remove();
   item.classList.remove('expanded');item.classList.add('editing');
   const ed=document.createElement('div');ed.className='doc-edit-inline';
-  ed.innerHTML=`<input type="text" class="doc-edit-title" value="${esc(doc.title||'')}" placeholder="Title" /><textarea class="doc-edit-content" rows="8" placeholder="Content (Markdown supported)...">${esc(doc.content||'')}</textarea><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-cancel">Cancel</button><button class="btn-sm doc-edit-save">Save</button></div>`;
+  const curSk=doc.source_kind||'user_original';
+  const skOptions=SOURCE_KIND_OPTIONS.map(o=>`<option value="${o.value}"${o.value===curSk?' selected':''}>${esc(o.label)}</option>`).join('');
+  // metadata.author/date are extracted at ingest from <meta> tags / file
+  // frontmatter and are often wrong. Surface them as editable fields so users
+  // can correct without delete-and-reingest.
+  let curMeta={};
+  try{curMeta=typeof doc.metadata_json==='string'?JSON.parse(doc.metadata_json||'{}'):(doc.metadata_json||{})}catch(e){curMeta={}}
+  if(typeof curMeta!=='object'||curMeta===null)curMeta={};
+  const curAuthor=curMeta.author||'';
+  const curDate=doc.date||'';
+  ed.innerHTML=`<input type="text" class="doc-edit-title" value="${esc(doc.title||'')}" placeholder="Title" /><textarea class="doc-edit-content" rows="8" placeholder="Content (Markdown supported)...">${esc(doc.content||'')}</textarea><div class="doc-edit-meta"><div class="doc-edit-meta-row"><label>Author</label><input type="text" class="doc-edit-author" value="${esc(curAuthor)}" placeholder="(none)" /></div><div class="doc-edit-meta-row"><label>Date</label><input type="text" class="doc-edit-date" value="${esc(curDate)}" placeholder="YYYY-MM-DD" /></div></div><div class="doc-edit-origin"><label for="doc-edit-sk-${doc.id}">Origin</label><select id="doc-edit-sk-${doc.id}" class="doc-edit-sk">${skOptions}</select></div><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-cancel">Cancel</button><button class="btn-sm doc-edit-save">Save</button></div>`;
   ed.onclick=e=>e.stopPropagation();
   item.appendChild(ed);
   ed.querySelector('.doc-edit-title').focus();
@@ -4437,19 +4618,55 @@ function showDocInlineEdit(corpusId,item,doc){
   ed.querySelector('.doc-edit-save').onclick=async()=>{
     const title=ed.querySelector('.doc-edit-title').value.trim();
     const content=ed.querySelector('.doc-edit-content').value.trim();
+    const sk=ed.querySelector('.doc-edit-sk').value;
+    const author=ed.querySelector('.doc-edit-author').value.trim();
+    const date=ed.querySelector('.doc-edit-date').value.trim();
     if(!title){toast('Title is required');return}
     const btn=ed.querySelector('.doc-edit-save');btn.disabled=true;btn.textContent='Saving...';
     const body={};
     if(title!==doc.title)body.title=title;
     if(content!==doc.content)body.content=content;
+    if(sk!==(doc.source_kind||'user_original'))body.source_kind=sk;
+    if(date!==(doc.date||''))body.date=date;
+    if(author!==curAuthor)body.metadata={author};
     if(!Object.keys(body).length){ed.remove();item.classList.remove('editing');return}
     try{
       const r=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(!r.ok)throw new Error((await r.json()).detail||'Failed');
-      if(body.content){ensureIndexed(corpusId)}
-      renderCorpus(corpusId);
+      if(body.content)ensureIndexed(corpusId);
+      // Surgical refresh — rebuild only THIS row's header from the freshly
+      // saved doc so other inline editors on the page stay open. Falling
+      // back to a full renderCorpus() (the previous behavior) wiped any
+      // sibling editor in mid-edit.
+      const fresh=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`).then(rr=>rr.json()).catch(()=>null);
+      ed.remove();item.classList.remove('editing');
+      if(fresh)refreshDocItemRow(item,fresh);
     }catch(e){toast('Save failed: '+e.message);btn.disabled=false;btn.textContent='Save'}
   };
+}
+
+// Patch the visible parts of a .doc-item header in place. Called after a save
+// so the row reflects the new title/word-count/source-kind without re-rendering
+// the whole corpus page (which would blow away any other open inline editors).
+function refreshDocItemRow(item,doc){
+  const titleEl=item.querySelector('.doc-tt');
+  if(titleEl)titleEl.textContent=doc.title||'';
+  const skEl=item.querySelector('.doc-sk');
+  if(skEl){
+    const sk=doc.source_kind||'user_original';
+    skEl.className='doc-sk sk-'+sk;
+    skEl.textContent=sk.replace('_',' ');
+  }
+  const metaEl=item.querySelector('.doc-mt');
+  if(metaEl){
+    const wc=doc.word_count||0;
+    const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');
+    // Preserve the source-kind pill node we just patched; only swap the
+    // word-count + date prefix that lives before it.
+    const skNode=skEl?skEl.cloneNode(true):null;
+    metaEl.innerHTML=wlab+(doc.date?' · '+doc.date:'')+' · ';
+    if(skNode)metaEl.appendChild(skNode);
+  }
 }
 
 function appendAssistantChatBlock(area,text,citations,corpusId,userQuestion,sessionId){
@@ -4758,17 +4975,20 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   const showProUI=shouldShowProUI();
   const userTier=_authUser?(_authUser.user_metadata?.tier||'free'):'free';
   const isProUser=_cloudMode?(userTier==='pro'):true;
-  // Autonomy — three capabilities listed equally. No "current stage"
-  // highlight (it was reading as a tier ladder). The access model is:
+  // Autonomy — three tiers listed equally. Networking is the substrate
+  // (every corpus is reachable in the network by default); autonomy is the
+  // dial — how much of the network the corpus consumes and acts on without
+  // prompting. No "current stage" highlight (it was reading as a tier ladder).
+  // Access model:
   //   Self-hosted (!_cloudMode):      all three available (user brings own API key)
   //   Cloud Pro:                      all three available, no badges
-  //   Cloud Free:                     Static free; Living + Networked show
-  //                                   a clickable Upgrade badge that opens
+  //   Cloud Free:                     Static free; Living + Fully Autonomous
+  //                                   show a clickable Upgrade badge that opens
   //                                   the paywall modal
   const stages=[
-    {key:'static',    label:'Static',    desc:'Manual sources · manual compile. Answers queries on demand.',                                                   pro:false},
-    {key:'living',    label:'Living',    desc:'Auto-ingests from connected feeds and keeps compiled Wiki in sync with your sources.',                          pro:true},
-    {key:'networked', label:'Networked', desc:'Subscribes to peer KBs, absorbs their updates, and exposes its own compiled pages for them to subscribe back.', pro:true},
+    {key:'static',     label:'Static',           desc:'Manual sources · manual compile. Answers queries on demand.',                                                                                pro:false},
+    {key:'living',     label:'Living',           desc:'Auto-ingests from connected feeds and keeps compiled Wiki, entities, and timelines in sync as sources change.',                              pro:true},
+    {key:'autonomous', label:'Fully Autonomous', desc:'Actively discovers peer corpora across the network, subscribes to and pays for them within owner-set policy, and grows knowledge over time.', pro:true},
   ];
   const autonomyHTML=stages.map(s=>{
     let badge='';
@@ -4924,7 +5144,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
       // corpus, so the new disabled-by-default Save button takes over.
       // No need to restore label/state on this branch.
       toast('Access saved');
-      await loadC();renderCorpus(c.id);
+      await loadC();renderCorpusSafe(c.id);
     }catch(e){toast('Failed: '+e.message,'error');_saveBtn.textContent=_origLabel;_refreshSaveState()}
   };
 
@@ -4945,10 +5165,11 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     btn.onclick=(e)=>{e.preventDefault();e.stopPropagation();showProModal(btn.dataset.proUpsell||'')};
   });
 
-  /* Subscriptions — L3 Networked (docs/l3-networked.md).
-     Pulls the current list; inline row per peer with status dot + cadence
-     + revoke. "+ Add" opens a modal that lets the owner pick a peer corpus
-     (local only in Phase 1), a mode, and a cadence. */
+  /* Subscriptions — part of the Fully Autonomous tier (peer corpus
+     subscription + active discovery + autonomous payment). Pulls the current
+     list; inline row per peer with status dot + cadence + revoke. "+ Add"
+     opens a modal that lets the owner pick a peer corpus (local only in
+     Phase 1), a mode, and a cadence. */
   async function loadSubs(){
     const list=document.getElementById('rp-subs-list');
     const cnt=document.getElementById('rp-subs-count');
@@ -4977,7 +5198,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
             if(!rr.ok){toast(body.detail||'Run failed','error');b.disabled=false;b.textContent='▶';return}
             const ing=body.docs_ingested||0;
             toast(ing?`Ingested ${ing} doc${ing===1?'':'s'} (${body.outcome})`:`No new content (${body.outcome})`,ing?'success':'info');
-            loadSubs();if(ing)renderCorpus(c.id);
+            loadSubs();if(ing)renderCorpusSafe(c.id);
           }catch(e){toast('Run failed: '+e.message,'error');b.disabled=false;b.textContent='▶'}
         };
       });
@@ -5024,7 +5245,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
           if(handleQuotaError(rr,body)){extractBtn.textContent=prevLabel;return}
           if(!rr.ok)throw new Error(body.detail||'Failed');
           toast(`Enriched ${body.enriched||0} doc${body.enriched===1?'':'s'}${body.remaining?', '+body.remaining+' remaining':''}`,'success');
-          renderCorpus(c.id);
+          renderCorpusSafe(c.id);
         }catch(e){toast('Extract failed: '+e.message,'error');extractBtn.textContent=prevLabel}
       };
       const browseBtn=document.getElementById('rp-browse-ent');
@@ -5179,7 +5400,7 @@ function _tierCardsHTML(currentTier){
         <li><strong>Embed</strong> — Noos turns every passage into a semantic vector, so chat finds and cites the exact source for your question</li>
         <li><strong>Chat</strong> — ground answers in your knowledge network; build new knowledge through conversation (20 msgs/day)</li>
         <li><strong>Compile manually</strong> — one-off synthesis of Wiki concept notes on a topic you pick</li>
-        <li><strong>Autonomy L0–L1</strong> — Responsive (answers queries) + Subscribing (auto-ingests from connected feeds)</li>
+        <li><strong>Autonomy: Static</strong> — manual sources, manual compile, answers queries on demand</li>
       </ul>
       ${currentTier==='free'?'<div class="pg-badge">Current plan</div>':''}
     </div>
@@ -5194,7 +5415,7 @@ function _tierCardsHTML(currentTier){
         <li><strong>Embed at scale</strong> — no document cap; your entire growing library stays searchable</li>
         <li><strong>Chat</strong> — higher daily cap, enough for sustained building sessions</li>
         <li><strong>Auto-Compile</strong> — Noos keeps Wiki articles, Entity profiles, and Timelines evolving automatically as your sources change.</li>
-        <li><strong>Autonomy L2–L3</strong> — Synthesizing (auto-compiles Wiki from sources) + Proactive (queries peer KBs to learn &amp; publishes reports outward).</li>
+        <li><strong>Autonomy: Living + Fully Autonomous</strong> — Living (auto-ingests from connected feeds, keeps Wiki in sync) + Fully Autonomous (actively discovers, subscribes to, pays for peer corpora; grows on its own within your policy).</li>
         <li><strong>Monetize</strong> — charge per query on your corpora. Noos collects via Stripe Connect; you keep the revenue.</li>
         <li>Priority access</li>
       </ul>
