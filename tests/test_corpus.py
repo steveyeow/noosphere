@@ -1,7 +1,10 @@
 """Tests for corpus CRUD (``noosphere.core.corpus``)."""
 
 
+import pytest
+
 from noosphere.core.corpus import (
+    DuplicateCorpusName,
     create_corpus,
     delete_corpus,
     get_corpus,
@@ -56,11 +59,26 @@ def test_get_corpus_by_slug_unknown(isolated_db):
     assert get_corpus_by_slug("no-such-slug") is None
 
 
-def test_duplicate_name_gets_unique_slug(isolated_db):
+def test_duplicate_name_in_same_workspace_is_rejected(isolated_db):
+    """Same-name creates inside one workspace must fail loudly so the user
+    can open the existing corpus instead of silently creating a near-duplicate.
+    Case + leading/trailing whitespace are normalized so common variants also
+    collide."""
     first = create_corpus("Same Name")
-    second = create_corpus("Same Name")
-    assert first["slug"] != second["slug"]
-    assert second["slug"].startswith("same-name-")
+    with pytest.raises(DuplicateCorpusName) as exc:
+        create_corpus("Same Name")
+    assert exc.value.existing_id == first["id"]
+    # Case + whitespace variants resolve to the same name.
+    with pytest.raises(DuplicateCorpusName):
+        create_corpus("  same NAME  ")
+
+
+def test_duplicate_name_allowed_across_workspaces(isolated_db):
+    """The dedup is workspace-scoped, not global — two users can each have a
+    corpus named 'Notes' without conflict."""
+    a = create_corpus("Notes", owner_id="user-a")
+    b = create_corpus("Notes", owner_id="user-b")
+    assert a["id"] != b["id"]
 
 
 def test_list_corpora_excludes_private(isolated_db):
@@ -138,13 +156,6 @@ def test_create_corpus_optional_fields_defaults(isolated_db):
     assert c["tags"] == []
     assert c["access_level"] == "public"
     assert c["status"] == "draft"
-
-
-def test_get_corpus_by_slug_after_duplicate_name_slug_suffix(isolated_db):
-    first = create_corpus("Dup Slug Name")
-    second = create_corpus("Dup Slug Name")
-    assert get_corpus_by_slug(first["slug"])["id"] == first["id"]
-    assert get_corpus_by_slug(second["slug"])["id"] == second["id"]
 
 
 def test_update_corpus_numeric_counts(isolated_db):

@@ -48,6 +48,42 @@ def _extract_markdown_metadata(text: str) -> tuple[dict, str]:
     return meta, parts[2]
 
 
+# Sentinel strings sites use when the request is a bot / cookieless / JS-off.
+# Hitting any of these means the fetch returned a wall page, not the article —
+# extracting it as-is silently stores junk and lies to the user about the result.
+_BLOCKED_FETCH_SENTINELS = (
+    "javascript is not available",
+    "javascript is disabled",
+    "please enable javascript",
+    "enable javascript to continue",
+    "you need to enable javascript",
+)
+
+
+def _reject_blocked_fetch(url: str, html: str, body: str) -> None:
+    """Raise if the response is a known login/JS-required wall page.
+
+    Catches two failure modes:
+      1. Sentinel strings from the raw HTML (X/Twitter, some news sites).
+      2. Suspiciously short extracted body — under ~50 words is rarely a
+         real article and almost always means the page is gated.
+    """
+    h = html.lower()
+    for s in _BLOCKED_FETCH_SENTINELS:
+        if s in h:
+            raise ValueError(
+                f"{url} requires JavaScript or login — fetch returned a wall page, "
+                f"not the article. Save the page as a file or paste the text instead."
+            )
+    word_count = len(body.split())
+    if word_count and word_count < 50:
+        raise ValueError(
+            f"Only {word_count} words extracted from {url} — likely a paywall, "
+            f"login wall, or JS-required page. Save the page as a file or paste "
+            f"the text instead."
+        )
+
+
 def _html_to_markdown(html: str) -> str:
     """Convert HTML to readable markdown-like text."""
     text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
@@ -547,10 +583,26 @@ def ingest_url(
 ) -> dict:
     """Fetch a URL, convert HTML to markdown, and ingest as a document.
 
+    If the same URL is already ingested into the corpus, return the existing
+    row instead of fetching + creating a duplicate. Same article republished
+    with new content can still produce a duplicate via content_hash bypass —
+    this is the URL-level guard, complementary to the content-hash dedup
+    already in ingest_text.
+
     If source_kind is None, defaults to "external_public" unless the URL
     matches the corpus owner's owned_handles list (then "user_original").
     """
     import httpx
+
+    # Same-URL guard: cheaper than fetching, and stops the Sources list from
+    # growing duplicate rows when a user pastes the same link twice.
+    conn = get_conn()
+    existing = conn.execute(
+        "SELECT * FROM documents WHERE corpus_id=? AND json_extract(metadata_json, '$.source_url')=? LIMIT 1",
+        (corpus_id, url),
+    ).fetchone()
+    if existing:
+        return dict(existing)
 
     resp = httpx.get(url, follow_redirects=True, timeout=30, headers={
         "User-Agent": "Noosphere/0.1 (knowledge-ingestion)"
@@ -562,6 +614,7 @@ def ingest_url(
     title = title_match.group(1).strip() if title_match else url.split("/")[-1]
 
     body = _html_to_markdown(html)
+    _reject_blocked_fetch(url, html, body)
     if not body.strip():
         raise ValueError(f"No readable content extracted from {url}")
 
@@ -621,8 +674,17 @@ def update_document(
     *,
     title: str | None = None,
     content: str | None = None,
+    source_kind: str | None = None,
+    date: str | None = None,
+    metadata: dict | None = None,
 ) -> dict | None:
-    """Update a document's title and/or content. Re-calculates word count if content changes."""
+    """Update a document's editable fields. Re-calculates word count if content changes.
+
+    source_kind / date / metadata are editable post-import so users can fix
+    misclassified rows (e.g. a JS-blocked URL ingested as external_public
+    that the user then pastes their own text into) or correct a wrong
+    author/date that was extracted from <meta> tags.
+    """
     conn = get_conn()
     doc = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
     if not doc:
@@ -631,10 +693,25 @@ def update_document(
     new_title = title if title is not None else doc["title"]
     new_content = content if content is not None else doc["content"]
     new_wc = _word_count(new_content) if content is not None else doc["word_count"]
+    new_sk = source_kind if source_kind is not None else doc["source_kind"]
+    new_date = date if date is not None else doc["date"]
+    if metadata is not None:
+        # Merge into existing metadata so callers can patch a single field
+        # (e.g. just the author) without having to send the whole blob back.
+        try:
+            current_meta = json.loads(doc["metadata_json"] or "{}")
+            if not isinstance(current_meta, dict):
+                current_meta = {}
+        except (json.JSONDecodeError, TypeError):
+            current_meta = {}
+        current_meta.update(metadata)
+        new_meta_json = json.dumps(current_meta)
+    else:
+        new_meta_json = doc["metadata_json"]
 
     conn.execute(
-        "UPDATE documents SET title=?, content=?, word_count=? WHERE id=?",
-        (new_title, new_content, new_wc, doc_id),
+        "UPDATE documents SET title=?, content=?, word_count=?, source_kind=?, date=?, metadata_json=? WHERE id=?",
+        (new_title, new_content, new_wc, new_sk, new_date, new_meta_json, doc_id),
     )
     conn.commit()
 

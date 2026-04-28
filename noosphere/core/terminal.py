@@ -1,7 +1,7 @@
 """Terminal command handler — parses user input and routes to appropriate action."""
 
 import re
-from noosphere.core.corpus import list_corpora, create_corpus
+from noosphere.core.corpus import list_corpora, create_corpus, get_corpus, DuplicateCorpusName
 from noosphere.core.ingest import ingest_url, ingest_text
 from noosphere.core.indexer import index_corpus
 
@@ -15,11 +15,13 @@ def handle_terminal_input(
     org_id: str = "",
     contributor_user_id: str = "",
     quota_check: "callable | None" = None,
+    corpus_id: str | None = None,
 ) -> dict:
     """Process terminal input and return structured response.
 
     Home terminal is chat-first (you're talking to Noos). Routing:
-      - URL → ingest into a corpus (with inline corpus picker)
+      - URL → ingest into a corpus (with inline corpus picker, or directly
+        into ``corpus_id`` when the caller has one in scope)
       - /command → slash-command handler
       - mode='create' → spin up a new knowledge base named after the topic
       - anything else → chat with Noos across all your corpora
@@ -31,6 +33,10 @@ def handle_terminal_input(
     current user and gate creation on the per-tier quota. Self-hosted
     callers can leave both as the defaults; quota_check is invoked exactly
     like _check_corpus_limit and may raise HTTPException to abort.
+
+    corpus_id, when set, is the active corpus on the caller's chip/scope —
+    used to short-circuit the "Which corpus?" picker for URL ingestion so
+    a paste from the corpus detail page lands in the right KB.
     """
     text = text.strip()
     ctx = context or {}
@@ -40,7 +46,7 @@ def handle_terminal_input(
         return _handle_corpus_pick(text, ctx)
 
     if _is_url(text):
-        return _handle_url(text)
+        return _handle_url(text, corpus_id=corpus_id)
 
     if text.startswith("/"):
         return _handle_slash(text)
@@ -108,19 +114,34 @@ def _resolve_corpus_or_prompt(*, url: str = "", write_content: str = "", write_t
     }
 
 
-def _handle_url(url: str) -> dict:
+def _handle_url(url: str, corpus_id: str | None = None) -> dict:
     lines = [{"type": "resp", "text": f"Fetching {url}..."}]
 
-    result = _resolve_corpus_or_prompt(url=url)
-    if result["prompt"]:
-        fetch_lines = list(lines)
-        prompt = result["prompt"]
-        prompt["lines"] = fetch_lines + prompt["lines"]
-        return prompt
+    # Caller-scoped corpus (corpus detail composer, chip selection): skip the
+    # picker entirely. Falls through to the generic resolver if the id is
+    # unknown (e.g. stale chip after a delete) so the user still has a path
+    # forward instead of a 404.
+    if corpus_id:
+        scoped = get_corpus(corpus_id)
+        if scoped:
+            corpus = scoped
+            corpus_name = corpus["name"]
+            cid = corpus["id"]
+        else:
+            corpus = None
+    else:
+        corpus = None
 
-    corpus = result["corpus"]
-    corpus_name = corpus["name"]
-    cid = corpus["id"]
+    if corpus is None:
+        result = _resolve_corpus_or_prompt(url=url)
+        if result["prompt"]:
+            fetch_lines = list(lines)
+            prompt = result["prompt"]
+            prompt["lines"] = fetch_lines + prompt["lines"]
+            return prompt
+        corpus = result["corpus"]
+        corpus_name = corpus["name"]
+        cid = corpus["id"]
 
     try:
         doc = ingest_url(cid, url)
@@ -426,6 +447,24 @@ def _handle_create(
                 corpus = create_corpus(name, access_level="private", org_id=org_id)
             else:
                 corpus = create_corpus(name, access_level="public", owner_id=owner_id)
+        except DuplicateCorpusName as dup:
+            # Send the user to the existing one rather than failing hard —
+            # Create mode's whole purpose is "give me a KB about X", and the
+            # user already has it.
+            existing = get_corpus(dup.existing_id)
+            return {
+                "lines": [
+                    {"type": "resp", "text": f'A knowledge base named "{dup.name}" already exists — opening it instead.'},
+                    {"type": "card", "label": dup.name, "status": "EXISTS",
+                     "detail": "Opened existing knowledge base",
+                     "corpus_id": dup.existing_id},
+                ],
+                "context": {
+                    "state": "idle",
+                    "action": "corpus_created",
+                    "corpus_id": dup.existing_id,
+                },
+            }
         except Exception as e:
             return {
                 "lines": [{"type": "resp", "text": f"Couldn't create that knowledge base: {str(e)[:120]}"}],

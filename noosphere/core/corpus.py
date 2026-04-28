@@ -22,6 +22,19 @@ def _slugify(text: str) -> str:
 LOCAL_OWNER_ID = "local"  # sentinel owner_id for self-hosted single-user mode
 
 
+class DuplicateCorpusName(Exception):
+    """Raised when a workspace already has a corpus with the given (case-insensitive) name.
+
+    Carries the existing corpus id so the API layer can surface an "open
+    existing" affordance instead of forcing the user to delete-and-retry.
+    """
+
+    def __init__(self, name: str, existing_id: str):
+        super().__init__(f"Corpus '{name}' already exists in this workspace")
+        self.name = name
+        self.existing_id = existing_id
+
+
 def create_corpus(
     name: str,
     *,
@@ -54,6 +67,23 @@ def create_corpus(
     conn = get_conn()
     corpus_id = uuid.uuid4().hex[:12]
     slug = _slugify(name)
+
+    # Workspace-scoped duplicate-name guard. Two corpora with the same
+    # human-visible name in the same workspace causes the bug Steve hit
+    # ("AI product design" × 3): the slug suffix kept them addressable
+    # but the sidebar list looked broken. Match case-insensitively and
+    # ignore leading/trailing whitespace so common variants collide too.
+    norm_name = name.strip().lower()
+    dup = conn.execute(
+        """SELECT id FROM corpora
+           WHERE LOWER(TRIM(name)) = ?
+             AND COALESCE(owner_id, '') = ?
+             AND COALESCE(org_id, '') = ?
+           LIMIT 1""",
+        (norm_name, owner_id or "", org_id or ""),
+    ).fetchone()
+    if dup:
+        raise DuplicateCorpusName(name, dup["id"])
 
     existing = conn.execute("SELECT id FROM corpora WHERE slug=?", (slug,)).fetchone()
     if existing:
@@ -170,16 +200,53 @@ def update_corpus(corpus_id: str, **fields) -> dict | None:
 
 def delete_corpus(corpus_id: str) -> bool:
     conn = get_conn()
-    session_ids = conn.execute(
+    # Order matters: dependents first, then the corpus row.
+    # Anything keyed by document_id needs to be cleaned BEFORE we drop the
+    # documents table rows, otherwise the keys are gone and we'd leak rows.
+    doc_ids = [r["id"] for r in conn.execute(
+        "SELECT id FROM documents WHERE corpus_id=?", (corpus_id,)
+    ).fetchall()]
+    if doc_ids:
+        placeholders = ",".join("?" for _ in doc_ids)
+        # concept_versions tracks doc-by-doc compile output; orphaning these
+        # would leave version rows pointing at a phantom document_id.
+        conn.execute(f"DELETE FROM concept_versions WHERE document_id IN ({placeholders})", doc_ids)
+    session_ids = [r["id"] for r in conn.execute(
         "SELECT id FROM chat_sessions WHERE corpus_id=?", (corpus_id,)
-    ).fetchall()
-    for row in session_ids:
-        conn.execute("DELETE FROM chat_messages WHERE session_id=?", (row["id"],))
+    ).fetchall()]
+    if session_ids:
+        placeholders = ",".join("?" for _ in session_ids)
+        conn.execute(f"DELETE FROM chat_messages WHERE session_id IN ({placeholders})", session_ids)
     conn.execute("DELETE FROM chat_sessions WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM chunks WHERE corpus_id=?", (corpus_id,))
+    # entities reference corpus_id but were missing from the original
+    # cleanup — they accumulated as orphans across deletions.
+    conn.execute("DELETE FROM entities WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM documents WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM access_tokens WHERE corpus_id=?", (corpus_id,))
     conn.execute("DELETE FROM query_logs WHERE corpus_id=?", (corpus_id,))
+    # Inbound (this corpus citing others) and outbound (others citing this
+    # corpus) citation rows — both were left dangling before. The cited_*
+    # side has no FK so we have to clean it manually.
+    conn.execute(
+        "DELETE FROM corpus_citations WHERE citing_corpus_id=? OR cited_corpus_id=?",
+        (corpus_id, corpus_id),
+    )
+    # peer_subscriptions: subscriber_corpus_id has ON DELETE CASCADE so it
+    # goes with the corpus row, but a corpus that was the *target* of others'
+    # subscriptions has no FK — clean those manually so peers stop scheduling
+    # runs against a dead target.
+    conn.execute("DELETE FROM peer_subscriptions WHERE target_corpus_id=?", (corpus_id,))
+    # Best-effort cleanup of payment/subscription tables — the schema isn't
+    # always present (cloud-only) so swallow if the table is missing.
+    try:
+        conn.execute("DELETE FROM payments WHERE corpus_id=?", (corpus_id,))
+    except Exception:
+        pass
+    try:
+        conn.execute("DELETE FROM subscriptions WHERE corpus_id=?", (corpus_id,))
+    except Exception:
+        pass
     cur = conn.execute("DELETE FROM corpora WHERE id=?", (corpus_id,))
     conn.commit()
     return cur.rowcount > 0

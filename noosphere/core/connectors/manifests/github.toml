@@ -1,0 +1,36 @@
+# GitHub adapter — uses the official `gh` CLI.
+#
+# Why CLI not MCP: as of 2026-04, `gh` is more battle-tested than any
+# GitHub MCP server (official-Anthropic ref impl included). Auth runs
+# through the user's existing `gh auth login` flow, no separate OAuth.
+# Switch to MCP later by replacing transport_config and the [[ingest]]
+# blocks; the rest of the framework does not change.
+
+kind = "github"
+display_name = "GitHub"
+transport = "cli"
+default_source_kind = "user_capture"
+supports_incremental = false
+supports_oauth = false
+default_cron = "0 */6 * * *"
+
+[transport_config]
+binary = "gh"
+auth_check_cmd = ["gh", "auth", "status"]
+
+[[ingest]]
+cmd = ["gh", "issue", "list", "--state", "all", "--json", "number,title,body,url,createdAt,author", "--limit", "100"]
+title_field = "title"
+content_field = "body"
+url_field = "url"
+external_id_field = "number"
+created_at_field = "createdAt"
+doc_type = "issue"
+
+[[ingest]]
+cmd = ["gh", "pr", "list", "--state", "all", "--json", "number,title,body,url,author,reviewDecision", "--limit", "100"]
+title_field = "title"
+content_field = "body"
+url_field = "url"
+external_id_field = "number"
+doc_type = "pr"

@@ -659,7 +659,28 @@ def ingest_rss_feed(
         headers={"User-Agent": "Noosphere/0.1 (rss-ingestion)"},
     )
     resp.raise_for_status()
+    # Defensive content-type check: if the URL responds 200 with HTML rather
+    # than XML, _parse_rss_atom usually raises ParseError, but some HTML is
+    # well-formed enough to parse and return zero items — which we surface as
+    # a clearer error than "ingested 0" so the user knows to paste an actual
+    # feed URL (e.g. /feed, /rss, /atom). Mocked responses in tests may not
+    # carry a headers attribute, so we treat missing headers as "unknown" and
+    # let _parse_rss_atom be the source of truth.
+    try:
+        ctype = (resp.headers.get("content-type") or "").lower()
+    except AttributeError:
+        ctype = ""
+    if "html" in ctype and "xml" not in ctype:
+        raise ValueError(
+            f"{feed_url} returned HTML, not a feed. Try the site's /feed, "
+            f"/rss, or /atom URL — or use 'Import URL' to capture the page itself."
+        )
     entries = _parse_rss_atom(resp.content)
+    if not entries:
+        raise ValueError(
+            f"{feed_url} returned a valid XML document but no feed items. "
+            f"Double-check that this is the feed URL, not the homepage."
+        )
     ingested: list[dict] = []
     skipped = 0
 

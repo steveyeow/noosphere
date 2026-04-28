@@ -634,8 +634,23 @@ _XOR_TRIGGERS_SQLITE = [
 
 
 def _enforce_corpora_xor_sqlite(conn):
-    """Install BEFORE INSERT/UPDATE triggers on corpora to enforce ownership XOR."""
+    """Install BEFORE INSERT/UPDATE triggers on corpora to enforce ownership XOR.
+
+    Pre-trigger: backfill legacy rows where both ``owner_id`` and ``org_id``
+    are NULL — these were created before the org-id column existed and now
+    violate the XOR constraint, which means *any* UPDATE on them (counts,
+    rename, access-level change) gets rolled back. Setting them to the
+    self-hosted sentinel owner makes them valid again.
+    """
     import sqlite3
+    try:
+        conn.execute(
+            "UPDATE corpora SET owner_id=? WHERE owner_id IS NULL AND org_id IS NULL",
+            ("local",),
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     for stmt in _XOR_TRIGGERS_SQLITE:
         try:
             conn.execute(stmt)
@@ -649,9 +664,14 @@ def _enforce_corpora_xor_pg(conn):
 
     NOT VALID skips validation of pre-existing rows (legacy corpora that may
     have NULL owner_id from earlier self-hosted modes), so the migration is
-    safe to apply on populated databases.
+    safe to apply on populated databases. We still backfill those rows so
+    later VALIDATE CONSTRAINT (or ordinary UPDATEs) won't trip.
     """
     sp = "sp_xor_corpora"
+    try:
+        conn.execute("UPDATE corpora SET owner_id=%s WHERE owner_id IS NULL AND org_id IS NULL", ("local",))
+    except Exception:
+        pass
     try:
         conn.execute(f"SAVEPOINT {sp}")
         conn.execute("""
