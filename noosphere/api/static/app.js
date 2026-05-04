@@ -3102,10 +3102,18 @@ async function _payToAccessCorpus(c){
 }
 
 /* ══════ SHARED GRAPH DRAWING ══════ */
-// Access-level palette — color encodes how a KB relates to the network.
-// Beats name-hash (information-free) for the most-glanced signal.
+// Node color: name-hashed PAL palette (same as the LP/Feynman background)
+// so the discovery graph reads as a thinking-network of distinct minds,
+// not a uniform ACL-coded chart. Private stays muted gray — the lock
+// signal — and remote nodes stay dim. paid/token still convey their
+// state via the card badge + hover tooltip; the graph itself is for
+// "how do these knowledge bases relate", not for status accounting.
 const _ACL_COLOR={public:'#4a90e2',paid:'#22a06b',token:'#b5721a',private:'#94a3b8'};
 function _aclNodeColor(level){return _ACL_COLOR[level||'public']||_ACL_COLOR.public}
+function _nodeColor(c){
+  if((c.access_level||'public')==='private')return _ACL_COLOR.private;
+  return cC(c.name||c.id||'?');
+}
 
 async function drawGraphIn(container,corpora,existingCanvas){
   if(_gAnim){cancelAnimationFrame(_gAnim);_gAnim=null}
@@ -3118,7 +3126,7 @@ async function drawGraphIn(container,corpora,existingCanvas){
   const visibleIds=new Set(corpora.map(c=>c.id));
   const serverLinksP=fetch(`${API}/corpora/network`).then(r=>r.ok?r.json():null).catch(()=>null);
   await Promise.all(corpora.map(async c=>{try{const r=await fetch(`${API}/corpora/${c.id}/analytics?limit=1`);if(r.ok){const a=await r.json();_activity[c.id]=a.total_queries||0}else{_activity[c.id]=0}}catch(e){_activity[c.id]=0}}));
-  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:_aclNodeColor(c.access_level),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
+  const ns=corpora.map(c=>{const tg=Array.isArray(c.tags)?c.tags:[];const tk=[];tg.forEach(t=>tk.push(...t.toLowerCase().split(/[\s,]+/).filter(Boolean)));return{...c,color:_nodeColor(c),ini:(c.name||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join(''),tk,queries:_activity[c.id]||0}});
 
   // Build links: prefer server-computed (semantic + tag layered), fall
   // back to client-side tag overlap if /corpora/network is unreachable.
@@ -5037,7 +5045,7 @@ async function drawMiniNetwork(c){
     const W=cv.parentElement.clientWidth,H=cv.parentElement.clientHeight;
     const dp=devicePixelRatio||1;cv.width=W*dp;cv.height=H*dp;cv.style.width=W+'px';cv.style.height=H+'px';
     const cx=cv.getContext('2d');cx.scale(dp,dp);
-    const[cr,cg,cb]=hR(_aclNodeColor(center.access_level));
+    const[cr,cg,cb]=hR(_nodeColor(center));
     cx.beginPath();cx.arc(W/2,H/2,14,0,Math.PI*2);cx.fillStyle=`rgba(${cr},${cg},${cb},.9)`;cx.fill();
     cx.strokeStyle='rgba(255,255,255,.3)';cx.lineWidth=1.5;cx.stroke();
     cx.fillStyle='rgba(255,255,255,.95)';cx.font='700 10px Inter,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
@@ -5071,19 +5079,15 @@ async function drawMiniNetwork(c){
   for(const n of nodes){
     const r=n.isCenter?11:7;
     n.r=r;
-    const[cr,cg,cb]=hR(_aclNodeColor(n.access_level));
-    if(!n.isOwn){
-      cx.save();cx.setLineDash([3,2]);
-      cx.beginPath();cx.arc(n.x,n.y,r,0,Math.PI*2);
-      cx.fillStyle=`rgba(${cr},${cg},${cb},.35)`;cx.fill();
-      cx.strokeStyle=`rgba(${cr},${cg},${cb},.8)`;cx.lineWidth=1.2;cx.stroke();
-      cx.restore();
-    }else{
-      cx.beginPath();cx.arc(n.x,n.y,r,0,Math.PI*2);
-      cx.fillStyle=`rgba(${cr},${cg},${cb},${n.isCenter?1:.85})`;cx.fill();
-      cx.strokeStyle=n.isCenter?'rgba(255,255,255,.5)':'rgba(255,255,255,.25)';
-      cx.lineWidth=n.isCenter?2:1;cx.stroke();
-    }
+    const[cr,cg,cb]=hR(_nodeColor(n));
+    // Same uniform-stroke + alpha-by-ownership style as the LP background:
+    // external (other-owner) nodes fade to .55 alpha, own nodes stay full,
+    // center node gets a slightly brighter ring.
+    const alpha=n.isOwn?(n.isCenter?1:.85):.55;
+    cx.beginPath();cx.arc(n.x,n.y,r,0,Math.PI*2);
+    cx.fillStyle=`rgba(${cr},${cg},${cb},${alpha})`;cx.fill();
+    cx.strokeStyle=n.isCenter?'rgba(255,255,255,.5)':'rgba(255,255,255,.25)';
+    cx.lineWidth=n.isCenter?2:1;cx.stroke();
     if(n.isCenter){
       cx.fillStyle='rgba(255,255,255,.95)';cx.font='700 9px Inter,sans-serif';cx.textAlign='center';cx.textBaseline='middle';
       cx.fillText((n.initials||n.name[0]||'?').slice(0,2),n.x,n.y);
@@ -5119,7 +5123,7 @@ async function showLocalGraphModal(c){
   const subtitle=count>1
     ? (count-1)+(count===2?' neighbor':' neighbors')
     : (hasTags?'No other corpora share these tags yet.':'Tag this corpus to find similar ones in the network.');
-  wrap.innerHTML=`<div class="lgm-panel"><div class="lgm-hd"><div class="lgm-ti"><span class="lgm-t1">${esc(c.name)}</span><span class="lgm-t2">${subtitle}</span></div><button class="lgm-cc" id="lgm-cc" title="Close">×</button></div><div class="nv-wrap lgm-canvas-wrap"><canvas id="lgm-cv" class="nv-canvas"></canvas><div class="nv-tt hidden" id="nv-tt"></div></div><div class="lgm-ft"><span class="lgm-ft-lbl">Solid = yours · dashed = external · line weight = shared tags</span></div></div>`;
+  wrap.innerHTML=`<div class="lgm-panel"><div class="lgm-hd"><div class="lgm-ti"><span class="lgm-t1">${esc(c.name)}</span><span class="lgm-t2">${subtitle}</span></div><button class="lgm-cc" id="lgm-cc" title="Close">×</button></div><div class="nv-wrap lgm-canvas-wrap"><canvas id="lgm-cv" class="nv-canvas"></canvas><div class="nv-tt hidden" id="nv-tt"></div></div><div class="lgm-ft"><span class="lgm-ft-lbl">Color per corpus · line weight = shared tags · private nodes stay locked</span></div></div>`;
   document.body.appendChild(wrap);
   // Close via ×, Esc, backdrop click, OR route change. The route-change
   // close matters because drawGraphIn's node click handler navigates via
