@@ -111,10 +111,25 @@ def describe(corpus_id: str) -> dict | None:
 
     Returns None if corpus not found. No access gating — capability cards
     are discoverable even for private corpora at the metadata level.
+
+    Exposes three independent signal axes alongside manifest fields:
+    ``kb_reputation`` (network-internal trust), ``discovery_reach`` (external
+    AI surface visibility), and ``revenue_health`` (commercial traction).
+    Consumers weight per task — the platform does not collapse these into a
+    single score (see ``noosphere/core/access_log.py`` for the rationale).
     """
     corpus = get_corpus(corpus_id)
     if not corpus:
         return None
+    from noosphere.core.access_log import discovery_reach_summary, revenue_health
+    try:
+        reach = discovery_reach_summary(corpus["id"])
+    except Exception:
+        reach = {"7d": {"score": 0.0, "ai_surfaces": 0}, "30d": {"score": 0.0, "ai_surfaces": 0}}
+    try:
+        rev = revenue_health(corpus["id"], window="30d")
+    except Exception:
+        rev = None
     return {
         "corpus_id": corpus["id"],
         "name": corpus["name"],
@@ -133,6 +148,8 @@ def describe(corpus_id: str) -> dict | None:
         "license_terms": corpus.get("license_terms"),
         "access_level": corpus.get("access_level", "public"),
         "kb_reputation": corpus.get("kb_reputation", 0.0) or 0.0,
+        "discovery_reach": reach,
+        "revenue_health": rev,
         "quality": {
             "document_count": corpus.get("document_count", 0),
             "chunk_count": corpus.get("chunk_count", 0),

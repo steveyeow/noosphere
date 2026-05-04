@@ -179,6 +179,46 @@ async def connect_onboard(request: Request):
         raise HTTPException(status_code=500, detail="Onboarding failed")
 
 
+@router.post("/connect/crypto-payout")
+async def set_crypto_payout(request: Request):
+    """Register a Base wallet address for receiving USDC from agent payments.
+
+    Crypto onboarding doesn't go through Stripe — there's nothing to verify
+    on our end, the address is just a routing target. The agent pays the
+    creator directly on-chain via the x402 facilitator. (Per-creator on-chain
+    platform fees aren't enforceable without a custom contract — for now,
+    cloud creators get 100% of crypto agent revenue. Cloud's 10% cut still
+    applies on the fiat rail via Stripe Connect.)
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    body = await request.json()
+    address = (body.get("address") or "").strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="address required")
+    # Loose sanity check — accept anything that looks like an EVM address.
+    # The on-chain transaction itself is the authority; we don't check
+    # checksum or chain liveness here.
+    if not (address.startswith("0x") and len(address) == 42):
+        raise HTTPException(
+            status_code=400, detail="address must be a 0x-prefixed 40-hex-char string"
+        )
+
+    from datetime import datetime, timezone
+
+    from noosphere.core.db import get_conn
+
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET crypto_payout_address=?, updated_at=? WHERE id=?",
+        (address, datetime.now(timezone.utc).isoformat(), user_id),
+    )
+    conn.commit()
+    return {"address": address}
+
+
 @router.post("/connect/checkout")
 async def connect_checkout(request: Request):
     """Create a checkout session for a paid corpus with Stripe Connect.

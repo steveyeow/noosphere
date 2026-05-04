@@ -84,14 +84,22 @@ def test_get_pricing_no_pricing(client, corpus):
 
 
 def test_paid_corpus_denies_without_token(client, paid_corpus):
-    """Accessing a paid corpus without a bearer token returns 402."""
+    """Accessing a paid corpus without a bearer token returns 402 with an
+    x402-compliant challenge body — agent payment SDKs read `accepts` to
+    satisfy the challenge automatically."""
     r = client.post(
         f"/api/v1/corpora/{paid_corpus['id']}/search",
         json={"query": "test"},
         headers={"x-agent-id": "agent-1"},
     )
     assert r.status_code == 402
-    assert "payment" in r.json()["detail"].lower()
+    body = r.json()
+    assert body["x402Version"] == 1
+    assert body["error"] == "payment_required"
+    assert isinstance(body["accepts"], list) and len(body["accepts"]) >= 1
+    accept = body["accepts"][0]
+    assert accept["resource"].endswith("/search")
+    assert int(accept["maxAmountRequired"]) == 500
 
 
 def test_paid_corpus_denies_invalid_token(client, paid_corpus):

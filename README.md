@@ -574,6 +574,63 @@ You can also configure pricing from the web UI under corpus settings.
 
 > **Self-hosted = 100% yours.** You use your own Stripe account. Noosphere never touches the money. No platform commission.
 
+### Letting agents pay automatically (x402)
+
+The Stripe Checkout flow above needs a human in a browser. To let AI agents
+auto-pay (no redirect, no cookie, no card form), Noosphere also speaks
+[x402](https://x402.org) — a 402-status protocol every modern agent payment
+client (Coinbase x402 SDK, Stripe Agent Toolkit, OpenAI Operator with stored
+card, etc.) understands.
+
+A paid corpus accessed without auth now returns:
+
+```json
+{
+  "x402Version": 1,
+  "accepts": [
+    {"scheme": "exact",     "network": "base",   "asset": "0x...USDC", "payTo": "0x..."},
+    {"scheme": "stripe-pi", "network": "stripe", "asset": "usd-cents", "payTo": "acct_..."}
+  ],
+  "error": "payment_required"
+}
+```
+
+Agents pick whichever rail their SDK speaks, satisfy the challenge, and retry
+with `X-PAYMENT: <proof>`. Noosphere verifies via the matching facilitator,
+mints a short-lived access token, and serves the response inline.
+
+**Enable one or both rails** by adding to `.env`:
+
+```bash
+# Activate the facilitators you want (comma-separated). Default "mock" is
+# for local dev only — drop it in production.
+NOOSPHERE_PAYMENT_FACILITATORS=coinbase_x402,stripe_agent
+
+# Crypto rail (Coinbase x402 / USDC on Base) — needs only your wallet.
+NOOSPHERE_X402_PAYOUT_ADDRESS=0xYourBaseWallet
+
+# Fiat rail (Stripe Agent Toolkit) — reuses STRIPE_SECRET_KEY from above.
+# This is the Connect account ID that already receives your human Checkout
+# payments; same account, just opened up for agent flows.
+NOOSPHERE_STRIPE_AGENT_PAY_TO=acct_YourStripeConnectId
+```
+
+Either env var is optional — drop `NOOSPHERE_X402_PAYOUT_ADDRESS` to disable
+crypto, drop `NOOSPHERE_STRIPE_AGENT_PAY_TO` to disable fiat. The Stripe
+Checkout flow for human buyers keeps working regardless.
+
+**MCP clients** also get a `purchase` tool — agents inside an MCP session
+fetch the challenge, satisfy it, and receive an access token without ever
+leaving the conversation:
+
+```json
+{"name": "purchase", "arguments": {"corpus_id": "...", "payment_proof": "<x402 payload>"}}
+```
+
+> **Self-hosted = still 100% yours.** Coinbase x402 facilitator is open
+> infrastructure and Stripe is your own account. Funds never touch
+> Noosphere — we just verify the proof and unlock access.
+
 ### Registry configuration
 
 ```bash

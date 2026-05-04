@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from noosphere.core.access import AccessDenied, check_access
+from noosphere.core.access_log import log_access
 from noosphere.core.corpus import get_corpus_by_slug, list_corpora
 from noosphere.core.ingest import get_documents
 from noosphere.core.llmstxt import (
@@ -77,6 +78,7 @@ async def site_llms_index(request: Request):
     """
     corpora = [c for c in list_corpora() if (c.get("access_level") or "public") == "public"]
     text = render_site_index(corpora)
+    log_access(request, corpus_id=None, surface="site_llms")
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -86,6 +88,7 @@ async def corpus_llms_index_by_slug(slug: str, request: Request):
     _gate(corpus, request)
     docs = get_documents(corpus["id"])
     text = render_llms_index(corpus, docs, base_path="/api/v1")
+    log_access(request, corpus_id=corpus["id"], surface="corpus_llms")
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -95,6 +98,7 @@ async def corpus_llms_full_by_slug(slug: str, request: Request):
     _gate(corpus, request)
     docs = get_documents(corpus["id"])
     text = render_llms_full(corpus, docs)
+    log_access(request, corpus_id=corpus["id"], surface="corpus_llms_full")
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -134,6 +138,7 @@ async def sitemap_xml(request: Request):
             block.append("  </url>")
             parts.append("\n".join(block))
     parts.append("</urlset>\n")
+    log_access(request, corpus_id=None, surface="site_sitemap")
     return Response(content="\n".join(parts), media_type="application/xml")
 
 
@@ -146,4 +151,5 @@ async def robots_txt(request: Request):
         "\n"
         f"Sitemap: {base}/sitemap.xml\n"
     )
+    log_access(request, corpus_id=None, surface="site_robots")
     return PlainTextResponse(body, media_type="text/plain; charset=utf-8")

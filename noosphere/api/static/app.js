@@ -272,11 +272,23 @@ function apiFetch(url,opts={}){
   return window._origFetch(url,opts);
 }
 
-// Monkey-patch fetch to auto-inject auth + workspace headers for API calls
+// Monkey-patch fetch to auto-inject auth + workspace headers for API calls.
+// Token-gated corpora live behind Authorization: Bearer <corpus_access_token>;
+// when the user has paid/entered a token for a specific corpus we substitute
+// it for that corpus's URLs so subsequent fetches authenticate as the
+// token holder rather than the logged-in user (whose JWT means nothing to
+// the per-corpus access table).
 window._origFetch=window.fetch;
 window.fetch=function(url,opts={}){
   if(typeof url==='string'&&(url.startsWith(API)||url.startsWith('/api'))){
     opts=opts||{};opts.headers={...(opts.headers||{}),...authHeaders()};
+    const m=url.match(/\/api\/v1\/corpora\/([^\/?#]+)/);
+    if(m){
+      try{
+        const t=sessionStorage.getItem('nph-corpus-token-'+m[1]);
+        if(t)opts.headers['Authorization']='Bearer '+t;
+      }catch(e){}
+    }
   }
   return window._origFetch(url,opts);
 };
@@ -2899,9 +2911,19 @@ async function renderExplore(){
     </div>
     <div id="explore-results" style="display:flex;flex-direction:column;gap:12px"></div>
   </div>`;
-  // Draw the network graph in the top section
+  // Draw the global network graph at the top. Explore is the world view —
+  // every registered corpus shows as a node regardless of access_level.
+  // Falls back to the user's local _corpora if /corpora/network errors.
   const cv=document.getElementById('nv-cv');
-  if(cv&&_corpora.length){drawGraphIn(cv.parentElement,_corpora,cv)}
+  if(cv){
+    let nodes=[];
+    try{
+      const r=await fetch(`${API}/corpora/network`);
+      if(r.ok){const d=await r.json();nodes=Array.isArray(d.nodes)?d.nodes:[]}
+    }catch(e){}
+    if(!nodes.length)nodes=_corpora;
+    if(nodes.length)drawGraphIn(cv.parentElement,nodes,cv);
+  }
   const inp=document.getElementById('explore-q');
   const go=()=>{const v=inp.value.trim();if(v)location.hash='#/explore?q='+encodeURIComponent(v);doExploreSearch(v)};
   document.getElementById('explore-go').onclick=go;
@@ -2924,20 +2946,21 @@ async function doExploreBrowse(){
   try{
     // /corpora is user-scoped in cloud mode (filters by owner_id), which
     // is wrong for a discovery surface — Explore should show every
-    // public KB on this node, not just the viewer's own. /corpora/network
-    // returns all corpora cross-user (with private filtered out unless
-    // the caller is the owner), which matches what Explore wants. As a
-    // side effect this also surfaces orphaned corpora (owner_id=NULL
-    // from legacy create paths) so the operator can find and clean them.
+    // KB on this node, not just the viewer's own. /corpora/network
+    // returns the full network — all access levels — with private nodes
+    // delivered as locked stubs (id+name+tags only, no content metadata).
+    // The card / graph click handlers route to pay / token / detail
+    // based on access_level.
     const r=await fetch(`${API}/corpora/network`);
     const data=await r.json();
     const all=Array.isArray(data)?data:(data.nodes||data.corpora||[]);
-    const pub=all.filter(c=>(c.access_level||'public')!=='private');
-    if(!pub.length){el.innerHTML='<div style="color:var(--muted)">No public knowledge bases yet. Be the first — click <strong>+ New</strong>.</div>';return}
-    el.innerHTML=pub.map(c=>_exploreCard({
+    if(!all.length){el.innerHTML='<div style="color:var(--muted)">No knowledge bases yet. Be the first — click <strong>+ New</strong>.</div>';return}
+    el.innerHTML=all.map(c=>_exploreCard({
       corpus_id:c.id,corpus_name:c.name,description:c.description||'',
       author:c.author||c.author_name||'',tags:c.tags||[],document_count:c.document_count||0,
-      access_level:c.access_level||'public',source:'local',score:1
+      access_level:c.access_level||'public',
+      pricing:c.pricing||null,checkout_url:c.checkout_url||null,
+      source:c.kind==='remote'?'remote':'local',score:1
     })).join('');
   }catch(e){el.innerHTML='<div style="color:var(--err)">Failed to load.</div>'}
 }
@@ -2946,12 +2969,16 @@ function _exploreCard(c){
   const q=c.quality||{};
   const docs=q.document_count||c.document_count||0;
   const words=q.word_count||0;
-  const badge=c.access_level==='paid'?'<span style="color:var(--accent);font-size:11px;font-weight:600">PAID</span>':c.access_level==='private'?'<span style="color:var(--muted);font-size:11px">PRIVATE</span>':'';
+  const al=c.access_level||'public';
+  const badge=al==='paid'?'<span style="color:var(--accent);font-size:11px;font-weight:600">PAID</span>':al==='token'?'<span style="color:#b5721a;font-size:11px;font-weight:600">TOKEN</span>':al==='private'?'<span style="color:var(--muted);font-size:11px">PRIVATE</span>':'';
   const src=c.source==='remote'?`<span style="font-size:11px;color:var(--muted)">remote</span>`:'';
-  const link=c.source==='remote'&&c.preview_url?c.preview_url:`#/corpus/${c.corpus_id}`;
-  const onclick=c.source==='remote'?`onclick="window.open('${c.api_endpoint||'#'}','_blank')"`:
-    `onclick="location.hash='#/corpus/${c.corpus_id}'"`;
-  return `<div class="explore-card" ${onclick} style="padding:16px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-card);cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
+  // Click is unified through window._handleCorpusClick — it routes to
+  // detail / token modal / pay modal / private toast based on access_level.
+  // The card payload is JSON-encoded into the onclick attribute; single
+  // quotes in the JSON (e.g. apostrophes in a corpus name) are HTML-encoded
+  // so the surrounding single-quoted attribute parses cleanly.
+  const _payload=JSON.stringify({id:c.corpus_id,name:c.corpus_name,access_level:al,kind:c.source==='remote'?'remote':'local',pricing:c.pricing||null,checkout_url:c.checkout_url||null,node_endpoint:c.node_endpoint||'',api_endpoint:c.api_endpoint||''}).replace(/'/g,'&#39;');
+  return `<div class="explore-card" onclick='window._handleCorpusClick(${_payload})' style="padding:16px 20px;border-radius:10px;border:1px solid var(--border);background:var(--bg-card);cursor:pointer;transition:border-color .15s" onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
       <strong style="font-size:15px">${esc(c.corpus_name||'')}</strong>${badge} ${src}
     </div>
@@ -2962,6 +2989,116 @@ function _exploreCard(c){
       <span style="font-size:11px;color:var(--muted);margin-left:auto">${docs} docs${words?` · ${Math.round(words/1000)}k words`:''}</span>
     </div>
   </div>`;
+}
+
+/* ══════ CORPUS CLICK ROUTER ══════
+   Single entry point for "user clicked a corpus node/card". Routes by
+   access_level so the same UX shows up whether the click came from the
+   explore graph, the explore card list, or anywhere else that lands on a
+   corpus reference. Mirrors the agent x402 flow on the human side:
+     public  → navigate to detail
+     token   → prompt for access token, store it, navigate
+     paid    → show price + Pay-with-card (Stripe Checkout)
+     private → toast (no detail navigation; node is visible, content isn't)
+   Remote (federated) nodes get a brief origin toast since /corpus/:id
+   isn't a local route for them. */
+
+const _CORPUS_TOKEN_PREFIX='nph-corpus-token-';
+function _getCorpusToken(corpusId){
+  try{return sessionStorage.getItem(_CORPUS_TOKEN_PREFIX+corpusId)||''}catch(e){return ''}
+}
+function _setCorpusToken(corpusId,token){
+  try{sessionStorage.setItem(_CORPUS_TOKEN_PREFIX+corpusId,token)}catch(e){}
+}
+
+window._handleCorpusClick=function(c){
+  const al=(c&&c.access_level)||'public';
+  if(c&&c.kind==='remote'){
+    const origin=c.node_endpoint||'remote noosphere';
+    toast(`${c.name} · from ${origin}`,'success');
+    return;
+  }
+  // Owner bypass — corpora the viewer owns (in their workspace) always
+  // open directly. Server-side _is_owner_request allows it; mirror the
+  // same logic client-side so the gate UI doesn't fire on your own
+  // private/paid/token corpora when seen from the Corpora menu's Network
+  // view, the corpus-detail mini-network, or the global Explore page.
+  const isOwn=Array.isArray(_corpora)&&_corpora.some(x=>x.id===c.id);
+  if(isOwn){location.hash='#/corpus/'+c.id;return}
+  if(al==='private'){
+    toast(`${c.name} is private — owner access only`,'error');
+    return;
+  }
+  if(al==='token'){_promptCorpusToken(c);return}
+  if(al==='paid'){_payToAccessCorpus(c);return}
+  location.hash='#/corpus/'+c.id;
+};
+
+function _promptCorpusToken(c){
+  const existing=document.getElementById('corpus-access-overlay');
+  if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='corpus-access-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+  ov.innerHTML=`<div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:24px;max-width:420px;width:90%;color:var(--tx)">
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px">${esc(c.name)}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">This corpus requires an access token. Paste the token you received from the owner.</div>
+    <input id="corpus-token-input" type="password" autocomplete="off" placeholder="Access token" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--brd);background:var(--bg2);color:var(--tx);font-size:14px;margin-bottom:12px;box-sizing:border-box">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="corpus-token-cancel" style="padding:8px 14px;border-radius:8px;border:1px solid var(--brd);background:transparent;color:var(--tx);cursor:pointer;font-size:13px">Cancel</button>
+      <button id="corpus-token-ok" style="padding:8px 14px;border-radius:8px;border:none;background:var(--btnBg);color:var(--btnC);cursor:pointer;font-size:13px;font-weight:600">Open</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const input=ov.querySelector('#corpus-token-input');
+  input.focus();
+  const close=()=>ov.remove();
+  ov.addEventListener('click',e=>{if(e.target===ov)close()});
+  ov.querySelector('#corpus-token-cancel').onclick=close;
+  const submit=()=>{
+    const t=(input.value||'').trim();
+    if(!t){input.focus();return}
+    _setCorpusToken(c.id,t);
+    close();
+    location.hash='#/corpus/'+c.id;
+  };
+  ov.querySelector('#corpus-token-ok').onclick=submit;
+  input.onkeydown=e=>{if(e.key==='Enter')submit();if(e.key==='Escape')close()};
+}
+
+async function _payToAccessCorpus(c){
+  const cents=c&&c.pricing&&typeof c.pricing.amount_cents==='number'?c.pricing.amount_cents:0;
+  const priceLabel=cents>0?`$${(cents/100).toFixed(2)}${c.pricing.type==='per_query'?' per query':''}`:'See pricing';
+  const existing=document.getElementById('corpus-access-overlay');
+  if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='corpus-access-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000';
+  ov.innerHTML=`<div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:24px;max-width:420px;width:90%;color:var(--tx)">
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px">${esc(c.name)}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Paid corpus</div>
+    <div style="font-size:24px;font-weight:600;margin-bottom:16px">${priceLabel}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Agents can also pay programmatically via x402 (USDC on Base, Stripe Agent Toolkit). The same access is granted regardless of rail.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="pay-cancel" style="padding:8px 14px;border-radius:8px;border:1px solid var(--brd);background:transparent;color:var(--tx);cursor:pointer;font-size:13px">Cancel</button>
+      <button id="pay-go" style="padding:8px 14px;border-radius:8px;border:none;background:var(--btnBg);color:var(--btnC);cursor:pointer;font-size:13px;font-weight:600">Pay with card</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.addEventListener('click',e=>{if(e.target===ov)close()});
+  ov.querySelector('#pay-cancel').onclick=close;
+  ov.querySelector('#pay-go').onclick=async()=>{
+    const btn=ov.querySelector('#pay-go');btn.disabled=true;btn.textContent='Loading...';
+    try{
+      const successUrl=location.origin+'/#/corpus/'+c.id;
+      const cancelUrl=location.origin+location.hash;
+      const r=await fetch(`${API}/corpora/${c.id}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({success_url:successUrl,cancel_url:cancelUrl})});
+      const d=await r.json();
+      if(r.ok&&d.checkout_url){window.location.href=d.checkout_url}
+      else{toast(d.detail||'Could not start checkout','error');btn.disabled=false;btn.textContent='Pay with card'}
+    }catch(e){toast('Checkout failed','error');btn.disabled=false;btn.textContent='Pay with card'}
+  };
 }
 
 /* ══════ SHARED GRAPH DRAWING ══════ */
@@ -3107,7 +3244,10 @@ async function drawGraphIn(container,corpora,existingCanvas){
     if(hov&&tt){
       // Tooltip in screen coords (CSS positions, unaffected by zoom).
       const ext=hov._isOwn===false?' · external':'';
-      tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${hov.document_count} documents · ${hov.access_level}${ext} · Click to open</div>`;
+      const al=hov.access_level||'public';
+      const cta=al==='private'?'Locked':al==='paid'?'Click to pay':al==='token'?'Click for access':'Click to open';
+      const meta=al==='private'?al:`${hov.document_count||0} documents · ${al}`;
+      tt.innerHTML=`<div class="tt-n">${esc(hov.name)}</div><div class="tt-m">${meta}${ext} · ${cta}</div>`;
       tt.classList.remove('hidden');
       tt.style.left=(sx+12)+'px';
       tt.style.top=(sy-8)+'px';
@@ -3122,15 +3262,12 @@ async function drawGraphIn(container,corpora,existingCanvas){
   // into that corpus by accident.
   cv.onclick=()=>{
     if(drag||!hov||panMoved>=5)return;
-    // Remote (federated) nodes don't have a local /corpus/:id route — show
-    // their origin in a toast instead of navigating to a 404. A future pass
-    // can deep-link to the remote node's public page.
-    if(hov.kind==='remote'){
-      const origin=hov.node_endpoint||'remote noosphere';
-      toast(`${hov.name} · from ${origin}`,'success');
-      return;
-    }
-    location.hash='#/corpus/'+hov.id;
+    window._handleCorpusClick({
+      id:hov.id,name:hov.name,access_level:hov.access_level||'public',
+      kind:hov.kind||'local',pricing:hov.pricing||null,
+      checkout_url:hov.checkout_url||null,
+      node_endpoint:hov.node_endpoint||'',
+    });
   };
   cv.ondblclick=e=>{e.preventDefault();autoFit()};
   cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}if(pan)pan=null};
@@ -3179,7 +3316,11 @@ async function drawGraphIn(container,corpora,existingCanvas){
       if(n.queries>0){const pulseR=rr+4+Math.sin(now*.003+n.queries)*(3+Math.min(n.queries,20)*.3);const pulseOp=.15+Math.sin(now*.004+n.name.length)*.1;cx.beginPath();cx.arc(n.x,n.y,pulseR,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${pulseOp*dim})`;cx.lineWidth=2;cx.stroke()}
       cx.fillStyle=`rgba(255,255,255,${.95*dim})`;cx.font=`700 ${rr*.55}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);
       const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${(h?.95:.7)*dim})`:`rgba(30,35,50,${(h?.9:.6)*dim})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
-      cx.fillStyle=dk?`rgba(200,200,210,${.4*dim})`:`rgba(100,110,130,${.4*dim})`;cx.font='400 9px Inter,sans-serif';cx.fillText((n.queries>0?n.queries+' queries':n.document_count+' docs'),n.x,n.y+rr+26)}
+      cx.fillStyle=dk?`rgba(200,200,210,${.4*dim})`:`rgba(100,110,130,${.4*dim})`;cx.font='400 9px Inter,sans-serif';
+      // Private nodes ship without document_count (redacted server-side);
+      // show the access state instead so the label isn't `undefined docs`.
+      const subLabel=n.access_level==='private'?'private':(n.queries>0?n.queries+' queries':((n.document_count||0)+' docs'));
+      cx.fillText(subLabel,n.x,n.y+rr+26)}
     cx.restore();_gAnim=requestAnimationFrame(draw)}
   sim.on('tick',()=>{});_gAnim=requestAnimationFrame(draw);
 }
@@ -4273,16 +4414,33 @@ async function renderCorpusInsights(id){
   const convPct=(conv==null)?'—':(Math.round(conv*100)+'%');
   const callers=data.unique_callers||0;
   const rev=data.revenue;
+  const reach=data.discovery_reach;
+  const rh=data.revenue_health;
   const totalEvents=(k.describe||0)+(k.preview_ask||0)+(k.ask||0);
+  const reachAI=reach?(reach.ai_surfaces_total||0):0;
+  const reachScore=reach?(reach.score||0):0;
 
   const cards=[
-    {label:'Describe calls',value:k.describe,hint:'agents considering this KB'},
+    {label:'Reach (score)',value:reachScore.toFixed(1),hint:'weighted external AI visibility'},
+    {label:'AI surfaces',value:reachAI,hint:'distinct AI callers'},
+    {label:'Describe calls',value:k.describe,hint:'authenticated agents'},
     {label:'preview_ask runs',value:k.preview_ask,hint:'evaluating fit'},
     {label:'ask queries',value:k.ask,hint:'actual usage'},
     {label:'preview → ask',value:convPct,hint:'conversion rate'},
     {label:'Unique callers',value:callers,hint:'distinct agent_ids'},
   ];
-  if(rev&&(rev.paid_queries>0||rev.total_cents>0)){
+  if(rh&&rh.active_paid){
+    cards.push({label:'Subscribers',value:rh.subscriber_count||0,hint:'active'});
+    if((rh.mrr_cents||0)>0){
+      cards.push({label:'MRR',value:'$'+(rh.mrr_cents/100).toFixed(2),hint:'monthly recurring'});
+    }
+    if((rh.window_revenue_cents||0)>0){
+      cards.push({label:'Window revenue',value:'$'+(rh.window_revenue_cents/100).toFixed(2),hint:'payments + settlements'});
+    }
+    if(rh.retention_rate!=null){
+      cards.push({label:'Retention',value:Math.round(rh.retention_rate*100)+'%',hint:'active vs cancelled'});
+    }
+  }else if(rev&&(rev.paid_queries>0||rev.total_cents>0)){
     cards.push({label:'Revenue',value:'$'+(rev.total_cents/100).toFixed(2),hint:`${rev.paid_queries} paid`});
   }
 
@@ -4294,7 +4452,33 @@ async function renderCorpusInsights(id){
     const pct=Math.round((n/maxN)*100);
     return `<div class="cv-ins-fn-row"><div class="cv-ins-fn-lbl">${esc(label)}</div><div class="cv-ins-fn-bar"><div class="cv-ins-fn-fill cv-ins-fn-fill--${cls}" style="width:${pct}%"></div></div><div class="cv-ins-fn-n">${n}</div></div>`;
   };
-  const funnelHTML=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Funnel</div><div class="cv-ins-fn">${funnelRow('describe',k.describe||0,'d')}${funnelRow('preview_ask',k.preview_ask||0,'p')}${funnelRow('ask',k.ask||0,'a')}</div></div>`;
+  const funnelHTML=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Authenticated agent funnel</div><div class="cv-ins-section-sub">describe → preview_ask → ask, from query_logs (callers with x-agent-id or token).</div><div class="cv-ins-fn">${funnelRow('describe',k.describe||0,'d')}${funnelRow('preview_ask',k.preview_ask||0,'p')}${funnelRow('ask',k.ask||0,'a')}</div></div>`;
+
+  // Discovery Reach — external/anonymous AI traffic broken down by class.
+  // Separate from KBR (network-internal trust). Inputs from access_logs:
+  // hits on llms.txt / sitemap / describe / preview surfaces, classified
+  // by User-Agent.
+  const reachLabels={
+    claude:'Claude / Anthropic', gpt:'ChatGPT / OpenAI', perplexity:'Perplexity',
+    ai_search:'AI search aggregators', claude_code:'Claude Code', cursor:'Cursor / coding agents',
+    search_bot:'Search engine bots', generic_bot:'Generic bots', human:'Humans', unknown:'Unclassified',
+  };
+  let reachHTML='';
+  if(reach&&reach.by_class&&Object.keys(reach.by_class).length){
+    const entries=Object.entries(reach.by_class).map(([klass,v])=>({
+      klass, label:reachLabels[klass]||klass,
+      hits:v.hits||0, ips:v.distinct_ips||0, weight:v.weight||0,
+    }));
+    entries.sort((a,b)=>(b.weight*Math.log1p(b.ips))-(a.weight*Math.log1p(a.ips)));
+    const maxIps=Math.max(...entries.map(e=>e.ips),1);
+    const rows=entries.map(e=>{
+      const pct=Math.round((e.ips/maxIps)*100);
+      return `<div class="cv-ins-fn-row"><div class="cv-ins-fn-lbl">${esc(e.label)}</div><div class="cv-ins-fn-bar"><div class="cv-ins-fn-fill cv-ins-fn-fill--d" style="width:${pct}%"></div></div><div class="cv-ins-fn-n" title="${e.hits} hits, ${e.ips} distinct IPs, weight ${e.weight}">${e.ips}</div></div>`;
+    }).join('');
+    reachHTML=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Discovery Reach</div><div class="cv-ins-section-sub">External AI surface visibility — distinct callers per class hitting llms.txt, sitemap, describe, preview. Score = Σ weight × ln(1 + distinct_ips).</div><div class="cv-ins-fn">${rows}</div></div>`;
+  }else{
+    reachHTML=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Discovery Reach</div><div class="cv-ins-empty-sm">No external traffic in this window yet. Share the corpus llms.txt URL — that's the surface AI agents probe first.</div></div>`;
+  }
 
   // Top citing KBs.
   const citing=Array.isArray(data.top_citing)?data.top_citing:[];
@@ -4306,11 +4490,11 @@ async function renderCorpusInsights(id){
     : '<div class="cv-ins-empty-sm">No incoming citations yet.</div>';
   const citingSection=`<div class="cv-ins-section"><div class="cv-ins-section-hd">Top citing KBs</div>${citingHTML}</div>`;
 
-  const empty=totalEvents===0
+  const empty=(totalEvents===0&&reachAI===0)
     ? '<div class="cv-ins-empty-sm" style="margin-bottom:18px">No agent activity in this window yet. Share the corpus endpoint or <a href="#/compose" class="rp-subtle-link">connect it from another KB</a> to drive traffic.</div>'
     : '';
 
-  document.getElementById('cv-ins-body').innerHTML=`${empty}<div class="cv-ins-cards">${kpiHTML}</div>${funnelHTML}${citingSection}`;
+  document.getElementById('cv-ins-body').innerHTML=`${empty}<div class="cv-ins-cards">${kpiHTML}</div>${reachHTML}${funnelHTML}${citingSection}`;
 }
 
 /* ══════ SETTINGS TAB — Connect endpoints + Maintenance ══════ */

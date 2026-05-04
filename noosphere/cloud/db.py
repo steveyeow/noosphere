@@ -76,6 +76,27 @@ def init_cloud_tables():
         except Exception:
             pass
 
+    # Additive migrations — silently skip if column already exists.
+    for stmt in (
+        "ALTER TABLE users ADD COLUMN crypto_payout_address TEXT",
+    ):
+        try:
+            if is_pg():
+                conn.execute("SAVEPOINT sp_cloud_mig")
+                conn.execute(stmt)
+                conn.execute("RELEASE SAVEPOINT sp_cloud_mig")
+            else:
+                conn.execute(stmt)
+            conn.commit()
+        except Exception:
+            try:
+                if is_pg():
+                    conn.execute("ROLLBACK TO SAVEPOINT sp_cloud_mig")
+                else:
+                    conn.rollback()
+            except Exception:
+                pass
+
 
 def get_or_create_user(user_id: str, email: str = "") -> dict:
     """Get an existing user or create a new one from Supabase JWT claims."""

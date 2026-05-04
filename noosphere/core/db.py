@@ -472,6 +472,39 @@ CREATE TABLE IF NOT EXISTS connector_configs (
 );
 CREATE INDEX IF NOT EXISTS idx_conn_org ON connector_configs(org_id);
 CREATE INDEX IF NOT EXISTS idx_conn_owner ON connector_configs(owner_id);
+
+CREATE TABLE IF NOT EXISTS agent_settlements (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    facilitator TEXT NOT NULL,
+    scheme TEXT NOT NULL,
+    network TEXT,
+    agent_id TEXT,
+    payer_id TEXT,
+    amount_cents INTEGER NOT NULL,
+    currency TEXT DEFAULT 'usd',
+    asset TEXT,
+    settlement_tx TEXT,
+    proof_json TEXT DEFAULT '{}',
+    access_token_id TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_corpus ON agent_settlements(corpus_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_settlements_agent ON agent_settlements(agent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS access_logs (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT,
+    surface TEXT NOT NULL,
+    user_agent TEXT,
+    agent_class TEXT NOT NULL,
+    ip_hash TEXT,
+    path TEXT,
+    referer TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_access_logs_corpus ON access_logs(corpus_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_access_logs_class ON access_logs(corpus_id, agent_class, created_at);
 """
 
 # SQLite: FTS5 virtual table for full-text search

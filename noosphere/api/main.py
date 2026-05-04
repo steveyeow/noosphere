@@ -15,6 +15,7 @@ from noosphere import __version__
 from noosphere.api.routes import router as api_router
 from noosphere.api.llmstxt_router import router as llmstxt_router
 from noosphere.mcp.routes import router as mcp_router
+from noosphere.core.access import PaymentRequired
 from noosphere.core.db import get_conn, close as db_close
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(PaymentRequired)
+async def payment_required_handler(_request, exc: PaymentRequired):
+    """x402-compliant 402 response for paid corpora hit without valid auth.
+
+    The body lists facilitator-issued payment requirements (`accepts`) so
+    agent payment clients can satisfy the challenge and retry with
+    `X-PAYMENT: <proof>`. A `checkout_url` is included for human fallback
+    via Stripe Checkout. Spec: https://x402.org
+    """
+    return JSONResponse(status_code=402, content=exc.body)
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(mcp_router)

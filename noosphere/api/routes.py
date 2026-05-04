@@ -16,7 +16,8 @@ from noosphere.core.corpus import LOCAL_OWNER_ID, DuplicateCorpusName, list_corp
 from noosphere.core.ingest import get_documents, get_document, ingest_text, ingest_url, delete_document, update_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
-from noosphere.core.access import check_access, AccessDenied
+from noosphere.core.access import check_access, AccessDenied, PaymentRequired, verify_facilitator_proof
+from noosphere.core.access_log import log_access
 from noosphere.core.db import get_conn, is_pg
 from noosphere.core.llm import LLMError
 from noosphere.core import orgs as orgs_mod
@@ -154,6 +155,14 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
     other readers fall through to public/token/paid gating.
     Team corpus: any org member with role >= viewer bypasses; non-members
     fall through to gating just like for personal corpora.
+
+    Paid-corpus agent path: if the bearer doesn't validate (no Stripe
+    payment) and an `X-PAYMENT` header is present, the configured
+    facilitator (Coinbase x402, Mock, etc.) is given a chance to verify
+    the proof. Successful verification grants this single request and
+    records an `agent_settlements` row for audit. Otherwise the request
+    is denied with a `PaymentRequired` exception, which the global
+    handler turns into a proper x402 JSON challenge body.
     """
     user_id = _get_user_id(request)
     if corpus.get("org_id"):
@@ -167,6 +176,17 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
     try:
         return check_access(corpus, _extract_bearer(request))
     except AccessDenied as e:
+        if e.status_code == 402:
+            payment_proof = (request.headers.get("x-payment") or "").strip()
+            resource = str(request.url.path)
+            if payment_proof:
+                agent_id = request.headers.get("x-agent-id", "")
+                result, settlement_id = verify_facilitator_proof(
+                    corpus, payment_proof, resource=resource, agent_id=agent_id,
+                )
+                if result.valid:
+                    return settlement_id
+            raise PaymentRequired(corpus, resource=resource)
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
@@ -896,12 +916,15 @@ async def api_admin_recompute_embeddings(request: Request, limit: int = 50):
 
 @router.get("/corpora/network")
 async def api_corpus_network(request: Request, background_tasks: BackgroundTasks):
-    # Noosphere = the world. This endpoint is the global public-network
-    # graph, identical regardless of which workspace the caller is in.
-    # Per-workspace ("ours") graphs are served by /corpora and rendered in
-    # #/corpora's Network mode. Private corpora visibility is governed by
-    # access_level (orthogonal to workspace), enforced via include_private.
-    corpora = list_corpora(include_private=_is_owner_request(request))
+    # Noosphere = the world. Every registered corpus surfaces as a node
+    # regardless of access_level — visibility of the *node* is universal,
+    # access to *content* is what's gated. Private corpora appear with
+    # only id/name/tags so the graph stays complete; paid corpora carry
+    # `pricing` / `accepts` / `checkout_url` so both humans (Stripe
+    # Checkout) and agents (x402 challenge) can act without first being
+    # bounced by a 402.
+    corpora = list_corpora(include_private=True)
+    is_owner = _is_owner_request(request)
     # Lazy backfill: any corpus without a profile embedding yet gets one
     # computed in the background. The current response uses whatever
     # tag-only links are computable; the next /network call will pick up
@@ -955,6 +978,7 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
         logger.debug("backfill scan skipped: %s", _bf_err)
     nodes = []
     for c in corpora:
+        access_level = c.get("access_level", "public")
         tags = c.get("tags", [])
         if isinstance(tags, str):
             try:
@@ -966,7 +990,21 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
             tokens.extend([x.strip().lower() for x in t.replace(",", " ").split() if x.strip()])
         name = c["name"]
         initials = "".join(w[0].upper() for w in name.split()[:2]) if name else "?"
-        nodes.append({
+
+        # Private + non-owner: emit a minimal locked node so the graph
+        # stays complete but content metadata (description, doc counts,
+        # author, status, etc.) doesn't leak. Tags stay so the node still
+        # finds its semantic neighborhood.
+        if access_level == "private" and not is_owner:
+            nodes.append({
+                "id": c["id"], "name": name,
+                "tags": tags, "tokens": tokens, "initials": initials,
+                "access_level": "private",
+                "kind": "local",
+            })
+            continue
+
+        node = {
             "id": c["id"], "name": name, "slug": c.get("slug", ""),
             "description": c.get("description", ""), "author": c.get("author_name", ""),
             "tags": tags, "tokens": tokens, "initials": initials,
@@ -974,11 +1012,37 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
             "chunk_count": c.get("chunk_count", 0),
             "word_count": c.get("word_count", 0),
             "status": c.get("status", "draft"),
-            "access_level": c.get("access_level", "public"),
+            "access_level": access_level,
             "task_types": c.get("task_types", []),
             "autonomy_level": c.get("autonomy_level", 0),
             "kind": "local",
-        })
+        }
+
+        # Paid: ship pricing + x402 accepts + Stripe checkout pointer so
+        # the caller can act without first hitting the 402 gate. Humans
+        # use checkout_url (Stripe Checkout); agents pick from accepts
+        # (x402 v1 spec) and re-present `X-PAYMENT`.
+        if access_level == "paid":
+            try:
+                pricing_raw = c.get("pricing_json")
+                if pricing_raw:
+                    pricing = _json.loads(pricing_raw) if isinstance(pricing_raw, str) else pricing_raw
+                    if isinstance(pricing, dict):
+                        node["pricing"] = pricing
+            except Exception:
+                pass
+            try:
+                from noosphere.core.agent_payments import build_x402_challenge
+                resource = f"/api/v1/corpora/{c['id']}"
+                challenge = build_x402_challenge(c, resource=resource)
+                accepts = challenge.get("accepts") or []
+                if accepts:
+                    node["accepts"] = accepts
+            except Exception:
+                pass
+            node["checkout_url"] = f"/api/v1/corpora/{c['id']}/checkout"
+
+        nodes.append(node)
 
     # Merge in remote corpora from registered_corpora — populated by the
     # registry layer when this node federates with a Noosphere registry.
@@ -1151,6 +1215,7 @@ async def api_llms_index(corpus_id: str, request: Request):
     _check_corpus_access(corpus, request)
     docs = get_documents(corpus["id"])
     text = render_llms_index(corpus, docs, base_path="/api/v1")
+    log_access(request, corpus_id=corpus["id"], surface="corpus_llms")
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -1163,6 +1228,7 @@ async def api_llms_full(corpus_id: str, request: Request):
     _check_corpus_access(corpus, request)
     docs = get_documents(corpus["id"])
     text = render_llms_full(corpus, docs)
+    log_access(request, corpus_id=corpus["id"], surface="corpus_llms_full")
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -2267,6 +2333,7 @@ async def api_describe(corpus_id: str, request: Request):
         )
     except Exception:
         pass
+    log_access(request, corpus_id=result["corpus_id"], surface="corpus_describe")
     return result
 
 
@@ -2382,13 +2449,14 @@ async def api_preview_ask(corpus_id: str, req: PreviewAskRequest, request: Reque
     if result is None:
         raise HTTPException(status_code=404, detail="Corpus not found")
     _track_usage(request, "preview_ask")
+    log_access(request, corpus_id=corpus["id"], surface="corpus_preview_ask")
     return result
 
 
 # ── Preview (discovery) ──
 
 @router.get("/corpora/{corpus_id}/preview")
-async def api_preview(corpus_id: str):
+async def api_preview(corpus_id: str, request: Request):
     """Preview a knowledge base — returns sample chunks and quality signals.
 
     Available without authentication, even for paid corpora. Designed for
@@ -2396,6 +2464,7 @@ async def api_preview(corpus_id: str):
     to a full query or purchase.
     """
     corpus = _resolve_corpus(corpus_id)
+    log_access(request, corpus_id=corpus["id"], surface="corpus_preview")
     conn = get_conn()
 
     # Sample chunks: pick a few representative ones (newest, spread across documents)
@@ -3013,6 +3082,21 @@ async def api_insights(corpus_id: str, request: Request, window: str = "7d"):
     except Exception:
         pass
 
+    # Discovery Reach + Revenue Health — separate axes from the network-
+    # internal trust signal (KBR) and the funnel counters above. Reach
+    # captures external/anonymous AI traffic (Perplexity, Claude search,
+    # ChatGPT browse, generic crawlers) that query_logs deliberately
+    # ignores; Revenue Health is the lagging commercial artifact.
+    from noosphere.core.access_log import discovery_reach, revenue_health as _rev_health
+    try:
+        reach = discovery_reach(corpus["id"], window=window)
+    except Exception:
+        reach = None
+    try:
+        rev_health = _rev_health(corpus["id"], window=("30d" if window != "all" else "all"))
+    except Exception:
+        rev_health = None
+
     return {
         "corpus_id": corpus["id"],
         "window": window,
@@ -3021,6 +3105,8 @@ async def api_insights(corpus_id: str, request: Request, window: str = "7d"):
         "conversion": conversion,
         "top_citing": top_citing,
         "revenue": revenue,
+        "discovery_reach": reach,
+        "revenue_health": rev_health,
     }
 
 
@@ -3498,6 +3584,67 @@ async def api_checkout(corpus_id: str, req: CheckoutRequest, request: Request):
         )
     except PaymentError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+class SettleRequest(BaseModel):
+    """Body for POST /corpora/{id}/settle.
+
+    Either provide `payment_proof` directly (e.g. the agent's MCP client
+    can't easily set arbitrary HTTP headers), or send the proof via the
+    `X-PAYMENT` header and leave the body empty. `mint_access_token` mints
+    a short-lived bearer token usable for subsequent calls — useful for
+    batched workflows that don't want to re-pay each call.
+    """
+
+    payment_proof: str = ""
+    mint_access_token: bool = True
+
+
+@router.post("/corpora/{corpus_id}/settle")
+async def api_settle(corpus_id: str, req: SettleRequest, request: Request):
+    """Verify an x402 payment proof and grant access to a paid corpus.
+
+    Used by agents that hit 402 on a paid endpoint and want to satisfy the
+    challenge before retrying. Returns the verified settlement plus —
+    optionally — a freshly-minted access token they can present as
+    `Authorization: Bearer <token>` on subsequent calls within the TTL.
+    Per-call x402 retries with `X-PAYMENT` are also fully supported on the
+    original endpoint and don't require a token.
+    """
+    corpus = _resolve_corpus(corpus_id)
+    if corpus.get("access_level") != "paid":
+        raise HTTPException(
+            status_code=400, detail="This corpus is not set to paid access"
+        )
+    proof = req.payment_proof or (request.headers.get("x-payment") or "").strip()
+    if not proof:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide payment_proof in body or X-PAYMENT header",
+        )
+    agent_id = request.headers.get("x-agent-id", "")
+    resource = f"/api/v1/corpora/{corpus['id']}/search"
+    result, settlement_id = verify_facilitator_proof(
+        corpus, proof, resource=resource, agent_id=agent_id
+    )
+    if not result.valid:
+        raise HTTPException(status_code=402, detail=result.reason or "Payment invalid")
+
+    response: dict = {
+        "settlement_id": settlement_id,
+        "amount_cents": result.amount_cents,
+        "scheme": result.scheme,
+        "network": result.network,
+        "settlement_tx": result.settlement_tx,
+        "payer_id": result.payer_id,
+    }
+    if req.mint_access_token:
+        from noosphere.core.agent_payments import mint_access_token, ACCESS_TOKEN_TTL_SECONDS
+
+        _, raw = mint_access_token(corpus["id"])
+        response["access_token"] = raw
+        response["access_token_ttl_seconds"] = ACCESS_TOKEN_TTL_SECONDS
+    return response
 
 
 @router.post("/corpora/{corpus_id}/pricing")

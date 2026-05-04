@@ -9,7 +9,7 @@ from noosphere.core.corpus import list_corpora, get_corpus, get_corpus_by_slug
 from noosphere.core.ingest import get_documents, get_document
 from noosphere.core.retrieval import search_corpus
 from noosphere.core.kb_agent import ask as kb_ask, describe as kb_describe, preview_ask as kb_preview_ask, route as kb_route
-from noosphere.core.access import check_access
+from noosphere.core.access import check_access, AccessDenied, verify_facilitator_proof
 
 
 TOOLS = [
@@ -148,6 +148,28 @@ TOOLS = [
             "required": ["corpus_id", "question"],
         },
     },
+    {
+        "name": "purchase",
+        "description": (
+            "Pay for paid-corpus access using an x402 payment proof. Without "
+            "`payment_proof`, returns the x402 challenge body — pass it to your "
+            "x402 payment client (Coinbase x402 SDK, etc.) to mint a proof, then "
+            "call `purchase` again with `payment_proof` set. Returns an "
+            "`access_token` usable with other MCP tools (pass via the "
+            "`access_token` argument) for the duration of the TTL."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "corpus_id": {"type": "string", "description": "Corpus ID or slug"},
+                "payment_proof": {
+                    "type": "string",
+                    "description": "Base64-encoded x402 payment payload (X-PAYMENT). Omit on first call to fetch the challenge.",
+                },
+            },
+            "required": ["corpus_id"],
+        },
+    },
 ]
 
 
@@ -155,9 +177,34 @@ def _resolve(corpus_id: str) -> dict | None:
     return get_corpus(corpus_id) or get_corpus_by_slug(corpus_id)
 
 
-def _check_mcp_access(corpus: dict, bearer_token: str | None) -> str | None:
-    """Enforce access control for MCP calls. Returns token_id or None. Raises AccessDenied on failure."""
-    return check_access(corpus, bearer_token)
+def _check_mcp_access(
+    corpus: dict,
+    bearer_token: str | None,
+    *,
+    payment_proof: str | None = None,
+    agent_id: str = "",
+    tool_name: str = "",
+) -> str | None:
+    """Enforce access control for MCP calls. Returns token_id, settlement_id,
+    or None. Raises AccessDenied on failure.
+
+    For paid corpora, if the bearer doesn't validate but an x402
+    `payment_proof` is supplied (either via X-PAYMENT header on the HTTP
+    request or via the tool's `payment_proof` argument), the configured
+    facilitator gets a chance to verify. Successful verification grants
+    this single tool call and records an `agent_settlements` audit row.
+    """
+    try:
+        return check_access(corpus, bearer_token)
+    except AccessDenied as e:
+        if e.status_code == 402 and payment_proof:
+            resource = f"/mcp/tools/{tool_name or 'unknown'}/corpora/{corpus['id']}"
+            result, settlement_id = verify_facilitator_proof(
+                corpus, payment_proof, resource=resource, agent_id=agent_id,
+            )
+            if result.valid:
+                return settlement_id
+        raise
 
 
 def handle_tool_call(
@@ -167,6 +214,7 @@ def handle_tool_call(
     bearer_token: str | None = None,
     agent_id: str = "",
     caller_corpus_id: str = "",
+    payment_proof: str | None = None,
 ) -> dict:
     """Execute an MCP tool call and return the result.
 
@@ -181,7 +229,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        token_id = _check_mcp_access(c, bearer_token)
+        token_id = _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         # MCP consumers are external agents — always apply source_kind filter.
         result = search_corpus(
             c["id"], arguments["query"],
@@ -205,7 +253,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        _check_mcp_access(c, bearer_token)
+        _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         doc = get_document(arguments["document_id"])
         if not doc:
             return {"error": f"Document not found: {arguments['document_id']}"}
@@ -215,7 +263,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        _check_mcp_access(c, bearer_token)
+        _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         docs = get_documents(c["id"])
         return {"documents": [{"id": d["id"], "title": d["title"],
                                "doc_type": d.get("doc_type", ""),
@@ -226,7 +274,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        _check_mcp_access(c, bearer_token)
+        _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         return {
             "corpus_id": c["id"], "name": c["name"],
             "document_count": c["document_count"],
@@ -240,7 +288,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        _check_mcp_access(c, bearer_token)
+        _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         docs = get_documents(c["id"])
         topics = set()
         corpus_tags = c.get("tags", [])
@@ -263,7 +311,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        _check_mcp_access(c, bearer_token)
+        _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         return c
 
     elif name == "preview":
@@ -322,7 +370,7 @@ def handle_tool_call(
         c = _resolve(arguments["corpus_id"])
         if not c:
             return {"error": f"Corpus not found: {arguments['corpus_id']}"}
-        token_id = _check_mcp_access(c, bearer_token)
+        token_id = _check_mcp_access(c, bearer_token, payment_proof=payment_proof, agent_id=agent_id, tool_name=name)
         result = kb_ask(
             c["id"], arguments["question"],
             top_k=arguments.get("top_k", 5),
@@ -373,6 +421,49 @@ def handle_tool_call(
             limit=arguments.get("limit", 5),
         )
         return result or {"error": f"Corpus not found: {arguments['corpus_id']}"}
+
+    elif name == "purchase":
+        c = _resolve(arguments["corpus_id"])
+        if not c:
+            return {"error": f"Corpus not found: {arguments['corpus_id']}"}
+        if c.get("access_level") != "paid":
+            return {"error": "Corpus is not paid — no payment required"}
+        proof = (arguments.get("payment_proof") or payment_proof or "").strip()
+        if not proof:
+            from noosphere.core.agent_payments import build_x402_challenge
+
+            return {
+                "x402": build_x402_challenge(
+                    c, resource=f"/mcp/tools/purchase/corpora/{c['id']}",
+                ),
+                "instructions": (
+                    "Use your x402 payment client to satisfy the challenge, then "
+                    "call `purchase` again with `payment_proof` set to the resulting "
+                    "X-PAYMENT payload."
+                ),
+            }
+        from noosphere.core.agent_payments import (
+            ACCESS_TOKEN_TTL_SECONDS,
+            mint_access_token,
+        )
+
+        result, settlement_id = verify_facilitator_proof(
+            c, proof,
+            resource=f"/mcp/tools/purchase/corpora/{c['id']}",
+            agent_id=agent_id,
+        )
+        if not result.valid:
+            return {"error": f"Payment invalid: {result.reason}"}
+        _, raw = mint_access_token(c["id"])
+        return {
+            "settlement_id": settlement_id,
+            "amount_settled_cents": result.amount_cents,
+            "scheme": result.scheme,
+            "network": result.network,
+            "settlement_tx": result.settlement_tx,
+            "access_token": raw,
+            "access_token_ttl_seconds": ACCESS_TOKEN_TTL_SECONDS,
+        }
 
     return {"error": f"Unknown tool: {name}"}
 
