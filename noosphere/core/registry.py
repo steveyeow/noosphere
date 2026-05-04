@@ -48,6 +48,33 @@ def last_registration_ok() -> bool:
     return _LAST_REGISTRATION_OK
 
 
+def is_local_endpoint(url: str) -> bool:
+    """True for endpoint URLs that aren't reachable from outside the host.
+
+    A self-hosted node advertising `http://localhost:8420` to the shared
+    registry is useless — federation queries to that URL hit the requester's
+    own machine, not ours. Worse, the registry then thinks our public
+    corpora are reachable when they aren't. Detect and skip these so dev
+    instances (and `noosphere serve` without --public-url) don't pollute
+    the network with dead pointers. Covers the full 127.0.0.0/8 loopback
+    range (not just 127.0.0.1) and IPv6 localhost.
+    """
+    if not url or not url.strip():
+        return True
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(url.strip()).hostname or "").lower()
+    except Exception:
+        return True
+    if not host:
+        return True
+    return (
+        host in ("localhost", "0.0.0.0", "::1")
+        or host.startswith("127.")
+        or host.endswith(".localhost")
+    )
+
+
 def resync_registry() -> bool:
     """Re-push the current non-private corpora snapshot to the discovery
     registry. Safe to call from any corpus mutation — no-op if the node
@@ -83,6 +110,15 @@ def register_with_registry(
     registry = registry_url or NOOSPHERE_REGISTRY
     if not registry:
         log.info("Registry disabled (NOOSPHERE_REGISTRY=none)")
+        return False
+
+    if is_local_endpoint(endpoint_url):
+        log.info(
+            "Skipping registry POST: endpoint %s is not publicly reachable. "
+            "Set APP_URL (or noosphere serve --public-url) to a public URL "
+            "to join the network.",
+            endpoint_url,
+        )
         return False
 
     corpora = list_corpora()

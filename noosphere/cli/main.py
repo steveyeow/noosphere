@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import click
@@ -230,23 +231,33 @@ def serve(port, host, no_registry, registry_url, public_url):
     click.echo(f"  MCP:       http://{host}:{port}/mcp")
     click.echo(f"  Manifest:  http://{host}:{port}/.well-known/noosphere.json")
 
-    if not no_registry:
+    if no_registry:
+        # Lifespan reads NOOSPHERE_REGISTRY too — clear it so the FastAPI
+        # startup hook also skips, otherwise --no-registry would only mute
+        # the CLI but lifespan would still POST.
+        os.environ["NOOSPHERE_REGISTRY"] = "none"
+        click.echo("  Registry:  disabled (--no-registry)")
+    else:
         registry = registry_url or NOOSPHERE_REGISTRY
         if registry:
             endpoint = public_url or f"http://{host}:{port}"
-            click.echo(f"  Registry:  {registry}")
-            from noosphere.core.registry import register_with_registry, set_node_endpoint
-            # Cache the endpoint so runtime corpus mutations (create /
-            # update / delete) can auto-resync the registry without
-            # re-plumbing it everywhere.
-            set_node_endpoint(endpoint)
-            ok = register_with_registry(endpoint, registry_url=registry)
-            if ok:
-                click.echo("  Registered with the Noosphere registry")
+            from noosphere.core.registry import (
+                is_local_endpoint, register_with_registry, set_node_endpoint,
+            )
+            if is_local_endpoint(endpoint):
+                click.echo(f"  Registry:  {registry} (not registering — endpoint is localhost; pass --public-url to join the network)")
             else:
-                click.echo("  Registry registration skipped (may be unreachable)")
-    else:
-        click.echo("  Registry:  disabled (--no-registry)")
+                click.echo(f"  Registry:  {registry}")
+                # Make APP_URL match what we're advertising so the FastAPI
+                # lifespan hook can resync on subsequent restarts even if
+                # the CLI isn't the entrypoint next time (Docker, systemd).
+                os.environ.setdefault("APP_URL", endpoint)
+                set_node_endpoint(endpoint)
+                ok = register_with_registry(endpoint, registry_url=registry)
+                if ok:
+                    click.echo("  Registered with the Noosphere registry")
+                else:
+                    click.echo("  Registry registration failed (may be unreachable — see logs)")
 
     uvicorn.run("noosphere.api.main:app", host=host, port=port, reload=False)
 

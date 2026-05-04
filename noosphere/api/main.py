@@ -128,6 +128,48 @@ async def _health_check_loop():
         await asyncio.sleep(300)  # every 5 minutes
 
 
+async def _register_with_registry_on_startup():
+    """Best-effort one-shot registration with the discovery registry.
+
+    Runs on every startup path — `noosphere serve`, raw `uvicorn`, Docker,
+    gunicorn, PaaS — so federation isn't tied to the CLI entrypoint. The
+    CLI used to be the only place this fired, which silently broke any
+    deployment that didn't go through it.
+
+    Reads `APP_URL` at runtime (config.py captured it at import; lifespan
+    needs the env in case the CLI mutated it just before uvicorn.run).
+    Skipped quietly when:
+      - APP_URL points at localhost (dev — wouldn't be reachable anyway)
+      - NOOSPHERE_REGISTRY is empty / "none" (operator opted out)
+      - This node IS the registry (NOOSPHERE_IS_REGISTRY)
+      - last_registration_ok() is already True (CLI got there first)
+
+    Runs the blocking POST in a worker thread so registry latency / 15s
+    timeout doesn't delay HTTP listener readiness.
+    """
+    try:
+        from noosphere.core.config import NOOSPHERE_REGISTRY, NOOSPHERE_IS_REGISTRY
+        from noosphere.core.registry import (
+            is_local_endpoint, last_registration_ok,
+            register_with_registry, set_node_endpoint,
+        )
+    except Exception as e:
+        logger.debug("registry imports unavailable: %s", e)
+        return
+    if NOOSPHERE_IS_REGISTRY or not NOOSPHERE_REGISTRY:
+        return
+    if last_registration_ok():
+        return
+    public_url = os.getenv("APP_URL", "").strip()
+    if not public_url or is_local_endpoint(public_url):
+        return
+    try:
+        set_node_endpoint(public_url)
+        await asyncio.to_thread(register_with_registry, public_url)
+    except Exception as e:
+        logger.warning("Lifespan registry registration failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app):
     global _scheduler_task
@@ -135,6 +177,7 @@ async def lifespan(app):
     _scheduler_task = asyncio.gather(
         asyncio.create_task(_enrichment_loop()),
         asyncio.create_task(_health_check_loop()),
+        asyncio.create_task(_register_with_registry_on_startup()),
         return_exceptions=True,
     )
     yield
