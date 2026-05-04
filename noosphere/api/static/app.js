@@ -3293,29 +3293,26 @@ async function drawGraphIn(container,corpora,existingCanvas){
     // gets pan/zoom for free.
     cx.translate(view.tx,view.ty);cx.scale(view.k,view.k);
     const activeSet=hov?nbr[hov.id]:null; // hover-dim: keep hovered + neighbors at full opacity
-    // Edge rendering: solid line for human-curated tag edges, dashed for
-    // AI-inferred semantic similarity. Mirrors Obsidian's Graphene plugin
-    // convention so the user can tell at a glance "I declared these
-    // related" vs "the model thinks these are related". Ranges of `l.s`
-    // were already normalised by drawGraphIn so the line-width formula
-    // doesn't need a per-kind branch.
-    for(const l of lk){const s=l.source,t=l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const touches=!activeSet||(activeSet.has(sid)&&activeSet.has(tid));const dim=activeSet&&!touches?.15:1;cx.save();cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);if(l.kind==='semantic'){cx.setLineDash([4,4]);cx.strokeStyle=`rgba(140,160,200,${(.18+Math.min(l.s,6)*.07)*dim})`}else{cx.strokeStyle=`rgba(160,170,190,${(.15+Math.min(l.s,6)*.08)*dim})`}cx.lineWidth=.8+Math.min(l.s,6)*.45;cx.stroke();cx.restore()}
-    for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const dim=activeSet&&!(activeSet.has(sid)&&activeSet.has(tid))?.15:1;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=`rgba(130,150,200,${p.op*.4*dim})`;cx.fill()}
-    for(const n of ns){const h=hov===n||drag===n;const isCenter=n._isCenter===true;const isExternal=n._isOwn===false;const isOrphan=nbr[n.id].size<=1;const dim=activeSet&&!activeSet.has(n.id)?.25:1;let r=BR;if(mp&&!drag){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<200?BR*(1+(1-d/200)*.5):BR*.85}if(h)r=Math.max(r,BR*1.4);if(isCenter)r=Math.max(r,BR*1.15);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);
-      const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${(h?.12:.05)*dim})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+    const dk=isDark();
+    // Edges — uniform solid line, alpha scales with shared-tag count or
+    // semantic strength. Matches the landing-page background network so
+    // the discovery graph reads as the same visual fabric: no dashed
+    // semantic-vs-tag distinction, just one quiet relational thread.
+    for(const l of lk){const s=l.source,t=l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const touches=!activeSet||(activeSet.has(sid)&&activeSet.has(tid));const dim=activeSet&&!touches?.15:1;cx.beginPath();cx.moveTo(s.x,s.y);cx.lineTo(t.x,t.y);cx.strokeStyle=dk?`rgba(170,185,210,${(.12+Math.min(l.s,6)*.08)*dim})`:`rgba(140,155,180,${(.12+Math.min(l.s,6)*.08)*dim})`;cx.lineWidth=.6+Math.min(l.s,6)*.4;cx.stroke()}
+    for(const p of pts){p.t+=p.sp;if(p.t>1)p.t-=1;const s=p.l.source,t=p.l.target;const sid=typeof s==='object'?s.id:s;const tid=typeof t==='object'?t.id:t;const dim=activeSet&&!(activeSet.has(sid)&&activeSet.has(tid))?.15:1;cx.beginPath();cx.arc(s.x+(t.x-s.x)*p.t,s.y+(t.y-s.y)*p.t,p.sz,0,Math.PI*2);cx.fillStyle=dk?`rgba(200,220,255,${p.op*.45*dim})`:`rgba(130,150,200,${p.op*.45*dim})`;cx.fill()}
+    for(const n of ns){const h=hov===n||drag===n;const isCenter=n._isCenter===true;const dim=activeSet&&!activeSet.has(n.id)?.25:1;let r=BR;if(mp&&!drag){const d=Math.hypot(n.x-mp[0],n.y-mp[1]);r=d<200?BR*(1+(1-d/200)*.5):BR*.85}if(h)r=Math.max(r,BR*1.4);if(isCenter)r=Math.max(r,BR*1.15);const rr=r*(1+Math.sin(now*.002+n.name.length)*.03);const[cr,cg,cb]=hR(n.color);
+      const g=cx.createRadialGradient(n.x,n.y,rr*.3,n.x,n.y,rr*2);g.addColorStop(0,`rgba(${cr},${cg},${cb},${(h?.15:.05)*dim})`);g.addColorStop(1,'rgba(255,255,255,0)');cx.beginPath();cx.arc(n.x,n.y,rr*2,0,Math.PI*2);cx.fillStyle=g;cx.fill();
       if(h){cx.beginPath();cx.arc(n.x,n.y,rr+3,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.5*dim})`;cx.lineWidth=2;cx.stroke()}
-      // Fill — external nodes get reduced alpha; orphans (no edges) keep fill but get dashed ring.
-      cx.save();
+      // Node ball — solid fill in access-level color, uniform white stroke.
+      // Same shape as the LP background nodes; access_level palette stays
+      // as the only encoded variation.
       cx.beginPath();cx.arc(n.x,n.y,rr,0,Math.PI*2);
-      const fillAlpha=(isExternal?.5:1)*dim;
-      cx.fillStyle=`rgba(${cr},${cg},${cb},${fillAlpha})`;cx.fill();
-      if(isExternal||isOrphan){cx.setLineDash([4,3]);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.85*dim})`;cx.lineWidth=1.5}
-      else{cx.strokeStyle=`rgba(255,255,255,${.25*dim})`;cx.lineWidth=1.5}
-      cx.stroke();cx.restore();
+      cx.fillStyle=`rgba(${cr},${cg},${cb},${dim})`;cx.fill();
+      cx.strokeStyle=`rgba(255,255,255,${.25*dim})`;cx.lineWidth=1.5;cx.stroke();
       if(isCenter){cx.beginPath();cx.arc(n.x,n.y,rr+6,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${.4*dim})`;cx.lineWidth=2;cx.stroke()}
       if(n.queries>0){const pulseR=rr+4+Math.sin(now*.003+n.queries)*(3+Math.min(n.queries,20)*.3);const pulseOp=.15+Math.sin(now*.004+n.name.length)*.1;cx.beginPath();cx.arc(n.x,n.y,pulseR,0,Math.PI*2);cx.strokeStyle=`rgba(${cr},${cg},${cb},${pulseOp*dim})`;cx.lineWidth=2;cx.stroke()}
       cx.fillStyle=`rgba(255,255,255,${.95*dim})`;cx.font=`700 ${rr*.55}px Inter,sans-serif`;cx.textAlign='center';cx.textBaseline='middle';cx.fillText(n.ini,n.x,n.y);
-      const dk=isDark();cx.fillStyle=dk?`rgba(245,245,247,${(h?.95:.7)*dim})`:`rgba(30,35,50,${(h?.9:.6)*dim})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
+      cx.fillStyle=dk?`rgba(245,245,247,${(h?.95:.7)*dim})`:`rgba(30,35,50,${(h?.9:.6)*dim})`;cx.font=`600 ${h?12:11}px 'Libre Baskerville',Georgia,serif`;cx.fillText(n.name,n.x,n.y+rr+14);
       cx.fillStyle=dk?`rgba(200,200,210,${.4*dim})`:`rgba(100,110,130,${.4*dim})`;cx.font='400 9px Inter,sans-serif';
       // Private nodes ship without document_count (redacted server-side);
       // show the access state instead so the label isn't `undefined docs`.
