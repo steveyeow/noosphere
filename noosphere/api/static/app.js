@@ -2961,20 +2961,24 @@ function renderMCList(host){
   }});
 }
 
-function renderMCGraph(){
+async function renderMCGraph(){
   const el=document.getElementById('mc-content');el.innerHTML='';el.className='mc-graph';
-  if(!_corpora.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet.</div>';return}
-  drawGraphIn(el,_corpora);
+  let nodes=_corpora;
+  try{const r=await fetch(`${API}/corpora/network`);if(r.ok){const d=await r.json();if(Array.isArray(d.nodes)&&d.nodes.length)nodes=d.nodes}}catch(e){}
+  if(!nodes.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet.</div>';return}
+  drawGraphIn(el,nodes);
 }
 
 /* ══════ NETWORK ══════ */
-function renderNet(){
+async function renderNet(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   ct.innerHTML=`<div class="nv-wrap"><canvas id="nv-cv" class="nv-canvas"></canvas><div class="nv-tt hidden" id="nv-tt"></div></div>`;
 
   const cv=document.getElementById('nv-cv');if(!cv)return;
-  if(!_corpora.length){const w=cv.parentElement;const e=document.createElement('div');e.className='empty';e.style.cssText='position:absolute;top:40%;left:50%;transform:translate(-50%,-50%)';e.innerHTML='The Noosphere is empty.<br>Click <strong>+ New</strong> to add knowledge.';w.appendChild(e);return}
-  drawGraphIn(cv.parentElement,_corpora,cv);
+  let nodes=_corpora;
+  try{const r=await fetch(`${API}/corpora/network`);if(r.ok){const d=await r.json();if(Array.isArray(d.nodes)&&d.nodes.length)nodes=d.nodes}}catch(e){}
+  if(!nodes.length){const w=cv.parentElement;const e=document.createElement('div');e.className='empty';e.style.cssText='position:absolute;top:40%;left:50%;transform:translate(-50%,-50%)';e.innerHTML='The Noosphere is empty.<br>Click <strong>+ New</strong> to add knowledge.';w.appendChild(e);return}
+  drawGraphIn(cv.parentElement,nodes,cv);
 }
 
 /* ══════ EXPLORE (NETWORK GRAPH + DIRECTORY) ══════ */
