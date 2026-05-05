@@ -378,7 +378,10 @@ async def stripe_webhook(request: Request):
 
     event_type = event["type"]
     event_id = event["id"]
-    data = event["data"]["object"]
+    obj = event["data"]["object"]
+    # StripeObject doesn't expose .get(); coerce to plain dict so the
+    # rest of the handler can use idiomatic dict access.
+    data = obj.to_dict_recursive() if hasattr(obj, "to_dict_recursive") else dict(obj)
 
     try:
         if event_type == "checkout.session.completed":
