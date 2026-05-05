@@ -2900,15 +2900,22 @@ async def api_list_chat_sessions(request: Request, limit: int = 20):
             (active_org, limit),
         ).fetchall()
     else:
-        rows = conn.execute(
-            base + "WHERE c.org_id IS NULL ORDER BY s.updated_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        user_id = _get_user_id(request)
+        if _is_cloud() and user_id:
+            rows = conn.execute(
+                base + "WHERE c.org_id IS NULL AND c.owner_id = ? ORDER BY s.updated_at DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                base + "WHERE c.org_id IS NULL ORDER BY s.updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
 @router.get("/chat-sessions/{session_id}")
-async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 0):
+async def api_get_chat_session(session_id: str, request: Request, limit: int = 500, offset: int = 0):
     """Get a chat session with its messages, paginated.
 
     ``limit`` is capped at 1000 to keep a single response bounded — sessions
@@ -2923,6 +2930,8 @@ async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 
     session = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (session_id,)).fetchone()
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found")
+    corpus = _resolve_corpus(session["corpus_id"])
+    _check_corpus_access(corpus, request)
     total = conn.execute(
         "SELECT COUNT(*) AS n FROM chat_messages WHERE session_id=?",
         (session_id,),
@@ -2980,8 +2989,12 @@ async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 
 @router.delete("/chat-sessions/{session_id}")
 async def api_delete_chat_session(session_id: str, request: Request):
     """Delete a chat session and all its messages."""
-    _require_owner(request)
     conn = get_conn()
+    session = conn.execute("SELECT * FROM chat_sessions WHERE id=?", (session_id,)).fetchone()
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    corpus = _resolve_corpus(session["corpus_id"])
+    _require_owner(request, corpus)
     conn.execute("DELETE FROM chat_messages WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM chat_sessions WHERE id=?", (session_id,))
     conn.commit()

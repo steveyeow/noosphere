@@ -268,8 +268,21 @@ def test_delete_chat_session(client, corpus):
 
 
 def test_delete_chat_session_blocked_for_agents(client, corpus):
+    from noosphere.core.db import get_conn
+    import uuid
+    from datetime import datetime, timezone
+
+    conn = get_conn()
+    sid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO chat_sessions (id, corpus_id, title, created_at, updated_at) VALUES (?,?,?,?,?)",
+        (sid, corpus["id"], "Agent Block Test", now, now),
+    )
+    conn.commit()
+
     r = client.delete(
-        "/api/v1/chat-sessions/some-id",
+        f"/api/v1/chat-sessions/{sid}",
         headers={"x-agent-id": "external-agent"},
     )
     assert r.status_code == 403
