@@ -57,6 +57,32 @@ def _sg(obj, key, default=None):
         return default
 
 
+def _is_noosphere_subscription(data) -> bool:
+    """Whether a Subscription event's items reference our Pro price.
+
+    OriginX.AI's Stripe account hosts multiple products; Stripe broadcasts
+    `customer.subscription.*` events to every endpoint subscribed to that
+    type, regardless of which product the subscription belongs to. Without
+    this filter, a Feynman cancellation would run through Noosphere's
+    handler and could incorrectly downgrade a Noosphere user who happens
+    to share a Stripe customer_id.
+    """
+    if not STRIPE_PRO_PRICE_ID:
+        # No price filter configured — accept all (preserves prior behavior).
+        return True
+    items_container = _sg(data, "items")
+    if items_container is None:
+        return False
+    items_list = _sg(items_container, "data")
+    if not items_list:
+        return False
+    for item in items_list:
+        price = _sg(item, "price")
+        if price is not None and _sg(price, "id") == STRIPE_PRO_PRICE_ID:
+            return True
+    return False
+
+
 # ── Pro subscription (creator pays platform) ──
 
 
@@ -407,6 +433,9 @@ async def stripe_webhook(request: Request):
                 log.info("User %s upgraded to Pro", user_id)
 
         elif event_type == "customer.subscription.updated":
+            if not _is_noosphere_subscription(data):
+                log.debug("Ignoring subscription.updated for non-Noosphere price (event_id=%s)", event_id)
+                return JSONResponse({"status": "ok", "ignored": "not Noosphere price"})
             customer_id = _sg(data, "customer")
             status = _sg(data, "status")
             user = find_user_by_stripe_customer(customer_id) if customer_id else None
@@ -424,6 +453,9 @@ async def stripe_webhook(request: Request):
                 log.info("Subscription updated: user=%s status=%s tier=%s", user["id"], status, tier)
 
         elif event_type == "customer.subscription.deleted":
+            if not _is_noosphere_subscription(data):
+                log.debug("Ignoring subscription.deleted for non-Noosphere price (event_id=%s)", event_id)
+                return JSONResponse({"status": "ok", "ignored": "not Noosphere price"})
             customer_id = _sg(data, "customer")
             user = find_user_by_stripe_customer(customer_id) if customer_id else None
             if user:
