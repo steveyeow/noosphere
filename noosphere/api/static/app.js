@@ -548,6 +548,14 @@ function pickCorpusInline(container){
 }
 
 async function route(){const h=location.hash||'#/';stopAll();
+  // Logged-in cloud users skip the marketing landing — they came to use
+  // the app, not re-read the pitch. Also handles Stripe's post-checkout
+  // redirect (APP_URL/?subscription=success → hash empty) so users land
+  // straight in the app after upgrading.
+  if((h==='#/'||h===''||h==='#/landing')&&_cloudMode&&_authUser){
+    history.replaceState(null,'',window.location.pathname+window.location.search+'#/main');
+    return route();
+  }
   if(h==='#/'||h===''||h==='#/landing'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLP();return}
   if(h==='#/team'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLPTeam();return}
   if(h==='#/login'){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
