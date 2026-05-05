@@ -1000,7 +1000,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .sidebar.collapsed .sb-popover{left:4px;min-width:160px;right:auto}
 
 /* ── Pricing Page ── */
-.pg-page{max-width:720px;margin:0 auto;padding:48px 32px 64px;overflow-y:auto;height:100%}
+.pg-page{max-width:860px;margin:0 auto;padding:48px 32px 64px;overflow-y:auto;height:100%}
 .pg-hd{text-align:center;margin-bottom:48px}.pg-title{font-family:'Libre Baskerville',Georgia,serif;font-size:28px;font-weight:400;color:var(--tx);margin-bottom:8px}.pg-sub{font-size:14px;color:var(--tx2);line-height:1.6}
 .pg-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:48px}
 .pg-card{background:var(--bg2);border:1px solid var(--brd);border-radius:14px;padding:24px;position:relative;display:flex;flex-direction:column;transition:box-shadow .2s,border-color .2s,background .2s}.pg-card:hover{box-shadow:var(--sh)}
