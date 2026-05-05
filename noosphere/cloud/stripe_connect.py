@@ -377,7 +377,7 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
-    event_id = event.get("id", "")
+    event_id = event["id"]
     data = event["data"]["object"]
 
     try:
