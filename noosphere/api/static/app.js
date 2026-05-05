@@ -1651,8 +1651,18 @@ function renderHome(){
         if(msgs.length){
           collapseToChat();
           for(const m of msgs){
-            if(m.role==='user')addLine(output,'prompt',m.content||'');
-            else addLine(output,'resp',m.content||'');
+            if(m.role==='user'){addLine(output,'prompt',m.content||'');continue}
+            // Prefer the structured payload (resp / card / option / search_result
+            // bubbles, one per addLine) so the resumed turn renders identically
+            // to the original. Fall back to a single resp built from the
+            // flattened content for pre-migration rows or non-/terminal chats.
+            if(Array.isArray(m.lines)&&m.lines.length){
+              for(const ln of m.lines){
+                if(ln&&ln.type)addLine(output,ln.type,null,null,ln);
+              }
+            }else{
+              addLine(output,'resp',m.content||'');
+            }
           }
         }
       }catch(e){}

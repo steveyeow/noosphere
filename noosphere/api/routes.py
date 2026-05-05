@@ -525,9 +525,17 @@ def _persist_terminal_chat(
         # to a one-liner so the row isn't empty.
         assistant_text = "(action completed)"
 
+    # Also store the structured lines so resuming the session can replay
+    # the exact same sequence of bubbles + cards the user saw in-flight.
+    # Drop empty/non-dict entries defensively; everything else passes
+    # through verbatim because the frontend renderer (addLine) already
+    # tolerates unknown fields.
+    structured = [ln for ln in lines if isinstance(ln, dict) and ln.get("type")]
+    lines_json = _json.dumps(structured) if structured else None
+
     conn.execute(
-        "INSERT INTO chat_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        (str(uuid.uuid4()), session_id, "assistant", assistant_text, now),
+        "INSERT INTO chat_messages (id, session_id, role, content, lines_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), session_id, "assistant", assistant_text, lines_json, now),
     )
     conn.commit()
     return session_id
@@ -2920,7 +2928,7 @@ async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 
         (session_id,),
     ).fetchone()["n"]
     messages = conn.execute(
-        "SELECT id, role, content, citations_json, created_at FROM chat_messages "
+        "SELECT id, role, content, citations_json, lines_json, created_at FROM chat_messages "
         "WHERE session_id=? ORDER BY created_at ASC LIMIT ? OFFSET ?",
         (session_id, limit, offset),
     ).fetchall()
@@ -2955,6 +2963,16 @@ async def api_get_chat_session(session_id: str, limit: int = 500, offset: int = 
                             c["deleted"] = True
             msg["citations"] = cites
         msg.pop("citations_json", None)
+        # Parse the structured /terminal payload so the client can replay
+        # the original turn (separate bubbles + cards) instead of rendering
+        # the flattened content as one merged block. Pre-migration rows
+        # have lines_json=NULL and the client falls back to content.
+        if msg.get("lines_json"):
+            try:
+                msg["lines"] = _json.loads(msg["lines_json"])
+            except Exception:
+                msg["lines"] = None
+        msg.pop("lines_json", None)
         result["messages"].append(msg)
     return result
 

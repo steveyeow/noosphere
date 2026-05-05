@@ -585,6 +585,17 @@ MIGRATION_SQL = [
     # when they're looking at the graph.
     "ALTER TABLE corpora ADD COLUMN corpus_vector_dirty_since TEXT",
     "ALTER TABLE organization_members ADD COLUMN display_name TEXT",
+    # Structured assistant replies — the /terminal flow returns a list of
+    # typed lines (resp / card / option / search_result). Flattening them
+    # into chat_messages.content collapses cards and merges separate
+    # response bubbles into one block on replay. Keep content as the
+    # human-readable preview text (sidebar list, fallbacks) and add
+    # lines_json for the full structured payload, used by the home
+    # composer when resuming a session so the historical turn renders
+    # exactly like the in-flight one. Nullable: regular corpus chat and
+    # pre-migration rows leave it NULL and the frontend falls back to
+    # rendering content as a single resp line.
+    "ALTER TABLE chat_messages ADD COLUMN lines_json TEXT",
 ]
 
 # Indexes that reference columns added via MIGRATION_SQL — must run after migrations
