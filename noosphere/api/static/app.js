@@ -380,8 +380,9 @@ function renderAuthUI(){
   }
   // Avatar reflects *where* (org initial for team, user avatar for
   // personal); the label is *who* (the preferred / operator name). In
-  // cloud mode we stack a small tier line under the name so users can
-  // glance their plan without opening the popover.
+  // cloud mode we tuck a small tier label between the name and the
+  // chevron — left-right layout uses the otherwise-empty right edge so
+  // users can glance their plan without opening the popover.
   let tierText='';
   if(_cloudMode&&_authUser){
     const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
@@ -390,10 +391,8 @@ function renderAuthUI(){
   bot.innerHTML=`
     <div class="sb-profile sb-profile-ws" id="sb-profile">
       ${_renderChipAvatarHTML()}
-      <div class="sb-profile-text sb-lb">
-        <span class="sb-profile-name" id="sb-profile-name">${esc(_operatorChipText())}</span>
-        ${tierText?`<span class="sb-profile-tier">${tierText}</span>`:''}
-      </div>
+      <span class="sb-profile-name sb-lb" id="sb-profile-name">${esc(_operatorChipText())}</span>
+      ${tierText?`<span class="sb-profile-tier sb-lb">${tierText}</span>`:''}
       <svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="sb-popover sb-popover-ws hidden" id="sb-popover"></div>`;
