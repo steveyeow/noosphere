@@ -64,6 +64,14 @@ let _pendingHomeAutoSend=false;
 // this and renders the matching panel into the home chat-output stream — so
 // the user lands directly in chat mode with the picked panel ready to fill.
 let _pendingHomeAttachAction=null;
+// One-shot: navigating to #/main?session=<sid> from a sidebar chat row or
+// the Chats page. renderHome reads this, fetches the session, replays its
+// messages into term-output, scopes the chip to its corpus, and arms
+// _termCtx so the next user turn extends the same session instead of
+// starting a fresh one. Rendered as the home composer's chat surface
+// (no separate chat-detail page) so resuming is visually consistent with
+// New Chat.
+let _pendingHomeSession=null;
 // Composer mode: 'create' | 'enrich' | 'compile'. Default 'enrich' because
 // most sessions add to an existing KB; 'create' kicks in for users without
 // any corpora; 'compile' swaps Send behavior to synthesize a wiki/entity.
@@ -545,7 +553,13 @@ async function route(){const h=location.hash||'#/';stopAll();
   if(_cloudMode&&!_authUser&&h!=='#/explore'&&!h.startsWith('#/explore')){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
   await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
-  if(h==='#/main')renderHome();
+  if(h==='#/main'||h.startsWith('#/main?')){
+    // ?session=<sid> → resume that chat in the home composer. Set the pending
+    // slot here (not in renderHome) so #/main with no query still resets it.
+    const q=h.split('?')[1]||'';
+    _pendingHomeSession=new URLSearchParams(q).get('session')||null;
+    renderHome();
+  }
   else if(h==='#/corpora')renderMyCorpora();
   else if(h==='#/chats')renderChats();
   else if(h==='#/connectors')renderConnectors();
@@ -679,7 +693,11 @@ function showCmdPicker(input,matches){
 function hideCmdPicker(){const p=document.getElementById('term-cmd-picker');if(p)p.style.display='none'}
 
 function _currentSessionId(){
-  const h=location.hash;if(!h.startsWith('#/corpus/'))return null;
+  const h=location.hash;
+  // Sidebar chat sessions resolve to #/main?session=<sid> now (the home
+  // composer is the chat surface). Legacy #/corpus/<cid>?session=<sid>
+  // links are still recognized so any in-flight bookmarks keep working.
+  if(!h.startsWith('#/main')&&!h.startsWith('#/corpus/'))return null;
   const q=h.split('?')[1]||'';return new URLSearchParams(q).get('session');
 }
 function renderSBChats(){
@@ -688,7 +706,7 @@ function renderSBChats(){
   const activeSid=_currentSessionId();
   el.innerHTML=_chatSessions.map(c=>{
     const active=c.id===activeSid?' active':'';
-    return`<div class="sb-chat-wrap${active}" data-sid="${c.id}"><a href="#/corpus/${c.corpus_id}?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a><button class="sb-chat-del" data-sid="${c.id}" title="Delete chat" aria-label="Delete chat">×</button></div>`;
+    return`<div class="sb-chat-wrap${active}" data-sid="${c.id}"><a href="#/main?session=${c.id}" class="sb-chat-item" title="${esc(c.title||'')}">${esc(c.title||'Untitled')}</a><button class="sb-chat-del" data-sid="${c.id}" title="Delete chat" aria-label="Delete chat">×</button></div>`;
   }).join('');
   el.querySelectorAll('.sb-chat-del').forEach(btn=>{
     btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await _deleteSession(btn.dataset.sid)};
@@ -1610,6 +1628,36 @@ function renderHome(){
   }
   // Initial paint — honors _homeScope set from _pendingHomeScope above.
   updateChip();
+  // Resume an existing chat session — sidebar/Chats clicks navigate here
+  // with ?session=<sid>. Fetch the session, scope the chip to its corpus,
+  // replay messages into term-output, and arm _termCtx so the next user
+  // turn extends the same session (instead of opening a fresh one in
+  // chat_sessions). Failures fall through silently so a stale link just
+  // leaves the user on a blank New Chat instead of an error screen.
+  if(_pendingHomeSession){
+    const sid=_pendingHomeSession;
+    _pendingHomeSession=null;
+    (async()=>{
+      try{
+        const r=await fetch(`${API}/chat-sessions/${sid}`);
+        if(!r.ok)return;
+        const session=await r.json();
+        const msgs=Array.isArray(session.messages)?session.messages:[];
+        if(session.corpus_id){
+          _homeScope=session.corpus_id;
+          updateChip();
+        }
+        _termCtx={session_id:sid};
+        if(msgs.length){
+          collapseToChat();
+          for(const m of msgs){
+            if(m.role==='user')addLine(output,'prompt',m.content||'');
+            else addLine(output,'resp',m.content||'');
+          }
+        }
+      }catch(e){}
+    })();
+  }
   // Consume any pre-filled draft from a corpus-page chat dock. Auto-send fires
   // on next tick so placeholder/chip paint first and the send flow sees the
   // final state (otherwise scope might not be read yet by the send handler).
@@ -1843,7 +1891,7 @@ function renderHome(){
       input.value='';autosize();collapseToChat();
       await loadChatSessions();
       if(!_chatSessions.length){addLine(output,'resp','No chat history yet.')}
-      else{addLine(output,'resp','Recent conversations:');_chatSessions.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpus_name||'')+'</span>'+esc(c.title||'Untitled')+'</span>';el.onclick=()=>{location.hash='#/corpus/'+c.corpus_id+'?session='+c.id};output.appendChild(el)})}
+      else{addLine(output,'resp','Recent conversations:');_chatSessions.slice(0,10).forEach(c=>{const el=document.createElement('div');el.className='term-line term-option';el.innerHTML=NOOS_DOT+'<span><span style="color:var(--tx3);margin-right:8px">'+esc(c.corpus_name||'')+'</span>'+esc(c.title||'Untitled')+'</span>';el.onclick=()=>{location.hash='#/main?session='+c.id};output.appendChild(el)})}
       input.focus();return;
     }
     if(val.toLowerCase()==='/help'){
@@ -2732,7 +2780,7 @@ function renderChats(){
   list.querySelectorAll('.chats-row').forEach(row=>{
     row.addEventListener('click',e=>{
       if(e.target.closest('.chats-row-del'))return;
-      location.hash=`#/corpus/${row.dataset.cid}?session=${row.dataset.id}`;
+      location.hash=`#/main?session=${row.dataset.id}`;
     });
   });
   list.querySelectorAll('.chats-row-del').forEach(btn=>{
