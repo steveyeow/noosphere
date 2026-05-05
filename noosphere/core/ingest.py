@@ -17,8 +17,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# CJK has no inter-word whitespace, so str.split() counts a 200-char Chinese
+# paragraph as ~5 (one per blank-line-separated chunk). Count each CJK code
+# point as one "word" — matches how readers intuitively quantify Chinese /
+# Japanese / Korean text — and fall back to whitespace-split for the
+# remaining (Latin / digits / etc.) characters so mixed text adds correctly.
+_CJK_RE = re.compile(r"[一-鿿㐀-䶿぀-ヿ가-힯]")
+
+
 def _word_count(text: str) -> int:
-    return len(text.split())
+    cjk = len(_CJK_RE.findall(text))
+    non_cjk = len(_CJK_RE.sub(" ", text).split())
+    return cjk + non_cjk
 
 
 def _content_hash(text: str) -> str:
