@@ -3,7 +3,7 @@
  *
  * Cloud-capable by design: every sync talks to the Noosphere server over
  * HTTP, reading file contents from the vault (via Obsidian's APIs) and
- * uploading them. The server can be self-hosted local OR app.noosphere.wiki;
+ * uploading them. The server can be self-hosted local OR noosphere.wiki;
  * the plugin doesn't care.
  *
  * Sync algorithm (runs on demand and under watch mode):

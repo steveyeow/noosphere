@@ -64,7 +64,7 @@ jobs:
             1. Download `manifest.json`, `main.js`, and `styles.css` from the Assets below
             2. Put them in `<your-vault>/.obsidian/plugins/noosphere-sync/`
             3. In Obsidian → Settings → Community plugins → enable **Noosphere**
-            4. Fill Server URL (`http://localhost:8420` for self-hosted, `https://app.noosphere.wiki` for cloud) → click **Create new** next to Corpus ID → click the Sync ribbon icon
+            4. Fill Server URL (`http://localhost:8420` for self-hosted, `https://noosphere.wiki` for cloud) → click **Create new** next to Corpus ID → click the Sync ribbon icon
 
             Full docs: [`plugin/README.md`](../blob/main/plugin/README.md)
           files: |

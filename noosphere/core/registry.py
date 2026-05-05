@@ -5,7 +5,7 @@ non-private corpora and reconciles its record (adds new, updates changed,
 deletes missing). Calling this once at ``serve`` startup is not enough —
 if corpora are created, updated, or deleted at runtime, the registry goes
 stale. ``resync_registry()`` is the hook that runs on every mutation so
-``app.noosphere.wiki`` always reflects the live state.
+``noosphere.wiki`` always reflects the live state.
 """
 
 import logging

@@ -371,7 +371,7 @@ For one-click sync + watch mode from inside Obsidian, install the plugin that li
 - Full client-side hash diff: only changed files are uploaded on each sync
 - Client-side writeback: synthesized entity + concept pages land in `<vault>/__noosphere/` with local-edit conflict detection
 
-**Works against both self-hosted and cloud Noosphere.** The plugin reads vault files via Obsidian's API and uploads them over HTTP — no filesystem co-location required. Point `Server URL` at `http://localhost:8420` for self-hosted, or `https://app.noosphere.wiki` for cloud, in plugin settings.
+**Works against both self-hosted and cloud Noosphere.** The plugin reads vault files via Obsidian's API and uploads them over HTTP — no filesystem co-location required. Point `Server URL` at `http://localhost:8420` for self-hosted, or `https://noosphere.wiki` for cloud, in plugin settings.
 
 Install: build locally (`cd plugin && npm install && npm run build`) and copy `manifest.json`, `main.js`, `styles.css` into `<your-vault>/.obsidian/plugins/noosphere-sync/`. See [`plugin/README.md`](plugin/README.md) for full instructions.
 
@@ -392,7 +392,7 @@ The first three create a new corpus AND run the initial sync in one step. ZIP up
 
 ### How network registration works
 
-When `noosphere serve` starts, it pushes a snapshot of all non-private corpora to the discovery registry at `NOOSPHERE_REGISTRY` (defaults to `app.noosphere.wiki`). The registry stores only metadata — names, descriptions, tags, access levels, the node's endpoint URL. Content stays on your server.
+When `noosphere serve` starts, it pushes a snapshot of all non-private corpora to the discovery registry at `NOOSPHERE_REGISTRY` (defaults to `noosphere.wiki`). The registry stores only metadata — names, descriptions, tags, access levels, the node's endpoint URL. Content stays on your server.
 
 **Live updates**: when you create, update, or delete a corpus at runtime (via web UI, CLI, API), the server re-pushes the snapshot to the registry as a background task. So:
 
@@ -449,10 +449,10 @@ Every connector lands as a document in the same corpus — the agent interface (
 
 ## How the network works
 
-Noosphere is a decentralized knowledge network with a built-in registry. The cloud app (`app.noosphere.wiki`) is both the hosted product and the discovery registry. Self-hosted nodes register metadata with the registry so agents can find them — content stays on your server.
+Noosphere is a decentralized knowledge network with a built-in registry. The cloud app (`noosphere.wiki`) is both the hosted product and the discovery registry. Self-hosted nodes register metadata with the registry so agents can find them — content stays on your server.
 
 ```
-               app.noosphere.wiki
+               noosphere.wiki
         (cloud app + built-in registry)
         ┌─────────────────────────────┐
         │  Local corpora (cloud users)│
@@ -488,7 +488,7 @@ On startup, your node registers with the Noosphere registry. It sends only metad
 Any AI agent can search the registry to find relevant knowledge bases — both cloud-hosted and self-hosted:
 
 ```
-Agent                    app.noosphere.wiki              Your Node
+Agent                    noosphere.wiki              Your Node
   |                            |                             |
   |-- GET /api/v1/search ----> |                             |
   |                            | (search local + registered) |

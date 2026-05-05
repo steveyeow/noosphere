@@ -904,11 +904,11 @@ Today, companies like Mercor hire domain experts one by one to train AI models. 
 
 ### Design: the cloud app IS the registry
 
-The cloud deployment (`app.noosphere.wiki`) serves as both the hosted product for cloud users **and** the discovery registry for the entire network. There is no separate registry service — this keeps deployment simple (single service, single database) while still enabling a federated network.
+The cloud deployment (`noosphere.wiki`) serves as both the hosted product for cloud users **and** the discovery registry for the entire network. There is no separate registry service — this keeps deployment simple (single service, single database) while still enabling a federated network.
 
 ```
 ┌───────────────────────────────────────────────────────┐
-│           app.noosphere.wiki                          │
+│           noosphere.wiki                          │
 │     (cloud app + built-in registry)                   │
 │                                                       │
 │  ┌───────────────┐  ┌──────────────────────────────┐  │
@@ -1146,7 +1146,7 @@ Once an agent has confirmed relevance through preview, it queries the knowledge 
 For remote (self-hosted) corpora, the agent connects directly to the node's endpoint. Content never passes through the registry.
 
 ```
-Agent                       app.noosphere.wiki              Self-hosted node
+Agent                       noosphere.wiki              Self-hosted node
   |                               |                               |
   |-- network/search ----------> |                               |
   |<-- [{results + endpoints}] --|                               |

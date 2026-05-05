@@ -14,7 +14,7 @@ This plugin is a thin UX layer on top of the `noosphere sync --obsidian` CLI. Sa
 
 ## Requirements
 
-- **Noosphere running** somewhere the plugin can reach — either self-hosted locally (`http://localhost:8420`) or cloud (`https://app.noosphere.wiki`). The plugin reads vault files via Obsidian's API and uploads them over HTTP, so co-location is not required.
+- **Noosphere running** somewhere the plugin can reach — either self-hosted locally (`http://localhost:8420`) or cloud (`https://noosphere.wiki`). The plugin reads vault files via Obsidian's API and uploads them over HTTP, so co-location is not required.
 - **Obsidian desktop** — the plugin is `isDesktopOnly: true` because vault reads use APIs that require a real filesystem under the hood.
 - **A corpus** — use the "Create new" button in plugin settings (creates one on the fly), or pre-create one in the Noosphere web UI and paste its ID.
 
@@ -28,7 +28,7 @@ This plugin is a thin UX layer on top of the `noosphere sync --obsidian` CLI. Sa
 4. In Obsidian → **Settings → Community plugins**. If this is your first community plugin, click **Turn on community plugins** first (Obsidian's default safety gate).
 5. In the Installed plugins list, enable the toggle next to **Noosphere**.
 6. A **Noosphere** tab now appears in the left sidebar of Settings. Open it and fill in:
-   - **Server URL** — `http://localhost:8420` for local self-hosted, `https://app.noosphere.wiki` for cloud
+   - **Server URL** — `http://localhost:8420` for local self-hosted, `https://noosphere.wiki` for cloud
    - **Corpus ID or slug** — click **Create new** to generate one named after your vault, or paste an existing ID
    - **API token** — leave blank for self-hosted; required for cloud (generate in the Noosphere web UI)
 7. Click **Test** to verify the connection, then click the **Sync** ribbon icon (top-left of Obsidian).

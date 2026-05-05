@@ -3587,7 +3587,7 @@ function _triggerAppMethod(connector,method,ctx){
           </li>
           <li>A <b>Noosphere</b> tab appears in the left sidebar of Settings. Open it →
             <ul style="margin:4px 0 0 4px">
-              <li>Fill <b>Server URL</b>: <code>http://localhost:8420</code> (self-hosted) or <code>https://app.noosphere.wiki</code> (cloud)</li>
+              <li>Fill <b>Server URL</b>: <code>http://localhost:8420</code> (self-hosted) or <code>https://noosphere.wiki</code> (cloud)</li>
               <li>Click <b>Create new</b> next to the Corpus ID field</li>
               <li>Click the Sync ribbon icon (top-left of Obsidian)</li>
             </ul>
@@ -5649,7 +5649,7 @@ function _tierCardsHTML(currentTier){
     </div>
     <div class="pg-card pg-card-pro${currentTier==='pro'?' pg-current':''}">
       <div class="pg-tier-row"><span class="pg-tier">Pro</span>${currentTier==='pro'?'<span class="pg-tier-badge">Current</span>':''}</div>
-      <div class="pg-price"><span class="pg-amt">$9</span><span class="pg-period">/mo</span></div>
+      <div class="pg-price"><span class="pg-amt">$9.90</span><span class="pg-period">/mo</span></div>
       <div class="pg-desc">Living knowledge base</div>
       <ul class="pg-features">
         <li>Everything in Free, plus:</li>

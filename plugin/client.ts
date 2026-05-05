@@ -3,7 +3,7 @@
  *
  * Cloud-safe by design — every endpoint sends file CONTENT, not
  * filesystem paths. Works identically whether the server is local
- * (http://localhost:8420) or cloud (app.noosphere.wiki).
+ * (http://localhost:8420) or cloud (noosphere.wiki).
  *
  * Four calls in the sync lifecycle:
  *   - getCorpus()          — liveness + corpus info for the test button
