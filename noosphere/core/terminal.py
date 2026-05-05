@@ -1,6 +1,7 @@
 """Terminal command handler — parses user input and routes to appropriate action."""
 
 import re
+from datetime import datetime
 from noosphere.core.corpus import list_corpora, create_corpus, get_corpus, DuplicateCorpusName
 from noosphere.core.ingest import ingest_url, ingest_text
 from noosphere.core.indexer import index_corpus
@@ -58,6 +59,17 @@ def handle_terminal_input(
             org_id=org_id,
             contributor_user_id=contributor_user_id,
             quota_check=quota_check,
+        )
+
+    # Enrich mode with a scoped corpus: ingest the typed text as a note into
+    # that corpus. Without this branch, plain-text input falls through to
+    # _handle_question (cross-corpus RAG) and the user's content is silently
+    # dropped — exactly the opposite of what the Enrich placeholder promises.
+    if mode == "enrich" and corpus_id:
+        return _handle_enrich_text(
+            text,
+            corpus_id=corpus_id,
+            contributor_user_id=contributor_user_id,
         )
 
     # Default: chat with Noos.
@@ -150,6 +162,55 @@ def _handle_url(url: str, corpus_id: str | None = None) -> dict:
         idx = index_corpus(cid)
         lines.append({"type": "resp", "text": f"✓ Indexed: {idx['chunk_count']} chunks"})
         lines.append({"type": "card", "label": "Source Added", "status": "READY",
+                       "detail": f'{doc["title"]} · {corpus_name}',
+                       "val": f'{idx["chunk_count"]} chunks · {doc["word_count"]} words',
+                       "corpus_id": cid})
+        lines.append({"type": "resp", "text": "Agents can now cite this content."})
+    except Exception as e:
+        lines.append({"type": "resp", "text": f"✗ Failed: {str(e)[:120]}"})
+
+    return {"lines": lines, "context": {"state": "idle"}}
+
+
+def _handle_enrich_text(
+    text: str,
+    *,
+    corpus_id: str,
+    contributor_user_id: str = "",
+) -> dict:
+    scoped = get_corpus(corpus_id)
+    if not scoped:
+        # Stale chip after a delete — fall back to the cross-corpus chat path
+        # rather than fabricating a corpus the user didn't ask for.
+        return _handle_question(text)
+
+    cid = scoped["id"]
+    corpus_name = scoped["name"]
+
+    # Title from the first non-empty line, mirroring saveNote() in app.js so
+    # the same note shows up identically whether the user typed it in Write
+    # mode or pasted it into the Enrich composer.
+    first_line = ""
+    for raw in text.splitlines():
+        stripped = raw.lstrip("#").strip()
+        if stripped:
+            first_line = stripped
+            break
+    title = first_line[:80] if first_line else f"Note {datetime.now().strftime('%b %-d')}"
+
+    lines: list[dict] = []
+    try:
+        doc = ingest_text(
+            cid,
+            title=title,
+            content=text,
+            contributor_user_id=contributor_user_id or None,
+        )
+        lines.append({"type": "resp", "text": f'✓ Saved: "{doc["title"]}" · {doc["word_count"]} words'})
+        lines.append({"type": "resp", "text": f"Indexing into {corpus_name}..."})
+        idx = index_corpus(cid)
+        lines.append({"type": "resp", "text": f"✓ Indexed: {idx['chunk_count']} chunks"})
+        lines.append({"type": "card", "label": "Note Saved", "status": "READY",
                        "detail": f'{doc["title"]} · {corpus_name}',
                        "val": f'{idx["chunk_count"]} chunks · {doc["word_count"]} words',
                        "corpus_id": cid})
