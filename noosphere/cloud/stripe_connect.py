@@ -377,48 +377,53 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
+    event_id = event.get("id", "")
     data = event["data"]["object"]
 
-    if event_type == "checkout.session.completed":
-        user_id = data.get("metadata", {}).get("user_id")
-        customer_id = data.get("customer")
-        subscription_id = data.get("subscription")
-        if user_id and subscription_id:
-            # Platform Pro subscription
-            update_user_tier(
-                user_id, "pro", customer_id, subscription_id,
-                subscription_status="active",
-            )
-            log.info("User %s upgraded to Pro", user_id)
+    try:
+        if event_type == "checkout.session.completed":
+            user_id = data.get("metadata", {}).get("user_id")
+            customer_id = data.get("customer")
+            subscription_id = data.get("subscription")
+            if user_id and subscription_id:
+                # Platform Pro subscription
+                update_user_tier(
+                    user_id, "pro", customer_id, subscription_id,
+                    subscription_status="active",
+                )
+                log.info("User %s upgraded to Pro", user_id)
 
-    elif event_type == "customer.subscription.updated":
-        customer_id = data.get("customer")
-        status = data.get("status")
-        user = find_user_by_stripe_customer(customer_id) if customer_id else None
-        if user:
-            tier = "pro" if status in ("active", "trialing") else "free"
-            ended_at = None
-            if status in ("canceled", "unpaid", "past_due"):
+        elif event_type == "customer.subscription.updated":
+            customer_id = data.get("customer")
+            status = data.get("status")
+            user = find_user_by_stripe_customer(customer_id) if customer_id else None
+            if user:
+                tier = "pro" if status in ("active", "trialing") else "free"
+                ended_at = None
+                if status in ("canceled", "unpaid", "past_due"):
+                    from datetime import datetime, timezone
+                    ended_at = datetime.now(timezone.utc).isoformat()
+                update_user_tier(
+                    str(user["id"]), tier,
+                    subscription_status=status,
+                    subscription_ended_at=ended_at,
+                )
+                log.info("Subscription updated: user=%s status=%s tier=%s", user["id"], status, tier)
+
+        elif event_type == "customer.subscription.deleted":
+            customer_id = data.get("customer")
+            user = find_user_by_stripe_customer(customer_id) if customer_id else None
+            if user:
                 from datetime import datetime, timezone
                 ended_at = datetime.now(timezone.utc).isoformat()
-            update_user_tier(
-                str(user["id"]), tier,
-                subscription_status=status,
-                subscription_ended_at=ended_at,
-            )
-            log.info("Subscription updated: user=%s status=%s tier=%s", user["id"], status, tier)
-
-    elif event_type == "customer.subscription.deleted":
-        customer_id = data.get("customer")
-        user = find_user_by_stripe_customer(customer_id) if customer_id else None
-        if user:
-            from datetime import datetime, timezone
-            ended_at = datetime.now(timezone.utc).isoformat()
-            update_user_tier(
-                str(user["id"]), "free",
-                subscription_status="canceled",
-                subscription_ended_at=ended_at,
-            )
-            log.info("Subscription cancelled: user=%s", user["id"])
+                update_user_tier(
+                    str(user["id"]), "free",
+                    subscription_status="canceled",
+                    subscription_ended_at=ended_at,
+                )
+                log.info("Subscription cancelled: user=%s", user["id"])
+    except Exception:
+        log.exception("Webhook handler failed: event_id=%s type=%s", event_id, event_type)
+        raise
 
     return JSONResponse({"status": "ok"})
