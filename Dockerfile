@@ -17,4 +17,4 @@ ENV PORT=8420
 
 EXPOSE 8420
 
-CMD ["python", "-m", "uvicorn", "noosphere.api.main:app", "--host", "0.0.0.0", "--port", "8420"]
+CMD ["sh", "-c", "python -m uvicorn noosphere.api.main:app --host 0.0.0.0 --port ${PORT:-8420}"]
