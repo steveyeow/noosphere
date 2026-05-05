@@ -378,14 +378,22 @@ function renderAuthUI(){
     bot.querySelector('.sb-auth-login').onclick=signInWithGoogle;
     return;
   }
-  // Single-line chip. Avatar reflects *where* (org initial for team, user
-  // avatar for personal); the label is *who* (the user's preferred /
-  // operator name). Stacking workspace + name read busy — one row reads
-  // calmer and matches Notion's bottom-chip pattern.
+  // Avatar reflects *where* (org initial for team, user avatar for
+  // personal); the label is *who* (the preferred / operator name). In
+  // cloud mode we stack a small tier line under the name so users can
+  // glance their plan without opening the popover.
+  let tierText='';
+  if(_cloudMode&&_authUser){
+    const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
+    tierText=t==='pro'?'Pro':'Free';
+  }
   bot.innerHTML=`
     <div class="sb-profile sb-profile-ws" id="sb-profile">
       ${_renderChipAvatarHTML()}
-      <span class="sb-profile-name sb-lb" id="sb-profile-name">${esc(_operatorChipText())}</span>
+      <div class="sb-profile-text sb-lb">
+        <span class="sb-profile-name" id="sb-profile-name">${esc(_operatorChipText())}</span>
+        ${tierText?`<span class="sb-profile-tier">${tierText}</span>`:''}
+      </div>
       <svg class="sb-profile-chev sb-lb" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="sb-popover sb-popover-ws hidden" id="sb-popover"></div>`;
@@ -474,7 +482,7 @@ function _renderProfilePopoverHTML(){
     <div class="sb-pop-divider"></div>
     <div class="sb-pop-section-label">Account · ${esc(_authUser.email||'')}</div>
     <a href="#/account" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Account</span></a>
-    <a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Pricing</span></a>
+    <a href="#/pricing" class="sb-pop-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>${(_authUser&&(_authUser.user_metadata?.tier||'').toLowerCase()==='pro')?'Manage subscription':'Pricing'}</span></a>
   `:'';
   const signoutItem=(_cloudMode&&_authUser)?
     `<button class="sb-pop-item sb-pop-danger" id="sb-pop-signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span>Sign out</span></button>`:'';
@@ -5880,6 +5888,13 @@ function renderWorkspaceSwitcher(){
     }
     const nameEl=profile.querySelector('#sb-profile-name');
     if(nameEl)nameEl.textContent=_operatorChipText();
+    // Tier may have just been mirrored from /api/v1/me (post-Stripe upgrade);
+    // refresh the sub-line so the chip reflects the latest tier without a reload.
+    const tierEl=profile.querySelector('.sb-profile-tier');
+    if(tierEl&&_cloudMode&&_authUser){
+      const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
+      tierEl.textContent=t==='pro'?'Pro':'Free';
+    }
   }
   // Legacy hooks (kept harmless for any caller that still pokes at them).
   const lab=document.getElementById('sb-ws-label');
