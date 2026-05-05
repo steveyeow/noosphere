@@ -44,6 +44,19 @@ PLATFORM_COMMISSION_PERCENT = 10
 stripe.api_key = STRIPE_SECRET_KEY
 
 
+def _sg(obj, key, default=None):
+    """Safe key access for StripeObject (lacks .get and resists dict()).
+
+    Stripe SDK's StripeObject supports obj[key] and `in` but not .get(),
+    .to_dict_recursive(), or dict(obj). Use this helper to read fields
+    from event payloads defensively.
+    """
+    try:
+        return obj[key] if key in obj else default
+    except (KeyError, TypeError, AttributeError):
+        return default
+
+
 # ── Pro subscription (creator pays platform) ──
 
 
@@ -378,16 +391,13 @@ async def stripe_webhook(request: Request):
 
     event_type = event["type"]
     event_id = event["id"]
-    obj = event["data"]["object"]
-    # StripeObject doesn't expose .get(); coerce to plain dict so the
-    # rest of the handler can use idiomatic dict access.
-    data = obj.to_dict_recursive() if hasattr(obj, "to_dict_recursive") else dict(obj)
+    data = event["data"]["object"]
 
     try:
         if event_type == "checkout.session.completed":
-            user_id = data.get("metadata", {}).get("user_id")
-            customer_id = data.get("customer")
-            subscription_id = data.get("subscription")
+            user_id = _sg(_sg(data, "metadata") or {}, "user_id")
+            customer_id = _sg(data, "customer")
+            subscription_id = _sg(data, "subscription")
             if user_id and subscription_id:
                 # Platform Pro subscription
                 update_user_tier(
@@ -397,8 +407,8 @@ async def stripe_webhook(request: Request):
                 log.info("User %s upgraded to Pro", user_id)
 
         elif event_type == "customer.subscription.updated":
-            customer_id = data.get("customer")
-            status = data.get("status")
+            customer_id = _sg(data, "customer")
+            status = _sg(data, "status")
             user = find_user_by_stripe_customer(customer_id) if customer_id else None
             if user:
                 tier = "pro" if status in ("active", "trialing") else "free"
@@ -414,7 +424,7 @@ async def stripe_webhook(request: Request):
                 log.info("Subscription updated: user=%s status=%s tier=%s", user["id"], status, tier)
 
         elif event_type == "customer.subscription.deleted":
-            customer_id = data.get("customer")
+            customer_id = _sg(data, "customer")
             user = find_user_by_stripe_customer(customer_id) if customer_id else None
             if user:
                 from datetime import datetime, timezone
