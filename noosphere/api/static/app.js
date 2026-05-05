@@ -649,6 +649,15 @@ async function loadMe(){try{const r=await fetch(`${API}/me`);const d=await r.jso
   _userId=d.user_id||null;
   _isLocalOperator=!!d.is_local_operator;
   _orgs=Array.isArray(d.orgs)?d.orgs:[];
+  // Source of truth for `tier` is Noosphere's users table (updated by the
+  // Stripe webhook on checkout.session.completed). Supabase JWT user_metadata
+  // is NOT auto-synced. Mirror server tier into _authUser.user_metadata so
+  // the many UI sites reading _authUser.user_metadata.tier get the post-
+  // upgrade value without needing a JWT refresh.
+  if(_authUser&&typeof d.tier==='string'){
+    _authUser.user_metadata=_authUser.user_metadata||{};
+    _authUser.user_metadata.tier=d.tier;
+  }
   // Active workspace must reference an org the user still belongs to —
   // otherwise reset to Personal so we don't fire requests against a
   // workspace the server will 403.
