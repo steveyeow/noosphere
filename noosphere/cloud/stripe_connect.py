@@ -316,6 +316,7 @@ async def connect_checkout(request: Request):
             payment_intent_data={
                 "application_fee_amount": platform_fee,
                 "transfer_data": {"destination": connect_account_id},
+                "statement_descriptor": "NOOSPHERE.WIKI",
             },
             success_url=f"{APP_URL}/?payment=success&corpus={corpus_id}",
             cancel_url=f"{APP_URL}/?payment=canceled",
