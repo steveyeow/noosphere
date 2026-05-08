@@ -758,7 +758,8 @@ async def api_list_corpora(request: Request):
         user_id = _get_user_id(request)
         if user_id:
             return _annotate_compile_state(list_user_corpora(user_id))
-        return _annotate_compile_state(list_corpora())
+        all_c = list_corpora()
+        return _annotate_compile_state([c for c in all_c if c.get("owner_id") or c.get("org_id")])
     listed = list_corpora(include_private=_is_owner_request(request))
     # Personal workspace must never leak org-scoped corpora — those only
     # surface when the caller switches to that org's workspace explicitly.
@@ -932,6 +933,8 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
     # Checkout) and agents (x402 challenge) can act without first being
     # bounced by a 402.
     corpora = list_corpora(include_private=True)
+    if _is_cloud():
+        corpora = [c for c in corpora if c.get("owner_id") or c.get("org_id")]
     is_owner = _is_owner_request(request)
     # Lazy backfill: any corpus without a profile embedding yet gets one
     # computed in the background. The current response uses whatever
