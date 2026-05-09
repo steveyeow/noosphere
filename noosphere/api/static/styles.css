@@ -619,6 +619,15 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .mc-card-actions{position:absolute;top:12px;right:12px}
 .mc-card-more{flex-shrink:0;width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--tx3);font-size:16px;cursor:pointer;opacity:0;transition:opacity .15s,background .12s;display:flex;align-items:center;justify-content:center;letter-spacing:1px}.mc-card-more:hover{background:var(--brd)}
 .mc-graph{flex:1;position:relative}
+/* Graph view: drop the wrapper's 880px column so the canvas spans the full
+   content area (matches /#/explore). Header chrome stays visually anchored
+   to the same column by re-applying the constraint to each header child. */
+.mc-wrap--graph{max-width:none;padding:0}
+.mc-wrap--graph>.mc-top,.mc-wrap--graph>.mc-search-wrap,.mc-wrap--graph>.mc-sub{max-width:880px;width:100%;margin-left:auto;margin-right:auto;padding-left:32px;padding-right:32px;box-sizing:border-box}
+/* Search icon is absolutely positioned at left:14px of the wrap; the
+   wrap's new 32px padding would orphan it in the gutter, so shift it
+   to sit over the input again. */
+.mc-wrap--graph>.mc-search-wrap>.mc-search-icon{left:46px}
 
 /* ── Network ── */
 .nv-wrap{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column}

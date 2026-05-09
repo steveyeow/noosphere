@@ -2834,7 +2834,11 @@ function renderChats(){
 let _mcView='list';
 function renderMyCorpora(){
   hideRP();const ct=document.getElementById('content'),host=location.origin;ct.classList.remove('content--corpus');
-  ct.innerHTML=`<div class="mc-wrap">
+  // Graph mode lets the canvas span the full content area (matches the
+  // /#/explore feel) while the header chrome stays centered at the same
+  // 880px column the list view uses.
+  const wrapMod=_mcView==='graph'?' mc-wrap--graph':'';
+  ct.innerHTML=`<div class="mc-wrap${wrapMod}">
     ${workspaceEyebrowHTML()}
     <div class="mc-top">
       <h1 class="mc-title">Corpora</h1>
