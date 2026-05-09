@@ -183,39 +183,41 @@ async def connect_onboard(request: Request):
     email = user.get("email", "") if user else ""
 
     try:
-        # Create a Connect Express account
-        account = stripe.Account.create(
-            type="express",
-            email=email,
-            metadata={"user_id": user_id},
-            capabilities={
-                "card_payments": {"requested": True},
-                "transfers": {"requested": True},
-            },
-        )
-
-        # Save the Connect account ID
         from noosphere.core.db import get_conn
         from datetime import datetime, timezone
-        conn = get_conn()
-        conn.execute(
-            "UPDATE users SET stripe_customer_id=?, updated_at=? WHERE id=?",
-            (account.id, datetime.now(timezone.utc).isoformat(), user_id),
-        )
-        conn.commit()
 
-        # Create onboarding link
+        existing_acct = (user or {}).get("stripe_connect_account_id", "") or ""
+        if existing_acct:
+            account_id = existing_acct
+        else:
+            account = stripe.Account.create(
+                type="express",
+                email=email,
+                metadata={"user_id": user_id},
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
+            )
+            account_id = account.id
+            conn = get_conn()
+            conn.execute(
+                "UPDATE users SET stripe_connect_account_id=?, updated_at=? WHERE id=?",
+                (account_id, datetime.now(timezone.utc).isoformat(), user_id),
+            )
+            conn.commit()
+
         link = stripe.AccountLink.create(
-            account=account.id,
+            account=account_id,
             refresh_url=f"{APP_URL}/?connect=refresh",
             return_url=f"{APP_URL}/?connect=complete",
             type="account_onboarding",
         )
 
-        return {"url": link.url, "account_id": account.id}
+        return {"url": link.url, "account_id": account_id}
     except stripe.StripeError as e:
-        log.error("Connect onboarding error: %s", e)
-        raise HTTPException(status_code=500, detail="Onboarding failed")
+        log.error("Connect onboarding error: %s – %s", type(e).__name__, e.user_message or e)
+        raise HTTPException(status_code=500, detail=str(e.user_message or "Onboarding failed"))
 
 
 @router.post("/connect/crypto-payout")
@@ -293,7 +295,7 @@ async def connect_checkout(request: Request):
         raise HTTPException(status_code=400, detail="Corpus has no owner")
 
     owner = get_user(owner_id)
-    connect_account_id = owner.get("stripe_customer_id", "") if owner else ""
+    connect_account_id = owner.get("stripe_connect_account_id", "") if owner else ""
     if not connect_account_id:
         raise HTTPException(status_code=400, detail="Creator has not completed Stripe onboarding")
 

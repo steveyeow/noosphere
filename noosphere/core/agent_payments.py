@@ -209,9 +209,7 @@ def _resolve_payout(corpus: dict) -> PayoutResolution:
             from noosphere.cloud.db import get_user
 
             owner = get_user(owner_id) or {}
-            # Cloud reuses `users.stripe_customer_id` to store the Connect
-            # account ID — see noosphere/cloud/stripe_connect.py:217.
-            stripe_id = owner.get("stripe_customer_id", "") or ""
+            stripe_id = owner.get("stripe_connect_account_id", "") or ""
             crypto = owner.get("crypto_payout_address", "") or ""
         except ImportError:
             log.warning("cloud db unavailable but ENABLE_CLOUD is set")

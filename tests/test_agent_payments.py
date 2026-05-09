@@ -704,7 +704,7 @@ def _seed_cloud_user(
     now = datetime.now(timezone.utc).isoformat()
     conn = get_conn()
     conn.execute(
-        "INSERT INTO users (id, email, tier, stripe_customer_id, "
+        "INSERT INTO users (id, email, tier, stripe_connect_account_id, "
         "crypto_payout_address, created_at, updated_at) "
         "VALUES (?, ?, 'pro', ?, ?, ?, ?)",
         (user_id, f"{user_id}@example.com", stripe_connect, crypto_address, now, now),

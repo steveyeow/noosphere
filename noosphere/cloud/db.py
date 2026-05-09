@@ -79,6 +79,7 @@ def init_cloud_tables():
     # Additive migrations — silently skip if column already exists.
     for stmt in (
         "ALTER TABLE users ADD COLUMN crypto_payout_address TEXT",
+        "ALTER TABLE users ADD COLUMN stripe_connect_account_id TEXT",
     ):
         try:
             if is_pg():
