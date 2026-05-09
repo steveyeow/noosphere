@@ -2962,9 +2962,13 @@ function renderMCList(host){
 }
 
 async function renderMCGraph(){
+  // Personal Corpora page: pass scope=mine so the Network toggle shows the
+  // same set as the List toggle (the caller's own corpora). Without it the
+  // endpoint defaults to the full Noosphere (every user + remote nodes),
+  // which is what /#/explore wants but creates a confusing mismatch here.
   const el=document.getElementById('mc-content');el.innerHTML='';el.className='mc-graph';
   let nodes=_corpora;
-  try{const r=await fetch(`${API}/corpora/network`);if(r.ok){const d=await r.json();if(Array.isArray(d.nodes)&&d.nodes.length)nodes=d.nodes}}catch(e){}
+  try{const r=await fetch(`${API}/corpora/network?scope=mine`);if(r.ok){const d=await r.json();if(Array.isArray(d.nodes)&&d.nodes.length)nodes=d.nodes}}catch(e){}
   if(!nodes.length){el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet.</div>';return}
   drawGraphIn(el,nodes);
 }

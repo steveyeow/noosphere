@@ -932,9 +932,21 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
     # `pricing` / `accepts` / `checkout_url` so both humans (Stripe
     # Checkout) and agents (x402 challenge) can act without first being
     # bounced by a 402.
+    #
+    # `?scope=mine` narrows the graph to the caller's personal corpora —
+    # used by the personal Corpora page's Network toggle so its node set
+    # matches the List toggle's card set. Without it, the endpoint returns
+    # the full Noosphere (all users + remote federated nodes), which is
+    # what /#/explore and /#/network want.
+    scope = (request.query_params.get("scope") or "").strip().lower()
+    mine_only = scope == "mine"
     corpora = list_corpora(include_private=True)
     if _is_cloud():
-        corpora = [c for c in corpora if c.get("owner_id") or c.get("org_id")]
+        if mine_only:
+            uid = _get_user_id(request)
+            corpora = [c for c in corpora if uid and c.get("owner_id") == uid]
+        else:
+            corpora = [c for c in corpora if c.get("owner_id") or c.get("org_id")]
     is_owner = _is_owner_request(request)
     # Lazy backfill: any corpus without a profile embedding yet gets one
     # computed in the background. The current response uses whatever
@@ -1064,57 +1076,60 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
     # IDs are prefixed `r/<endpoint>/<corpus_id>` so they don't collide
     # with local IDs and the frontend can detect "this is a remote node,
     # don't try to /corpus/:id navigate" on click.
-    try:
-        _conn = get_conn()
-        remote_rows = _conn.execute(
-            "SELECT * FROM registered_corpora WHERE access_level != 'private' "
-            "ORDER BY updated_at DESC"
-        ).fetchall()
-        from noosphere.core.registry import is_local_endpoint as _is_local_ep
-        local_corpus_ids = {c["id"] for c in corpora}
-        for r in remote_rows:
-            rd = dict(r)
-            if rd.get("corpus_id") in local_corpus_ids:
-                continue
-            if _is_local_ep(rd.get("node_endpoint", "")):
-                continue
-            r_tags = rd.get("tags") or []
-            if isinstance(r_tags, str):
-                try:
-                    r_tags = _json.loads(r_tags)
-                except Exception:
-                    r_tags = []
-            r_task_types = rd.get("task_types") or []
-            if isinstance(r_task_types, str):
-                try:
-                    r_task_types = _json.loads(r_task_types)
-                except Exception:
-                    r_task_types = []
-            r_tokens = []
-            for t in r_tags:
-                r_tokens.extend([x.strip().lower() for x in str(t).replace(",", " ").split() if x.strip()])
-            r_name = rd.get("name") or "Untitled"
-            r_initials = "".join(w[0].upper() for w in r_name.split()[:2]) if r_name else "?"
-            nodes.append({
-                "id": f"r/{rd.get('node_endpoint', '')}/{rd.get('corpus_id', '')}",
-                "name": r_name,
-                "slug": rd.get("slug") or "",
-                "description": rd.get("description") or "",
-                "author": rd.get("author") or "",
-                "tags": r_tags, "tokens": r_tokens, "initials": r_initials,
-                "document_count": rd.get("document_count", 0),
-                "chunk_count": rd.get("chunk_count", 0),
-                "word_count": rd.get("word_count", 0),
-                "status": rd.get("status", "draft"),
-                "access_level": rd.get("access_level", "public"),
-                "task_types": r_task_types,
-                "autonomy_level": rd.get("autonomy_level", 0),
-                "kind": "remote",
-                "node_endpoint": rd.get("node_endpoint") or "",
-                "remote_corpus_id": rd.get("corpus_id") or "",
-            })
-    except Exception as _re:
-        logger.debug("registered_corpora merge skipped: %s", _re)
+    # Skipped under scope=mine — the personal view is about what the
+    # caller owns, not the federated world.
+    if not mine_only:
+        try:
+            _conn = get_conn()
+            remote_rows = _conn.execute(
+                "SELECT * FROM registered_corpora WHERE access_level != 'private' "
+                "ORDER BY updated_at DESC"
+            ).fetchall()
+            from noosphere.core.registry import is_local_endpoint as _is_local_ep
+            local_corpus_ids = {c["id"] for c in corpora}
+            for r in remote_rows:
+                rd = dict(r)
+                if rd.get("corpus_id") in local_corpus_ids:
+                    continue
+                if _is_local_ep(rd.get("node_endpoint", "")):
+                    continue
+                r_tags = rd.get("tags") or []
+                if isinstance(r_tags, str):
+                    try:
+                        r_tags = _json.loads(r_tags)
+                    except Exception:
+                        r_tags = []
+                r_task_types = rd.get("task_types") or []
+                if isinstance(r_task_types, str):
+                    try:
+                        r_task_types = _json.loads(r_task_types)
+                    except Exception:
+                        r_task_types = []
+                r_tokens = []
+                for t in r_tags:
+                    r_tokens.extend([x.strip().lower() for x in str(t).replace(",", " ").split() if x.strip()])
+                r_name = rd.get("name") or "Untitled"
+                r_initials = "".join(w[0].upper() for w in r_name.split()[:2]) if r_name else "?"
+                nodes.append({
+                    "id": f"r/{rd.get('node_endpoint', '')}/{rd.get('corpus_id', '')}",
+                    "name": r_name,
+                    "slug": rd.get("slug") or "",
+                    "description": rd.get("description") or "",
+                    "author": rd.get("author") or "",
+                    "tags": r_tags, "tokens": r_tokens, "initials": r_initials,
+                    "document_count": rd.get("document_count", 0),
+                    "chunk_count": rd.get("chunk_count", 0),
+                    "word_count": rd.get("word_count", 0),
+                    "status": rd.get("status", "draft"),
+                    "access_level": rd.get("access_level", "public"),
+                    "task_types": r_task_types,
+                    "autonomy_level": rd.get("autonomy_level", 0),
+                    "kind": "remote",
+                    "node_endpoint": rd.get("node_endpoint") or "",
+                    "remote_corpus_id": rd.get("corpus_id") or "",
+                })
+        except Exception as _re:
+            logger.debug("registered_corpora merge skipped: %s", _re)
 
     # Edge computation runs in two layered passes so the graph stays
     # connected regardless of which signals are populated on which corpora:
