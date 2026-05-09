@@ -3276,13 +3276,15 @@ async function drawGraphIn(container,corpora,existingCanvas){
   //   view.k       — current zoom scale (1 = identity)
   //   view.tx/ty   — translation in screen pixels, applied AFTER scale
   //   ZOOM_MIN/MAX — clamps so a wheel-mash can't trash the layout
-  // Auto-fit runs once the simulation has had time to spread nodes
-  // (~600 ms by default — alphaDecay=.03 means we're well into convergence
-  // by then). Double-click on empty space repeats the fit so users can
-  // recover from drifting/dragging without reloading.
+  // Auto-fit re-runs every tick while the simulation is still settling,
+  // so the camera tracks the nodes as they spread. Stops as soon as the
+  // user pans/zooms/drags (their framing wins) or alpha drops below the
+  // settle threshold. Previously a single 600 ms fit captured the layout
+  // mid-spread and nodes drifted off-screen by the time motion stopped.
+  // Double-click on empty space re-runs autoFit on demand.
   const view={tx:0,ty:0,k:1};
   const ZOOM_MIN=0.25,ZOOM_MAX=4;
-  let _autoFitDone=false;
+  let _userFramed=false;
   const toWorld=(sx,sy)=>[(sx-view.tx)/view.k,(sy-view.ty)/view.k];
   function autoFit(){
     if(!ns.length)return;
@@ -3303,7 +3305,7 @@ async function drawGraphIn(container,corpora,existingCanvas){
     view.tx=W/2-((minX+maxX)/2)*view.k;
     view.ty=H/2-((minY+maxY)/2)*view.k;
   }
-  setTimeout(()=>{if(!_autoFitDone){autoFit();_autoFitDone=true}},600);
+  sim.on('tick',()=>{if(!_userFramed&&sim.alpha()>0.02)autoFit()});
 
   let drag=null,hov=null,mp=null,pan=null,panMoved=0;
   const tt=container.querySelector('.nv-tt')||document.getElementById('nv-tt');
@@ -3321,13 +3323,14 @@ async function drawGraphIn(container,corpora,existingCanvas){
     const r=cv.getBoundingClientRect();
     const sx=e.clientX-r.left,sy=e.clientY-r.top;
     drag=getN_screen(sx,sy);
-    if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart();return}
+    if(drag){drag.fx=drag.x;drag.fy=drag.y;sim.alphaTarget(.3).restart();_userFramed=true;return}
     // Empty space → start panning. Capture current view offsets so the
     // delta math in mousemove stays absolute (prevents jitter from
     // accumulating float error).
     pan={sx,sy,tx:view.tx,ty:view.ty};
     panMoved=0;
     cv.style.cursor='grabbing';
+    _userFramed=true;
   };
   cv.onmousemove=e=>{
     const r=cv.getBoundingClientRect();
@@ -3371,7 +3374,7 @@ async function drawGraphIn(container,corpora,existingCanvas){
       node_endpoint:hov.node_endpoint||'',
     });
   };
-  cv.ondblclick=e=>{e.preventDefault();autoFit()};
+  cv.ondblclick=e=>{e.preventDefault();_userFramed=false;autoFit()};
   cv.onmouseleave=()=>{hov=null;mp=null;if(tt)tt.classList.add('hidden');if(drag){drag.fx=null;drag.fy=null;sim.alphaTarget(0);drag=null}if(pan)pan=null};
   // Wheel = zoom anchored at cursor. The "exp(-deltaY * factor)" curve
   // gives smooth perceived speed across mouse wheels (large discrete
@@ -3387,6 +3390,7 @@ async function drawGraphIn(container,corpora,existingCanvas){
     const newK=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,view.k*factor));
     if(newK===view.k)return;
     view.tx=sx-wx*newK;view.ty=sy-wy*newK;view.k=newK;
+    _userFramed=true;
   };
 
   function draw(){const now=performance.now();cx.save();cx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--cvBg').trim()||'#f5f5f7';cx.fillRect(0,0,W,H);
