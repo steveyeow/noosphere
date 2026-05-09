@@ -1070,12 +1070,13 @@ async def api_corpus_network(request: Request, background_tasks: BackgroundTasks
             "SELECT * FROM registered_corpora WHERE access_level != 'private' "
             "ORDER BY updated_at DESC"
         ).fetchall()
-        # Avoid emitting a remote node that's actually our own (this node's
-        # corpora may be in the registry too if we're configured to register).
+        from noosphere.core.registry import is_local_endpoint as _is_local_ep
         local_corpus_ids = {c["id"] for c in corpora}
         for r in remote_rows:
             rd = dict(r)
             if rd.get("corpus_id") in local_corpus_ids:
+                continue
+            if _is_local_ep(rd.get("node_endpoint", "")):
                 continue
             r_tags = rd.get("tags") or []
             if isinstance(r_tags, str):
@@ -3192,6 +3193,11 @@ async def api_register_node(req: RegisterNodeRequest):
 
     if not endpoint:
         raise HTTPException(status_code=400, detail="endpoint is required")
+
+    from noosphere.core.registry import is_local_endpoint
+    if is_local_endpoint(endpoint):
+        raise HTTPException(status_code=400, detail="localhost endpoints cannot be registered")
+
     if not req.corpora:
         raise HTTPException(status_code=400, detail="at least one corpus is required")
 
