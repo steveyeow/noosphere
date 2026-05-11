@@ -748,7 +748,8 @@ def delete_document(doc_id: str) -> bool:
 
 def get_documents(corpus_id: str) -> list[dict]:
     rows = get_conn().execute(
-        "SELECT * FROM documents WHERE corpus_id=? ORDER BY date DESC, title ASC",
+        "SELECT * FROM documents WHERE corpus_id=? "
+        "ORDER BY COALESCE(NULLIF(date,''), created_at) DESC, title ASC",
         (corpus_id,),
     ).fetchall()
     return [dict(r) for r in rows]
