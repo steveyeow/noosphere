@@ -2130,10 +2130,12 @@ async function renderHomeTworow(enterWrite){
       btn.onclick=()=>enterWrite(btn.dataset.title);
     });
   }
-  // Recent corpora — load async, sort by updated_at desc, show top 3.
+  // Recent corpora — sort by updated_at desc, show top 3. _corpora is kept
+  // fresh by route() (which awaits loadC before calling renderHome) and by
+  // every mutation path (upload, rename, delete, create), so we can render
+  // synchronously here instead of re-fetching and flashing an empty slot.
   const recEl=document.getElementById('home-col-recent');
   if(!recEl)return;
-  await loadC();
   if(!_corpora.length){
     recEl.innerHTML=`<div class="home-col-empty">No knowledge bases yet. Create one from the composer above.</div>`;
     return;
@@ -2851,7 +2853,7 @@ function renderMyCorpora(){
     <div class="mc-sub"><span class="mc-sub-label">${_corpora.length} corpora</span><div class="mc-toggle"><button class="${_mcView==='list'?'active':''}" id="mc-list-btn">List</button><button class="${_mcView==='graph'?'active':''}" id="mc-graph-btn">Network</button></div></div>
     <div id="mc-content" style="flex:1;overflow:hidden"></div>
   </div>`;
-  document.getElementById('mc-new-btn').onclick=()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()};
+  document.getElementById('mc-new-btn').onclick=()=>{_termCtx={};const wasMain=location.hash==='#/main';location.hash='#/main';if(wasMain)renderHome()};
   document.getElementById('mc-list-btn').onclick=()=>{_mcView='list';renderMyCorpora()};
   document.getElementById('mc-graph-btn').onclick=()=>{_mcView='graph';renderMyCorpora()};
   if(_mcView==='list')renderMCList(host);else renderMCGraph();
@@ -2919,8 +2921,9 @@ function renderMCList(host){
       if(create)create.onclick=()=>{
         _termCtx={};
         _composerMode='create';
+        const wasMain=location.hash==='#/main';
         location.hash='#/main';
-        if(location.hash==='#/main')renderHome();
+        if(wasMain)renderHome();
       };
       return;
     }
@@ -5884,7 +5887,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   const sbToggle=()=>document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('sb-toggle')?.addEventListener('click',sbToggle);
   document.querySelector('.sb-logo')?.addEventListener('click',e=>{const sb=document.getElementById('sidebar');if(sb.classList.contains('collapsed')){e.preventDefault();sbToggle()}});
-  document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};location.hash='#/main';if(location.hash==='#/main')renderHome()});
+  document.getElementById('sb-new')?.addEventListener('click',()=>{_termCtx={};const wasMain=location.hash==='#/main';location.hash='#/main';if(wasMain)renderHome()});
   _loadWorkspace();_ensureSelfHostedUserId();_loadDisplayName();
   // Migrate the legacy permanent dismiss flag from localStorage to a
   // session-scoped one — anyone who hit × in the old build gets the
