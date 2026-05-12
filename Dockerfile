@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Playwright + Chromium for OG card rendering on /og/c/{slug}.png. Pulls
+# ~170MB of browser + system libs; the share feature shows a tiny grey
+# Twitter card without it.
+RUN playwright install --with-deps chromium
 
 COPY . .
 

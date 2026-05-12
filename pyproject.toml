@@ -33,6 +33,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]
+# OG card rendering for social sharing. Pulls in a headless-browser controller;
+# install with `pip install -e .[og]`. On dev macOS this reuses the system
+# Chrome (channel="chrome"); prod deploys should run `playwright install
+# chromium` to bundle the browser into the image.
+og = ["playwright>=1.59.0"]
 
 [project.scripts]
 noosphere = "noosphere.cli.main:main"

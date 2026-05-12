@@ -4232,6 +4232,110 @@ function renderCorpusSafe(id, sessionId){
   return renderCorpus(id, sessionId);
 }
 
+/* ══════ Share dialog — corpus + doc → Twitter intent + Copy link ══════ */
+// Opens a modal with the matching OG card preview, an editable tweet text,
+// the canonical /c/{slug} URL, and a Tweet button that fires the Twitter
+// intent URL. The OG card image is fetched from the same /og/c/.../*.png
+// endpoint Twitter's scraper hits, so what the user sees here is what
+// followers will see in their feed.
+function openShareDialog(corpus,doc){
+  const base=window.location.origin;
+  const slug=corpus.slug||corpus.id;
+  const url=doc?`${base}/c/${slug}/d/${doc.id}`:`${base}/c/${slug}`;
+  const ogImg=doc?`/og/c/${slug}/d/${doc.id}.png`:`/og/c/${slug}.png`;
+  // Subject label for the dialog header — "corpus" / "wiki entry" / "note"
+  // gives the user a moment of confirmation about what they're actually
+  // sharing before the tweet ships.
+  const subjLabel=!doc?'Corpus':(doc.doc_type==='concept'?'Wiki entry':'Note');
+  // Default tweet text: a sensible starting point the user will almost
+  // always edit. Keep under ~260 chars so the URL has room (Twitter
+  // reserves 23 chars for t.co shortening + 1 for the separating space).
+  let defaultText;
+  if(!doc){
+    defaultText=(corpus.description||'').trim()||corpus.name||'';
+  }else{
+    const ttl=(doc.title||'').replace(/^Concept:\s+/,'').trim();
+    let content=(doc.content||'')
+      .replace(/^\s*#{1,6}\s+[^\n]{1,80}\n+/,'')
+      .replace(/\*\*([^*]+)\*\*/g,'$1')
+      .replace(/`([^`]+)`/g,'$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+      .trim();
+    if(doc.doc_type==='concept'){
+      const m=content.match(/#{2,3}\s+Summary\s*\n+([\s\S]*?)(?=\n+#{2,3}\s+\w|$)/);
+      if(m)content=m[1].trim();
+    }
+    const body=content.replace(/\s+/g,' ').trim();
+    if(ttl){
+      const room=240-ttl.length-3;
+      defaultText=`${ttl} — ${body.slice(0,room)}${body.length>room?'…':''}`;
+    }else{
+      defaultText=`"${body.slice(0,240)}${body.length>240?'…':''}"`;
+    }
+  }
+  const MAX=256;
+  if(defaultText.length>MAX)defaultText=defaultText.slice(0,MAX-1).trim()+'…';
+
+  const overlay=document.createElement('div');
+  overlay.className='share-overlay';
+  overlay.innerHTML=`<div class="share-panel" role="dialog" aria-modal="true" aria-label="Share">
+    <div class="share-hd">
+      <div class="share-hd-text">
+        <div class="share-title">Share to Twitter</div>
+        <div class="share-sub">${esc(subjLabel)} · ${esc(corpus.name||'')}</div>
+      </div>
+      <button class="share-close" id="share-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="share-body">
+      <div class="share-preview"><div class="share-preview-loading" id="share-preview-loading">Rendering preview…</div><img class="share-preview-img" id="share-preview-img" alt="" style="display:none" /></div>
+      <textarea class="share-text" id="share-text" rows="3" placeholder="What's this about?">${esc(defaultText)}</textarea>
+      <div class="share-foot">
+        <div class="share-url-row"><code class="share-url" title="${esc(url)}">${esc(url)}</code><button class="share-copy" id="share-copy" type="button">Copy link</button></div>
+        <div class="share-count" id="share-count"></div>
+      </div>
+    </div>
+    <div class="share-actions">
+      <button class="btn-sm-ghost" id="share-cancel" type="button">Cancel</button>
+      <button class="btn-sm" id="share-go" type="button">Tweet</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  const img=overlay.querySelector('#share-preview-img');
+  const loading=overlay.querySelector('#share-preview-loading');
+  img.onload=()=>{img.style.display='block';loading.style.display='none'};
+  img.onerror=()=>{loading.textContent='Preview unavailable'};
+  img.src=ogImg;
+
+  const ta=overlay.querySelector('#share-text');
+  const counter=overlay.querySelector('#share-count');
+  const updateCount=()=>{
+    const remain=280-ta.value.length-24;
+    counter.textContent=`${remain} left`;
+    counter.classList.toggle('share-count-over',remain<0);
+  };
+  ta.oninput=updateCount;updateCount();
+  ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+
+  const close=()=>{overlay.remove();document.removeEventListener('keydown',escHandler)};
+  const escHandler=(e)=>{if(e.key==='Escape')close()};
+  document.addEventListener('keydown',escHandler);
+  overlay.querySelector('#share-close').onclick=close;
+  overlay.querySelector('#share-cancel').onclick=close;
+  overlay.onclick=(e)=>{if(e.target===overlay)close()};
+
+  overlay.querySelector('#share-copy').onclick=async()=>{
+    try{await navigator.clipboard.writeText(url);toast('Link copied')}
+    catch(e){toast('Copy failed — select and copy manually')}
+  };
+  overlay.querySelector('#share-go').onclick=()=>{
+    const text=ta.value.trim();
+    const intent=`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+    window.open(intent,'_blank','noopener,noreferrer');
+    close();
+  };
+}
+
 async function renderCorpus(id,sessionId){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
@@ -4271,7 +4375,7 @@ async function renderCorpus(id,sessionId){
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
     // Show the contributor pill only in team workspaces — meaningless solo.
     const contribHTML=(_workspace.kind==='org'&&d.contributor_user_id)?(' · '+renderContributorPill(d.contributor_user_id)):'';
-    return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
+    return `<div class="doc-item" data-id="${d.id}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-share-btn" data-id="${d.id}" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
   };
   // Wiki empty-state: phrase matters depending on whether the manifest is
   // already there. Even before the user compiles a single concept note, the
@@ -4294,7 +4398,7 @@ async function renderCorpus(id,sessionId){
   const wikiCount=wikiDocs.length;
   const conceptCount=conceptDocs.length;
   const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-compile-btn">Compile</button></div><div id="cv-wiki-docs">${wikiDocs.length===0?wikiEmpty:wikiDocs.map(docItemHTML).join('')}${wikiDocs.length>0&&conceptCount===0?wikiEmptyHidden:''}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   // Description editor — surgical (no renderCorpus). Snapshot the read-only
   // markup, swap in the input, and restore (with the new value on save) so
@@ -4325,6 +4429,8 @@ async function renderCorpus(id,sessionId){
     };
   }
   document.getElementById('cv-desc-edit').onclick=_bindDescEdit;
+  const shareBtnEl=document.getElementById('cv-share-btn');
+  if(shareBtnEl)shareBtnEl.onclick=()=>openShareDialog(c,null);
   // Composer is the SOLE action surface on the corpus page. Section "+ Add"
   // and "Compile" buttons are discoverable shortcuts that just trigger the
   // composer in the right state — no inline panels under those buttons.
@@ -4434,6 +4540,12 @@ async function renderCorpus(id,sessionId){
   if(cvComposerInput)cvComposerInput.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend()}
   });
+  ct.querySelectorAll('.doc-share-btn').forEach(btn=>{btn.onclick=e=>{
+    e.stopPropagation();
+    const did=btn.dataset.id;
+    const doc=docs.find(d=>d.id===did);
+    if(doc)openShareDialog(c,doc);
+  }});
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
     if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;

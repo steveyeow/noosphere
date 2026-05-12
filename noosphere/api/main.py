@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from noosphere import __version__
 from noosphere.api.routes import router as api_router
 from noosphere.api.llmstxt_router import router as llmstxt_router
+from noosphere.api.og_router import router as og_router
 from noosphere.mcp.routes import router as mcp_router
 from noosphere.core.access import PaymentRequired
 from noosphere.core.db import get_conn, close as db_close
@@ -213,6 +214,9 @@ app.include_router(mcp_router)
 # llms.txt routes mount at root (e.g. /llms.txt, /c/{slug}/llms.txt) per the
 # llmstxt.org convention. Must be registered before the SPA catch-all below.
 app.include_router(llmstxt_router)
+# OG card preview routes (/og-preview/...). Same hard requirement as llmstxt:
+# the SPA catch-all at the bottom would otherwise swallow these paths.
+app.include_router(og_router)
 
 if os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
     try:
