@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import os
 import re
 from pathlib import Path
 
@@ -861,8 +862,17 @@ async def _render_html_to_png(html_content: str) -> bytes:
                    "Install with: pip install playwright",
         )
 
+    # Browser channel selection:
+    #   Default (no env var) → Playwright's bundled Chromium (what
+    #     `playwright install chromium` puts on disk; this is what the
+    #     Docker image ships, so prod just works).
+    #   PLAYWRIGHT_CHANNEL=chrome → reuse system Google Chrome, the dev
+    #     escape hatch on a macOS laptop where downloading 150MB of
+    #     bundled chromium is unnecessary.
+    channel = os.getenv("PLAYWRIGHT_CHANNEL", "").strip() or None
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(channel="chrome")
+        browser = await (p.chromium.launch(channel=channel) if channel else p.chromium.launch())
         try:
             ctx = await browser.new_context(
                 viewport={"width": 1200, "height": 630},
