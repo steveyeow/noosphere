@@ -46,10 +46,30 @@ PUBLIC_PATHS = {
     # stop heartbeating.
     "/api/v1/register",
     "/api/v1/deregister",
+    # llmstxt + SEO entry points — these are the URLs AI crawlers and
+    # search engines hit before any auth context exists. Bouncing them
+    # silently broke the whole external-discovery story (llmstxt_router's
+    # `_gate` already enforces per-corpus access_level for token/paid/
+    # private — we don't need the middleware double-gating).
+    "/llms.txt",
+    "/sitemap.xml",
+    "/robots.txt",
 }
 PUBLIC_PREFIXES = (
     "/static/",
     "/mcp",
+    # Per-corpus public surfaces:
+    #   /c/{slug}                    share landing (SSR HTML + OG meta)
+    #   /c/{slug}/d/{doc_id}         share landing for a single doc
+    #   /c/{slug}/llms.txt           AI agent markdown index
+    #   /c/{slug}/llms-full.txt      AI agent full dump
+    # Route handlers run their own access_level gating; the middleware
+    # would have to forward the bearer to the same check anyway.
+    "/c/",
+    # OG card PNG endpoints — Twitter / LinkedIn / iMessage scrapers
+    # hit /og/c/{slug}.png with no token; if 401'd, social shares show
+    # a tiny grey card with no image instead of the rendered card.
+    "/og/",
 )
 
 # GET requests to these paths require authentication (user-specific data)
