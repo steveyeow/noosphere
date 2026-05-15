@@ -22,6 +22,7 @@ import html
 import os
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -732,20 +733,27 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
 
     page_title, og_title, description = _share_describe(corpus, doc)
     slug = (corpus.get("slug") or "").strip()
+    # Slugs are derived from the corpus name and can contain non-ASCII
+    # characters (e.g. CJK: "子瞻集"). Twitter's link tokenizer and HTTP
+    # scrapers terminate a URL at the first non-ASCII byte, so an
+    # un-encoded path silently breaks the shared link and the OG card
+    # image fetch. Percent-encode the path segment. ASCII slugs are
+    # unaffected (quote is a no-op for [A-Za-z0-9-_.~]).
+    slug_q = quote(slug, safe="")
     corpus_id = corpus["id"]
 
     if doc is None:
-        canonical_path = f"/c/{slug}"
+        canonical_path = f"/c/{slug_q}"
         hash_route = f"#/corpus/{corpus_id}"
-        og_image_path = f"/og/c/{slug}.png"
+        og_image_path = f"/og/c/{slug_q}.png"
     else:
-        canonical_path = f"/c/{slug}/d/{doc['id']}"
+        canonical_path = f"/c/{slug_q}/d/{doc['id']}"
         # The SPA has no dedicated single-doc view — docs render as items in
         # the corpus view. Route the share URL to the corpus so the recipient
         # at least lands on the right scope with that doc visible in the list.
         # Doc-level deep-linking is a separate SPA enhancement.
         hash_route = f"#/corpus/{corpus_id}"
-        og_image_path = f"/og/c/{slug}/d/{doc['id']}.png"
+        og_image_path = f"/og/c/{slug_q}/d/{doc['id']}.png"
 
     canonical_url = f"{base_url}{canonical_path}"
     og_image_url = f"{base_url}{og_image_path}"

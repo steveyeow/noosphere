@@ -638,7 +638,7 @@ function _setCorpusJsonLD(c){
   const old=document.getElementById('corpus-jsonld');
   if(old)old.remove();
   if(!c)return;
-  const slug=c.slug||c.id;
+  const slug=encodeURIComponent(c.slug||c.id);
   const base=location.origin;
   const ld={
     "@context":"https://schema.org",
@@ -4291,7 +4291,10 @@ function renderCorpusSafe(id, sessionId){
 // followers will see in their feed.
 function openShareDialog(corpus,doc){
   const base=window.location.origin;
-  const slug=corpus.slug||corpus.id;
+  // Slugs can be non-ASCII (CJK corpus names → "子瞻集"). Twitter's link
+  // tokenizer ends the URL at the first non-ASCII byte, so an un-encoded
+  // slug yields a broken/truncated link in the tweet. Percent-encode it.
+  const slug=encodeURIComponent(corpus.slug||corpus.id);
   const url=doc?`${base}/c/${slug}/d/${doc.id}`:`${base}/c/${slug}`;
   const ogImg=doc?`/og/c/${slug}/d/${doc.id}.png`:`/og/c/${slug}.png`;
   // Subject label for the dialog header — "corpus" / "wiki entry" / "note"
@@ -4794,7 +4797,7 @@ async function renderCorpusSettings(id){
   // Token/paid gates work the same as other endpoints (caller adds bearer).
   if(al!=='private'){
     const llmsHint=(al==='token'||al==='paid')?' Requires a bearer token.':' Any LLM can fetch directly.';
-    const slug=c.slug||c.id;
+    const slug=encodeURIComponent(c.slug||c.id);
     endpoints.push(
       {l:'llms.txt',u:`${host}/c/${slug}/llms.txt`,d:'Markdown index for AI agents (per llmstxt.org).'+llmsHint},
       {l:'llms-full.txt',u:`${host}/c/${slug}/llms-full.txt`,d:'Full-text dump — paste into any LLM to load the whole corpus as context.'+llmsHint},
