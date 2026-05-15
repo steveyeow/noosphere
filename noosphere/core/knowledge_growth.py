@@ -788,12 +788,18 @@ def save_capture(
     title: str = "",
     question: str = "",
     session_id: str = "",
+    capture_kind: str = "chat",
     contributor_user_id: str | None = None,
 ) -> dict:
-    """Persist a note from chat or manual capture; doc_type=capture with provenance metadata."""
+    """Persist a note from chat or manual capture; doc_type=capture with provenance metadata.
+
+    capture_kind distinguishes provenance: "chat" (user explicitly saved a chat
+    answer), "chat_auto" (Noosphere detected wiki-worthy knowledge in a chat
+    exchange and saved it automatically), or any caller-supplied label.
+    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     safe_title = title.strip() or f"Capture {now}"
-    meta: dict[str, Any] = {"capture_kind": "chat", "captured_at": now}
+    meta: dict[str, Any] = {"capture_kind": capture_kind or "chat", "captured_at": now}
     if question:
         meta["source_question"] = question[:2000]
     if session_id:
@@ -830,6 +836,130 @@ def save_capture(
     except Exception as e:
         logger.warning("re-index after capture hook failed: %s", e)
     return doc
+
+
+def _extract_json_object(raw: str) -> dict | None:
+    """Best-effort parse of a single JSON object from an LLM reply.
+
+    Tolerates code fences and leading/trailing prose by falling back to the
+    first balanced ``{...}`` span.
+    """
+    if not raw:
+        return None
+    txt = raw.strip()
+    if txt.startswith("```"):
+        txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", txt, flags=re.IGNORECASE).strip()
+    try:
+        obj = json.loads(txt)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", txt, re.DOTALL)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+_AUTO_CAPTURE_SYS = (
+    "You curate the owner's personal knowledge wiki. You are given one Q&A "
+    "exchange the owner had while chatting with their own wiki. Decide whether "
+    "the exchange produced DURABLE, REUSABLE knowledge worth saving back into "
+    "the wiki so it can be found and built on later.\n\n"
+    "SAVE only when the answer carries a substantive insight, fact, decision, "
+    "synthesis, or explanation with lasting value.\n"
+    "DO NOT SAVE: trivial lookups, small talk, navigational or clarifying "
+    "questions, answers that state the information is unavailable, or anything "
+    "with no reusable content.\n\n"
+    "When saving, rewrite the knowledge as a clean, self-contained wiki note: a "
+    "clear declarative title and a concise body in the wiki's own voice. Strip "
+    "every conversational frame ('based on the sources', 'you asked', 'I think', "
+    "etc.). Never add facts beyond what the answer states.\n\n"
+    'Return ONLY strict JSON, no prose outside it: '
+    '{"save": true|false, "title": "string", "note": "string"}.'
+)
+
+
+def auto_capture_from_chat(
+    corpus_id: str,
+    *,
+    question: str,
+    answer: str,
+    session_id: str = "",
+) -> dict:
+    """Detect whether a chat exchange produced wiki-worthy knowledge and, if so,
+    save it automatically as a ``capture_kind="chat_auto"`` document.
+
+    Returns ``{"saved": bool, "document_id": str|None, "title": str|None}``.
+    Never raises: this runs inline with the chat response, so any failure is
+    swallowed and reported as not saved rather than breaking the chat.
+    """
+    out: dict[str, Any] = {"saved": False, "document_id": None, "title": None}
+    try:
+        q = (question or "").strip()
+        a = (answer or "").strip()
+        if not q or not a:
+            return out
+        # Cheap pre-filters — skip non-answers before spending an LLM call.
+        if a.startswith("No LLM provider") or len(a) < 80:
+            return out
+        low = a.lower()
+        if any(
+            p in low
+            for p in (
+                "i don't know",
+                "i do not know",
+                "no relevant",
+                "not in the sources",
+                "don't have information",
+                "cannot find",
+                "couldn't find",
+            )
+        ):
+            return out
+
+        from noosphere.core.llm import call_llm as _call_llm
+
+        raw = _call_llm(
+            [
+                {"role": "system", "content": _AUTO_CAPTURE_SYS},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question:\n{q[:2000]}\n\n---\n\n"
+                        f"Answer:\n{a[:6000]}\n\n---\n\nDecide now."
+                    ),
+                },
+            ]
+        )
+        if not raw or raw.startswith("No LLM provider"):
+            return out
+        decision = _extract_json_object(raw)
+        if not decision or not decision.get("save"):
+            return out
+        note = str(decision.get("note") or "").strip()
+        title = str(decision.get("title") or "").strip()
+        if len(note) < 40:
+            return out
+
+        doc = save_capture(
+            corpus_id,
+            content=note,
+            title=title,
+            question=q,
+            session_id=session_id,
+            capture_kind="chat_auto",
+        )
+        out["saved"] = True
+        out["document_id"] = doc.get("id")
+        out["title"] = doc.get("title")
+        return out
+    except Exception as e:
+        logger.warning("auto_capture_from_chat failed for corpus %s: %s", corpus_id, e)
+        return out
 
 
 def compile_concept_note(

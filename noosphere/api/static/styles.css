@@ -115,6 +115,20 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 /* Callout — self-host note inside S4. Subtle left border, not a box. */
 .lp-callout{margin-top:28px;padding:16px 20px 16px 22px;background:var(--accSoft);border-left:3px solid var(--tx);border-radius:0 4px 4px 0;font-size:14.5px;line-height:1.65;color:var(--tx2)}
 .lp-callout strong{color:var(--tx);font-weight:700;font-family:'Libre Baskerville',Georgia,serif}
+.lp-card-body{display:flex;flex-direction:column;min-width:0}
+.lp-im{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.lp-im li{display:flex;gap:12px;font-size:14.5px;line-height:1.5}
+.lp-im-k{flex:0 0 76px;font-family:'Libre Baskerville',Georgia,serif;font-weight:700;color:var(--tx)}
+.lp-im-d{color:var(--tx2)}
+@media(max-width:640px){.lp-im li{flex-direction:column;gap:1px}.lp-im-k{flex-basis:auto}}
+.lp-card-ingest .lp-mig-logos{margin-top:14px;padding-left:88px}
+@media(max-width:640px){.lp-card-ingest .lp-mig-logos{padding-left:0}}
+.lp-mig-logos{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 18px}
+.lp-mig-logo{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0;flex:0 0 auto}
+.lp-mig-ico{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:#fff;color:#15151a;border:1px solid rgba(0,0,0,.07);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.lp-mig-ico img{width:62%;height:62%;object-fit:contain;display:block}
+.lp-mig-nm{font-size:11.5px;color:var(--tx2);line-height:1.2;text-align:center;white-space:nowrap}
+@media(max-width:640px){.lp-mig-ico{width:40px;height:40px;border-radius:10px}}
 
 /* CTA row — S5. Three inline buttons, no card chrome. First is primary
    (filled); the other two are ghost links. */
@@ -820,6 +834,14 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .chat-cite{font-size:10px;padding:3px 10px;border-radius:10px;background:var(--accBg);color:var(--tx2);font-weight:500}
 .chat-msg-actions{margin-top:10px}
 .chat-save{font-size:11px;padding:4px 10px}
+.chat-autosave{margin-top:10px;display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--tx3)}
+.chat-autosave-lbl{display:inline-flex;align-items:center;gap:5px}
+.chat-autosave-lbl svg{width:12px;height:12px;color:var(--ok,#2e9e6b);flex-shrink:0}
+.chat-autosave-undone{color:var(--tx3)}
+.chat-autosave-undone svg{display:none}
+.chat-autosave-undo{background:none;border:none;padding:0;font:inherit;color:var(--tx3);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.chat-autosave-undo:hover{color:var(--tx2)}
+.chat-autosave-undo:disabled{opacity:.5;cursor:default}
 
 /* ── Right panel ── */
 .rp-sec{margin-top:16px;padding-top:14px;border-top:1px solid var(--brd)}

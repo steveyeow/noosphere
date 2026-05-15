@@ -2891,6 +2891,25 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
     )
     conn.commit()
 
+    # Chat-to-enrich: when the owner chats with their own wiki, detect whether
+    # the exchange produced durable, reusable knowledge and fold it back in
+    # automatically. Owner-only — never auto-write a KB from an external/paid
+    # caller's query. Fully guarded: capture failure must not break the chat.
+    if caller == "owner":
+        try:
+            from noosphere.core.knowledge_growth import auto_capture_from_chat
+
+            ac = auto_capture_from_chat(
+                corpus["id"],
+                question=req.message,
+                answer=result.get("response", ""),
+                session_id=session_id,
+            )
+            if ac.get("saved"):
+                result["auto_capture"] = ac
+        except Exception:
+            pass
+
     _track_usage(request, "chat")
     result["session_id"] = session_id
     return result
@@ -3913,13 +3932,22 @@ async def api_update_member_role(
 @router.delete("/orgs/{org_id}/members/{user_id}")
 async def api_remove_member(org_id: str, user_id: str, request: Request):
     org = _resolve_org(org_id)
-    actor_uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
+    # Self-removal (Leave organization) is allowed for any member regardless
+    # of role; removing someone else requires admin. The last-owner guard in
+    # remove_member() still applies in both paths.
+    leaving = False
+    if _get_user_id(request) == user_id:
+        actor_uid, _ = _require_org_member(request, org["id"])
+        leaving = True
+    else:
+        actor_uid, _ = _require_org_role(request, org["id"], orgs_mod.ROLE_ADMIN)
     try:
         ok = orgs_mod.remove_member(org["id"], user_id)
     except orgs_mod.OrgError as e:
         raise HTTPException(status_code=400, detail=str(e))
     orgs_mod.log_audit(
-        "member.remove", org_id=org["id"], actor_user_id=actor_uid,
+        "member.leave" if leaving else "member.remove",
+        org_id=org["id"], actor_user_id=actor_uid,
         resource_type="member", resource_id=user_id,
         ip_addr=_client_ip(request),
     )

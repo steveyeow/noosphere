@@ -875,17 +875,22 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       <h2 class="lp-sec-h">Build your living wiki.</h2>
       <p class="lp-sec-sub">Notes you write, questions you explore, files and feeds you bring in — Noosphere folds them all into living corpora that grow richer over time.</p>
       <div class="lp-cards">
-        <div class="lp-card">
+        <div class="lp-card lp-card-ingest">
           <h3 class="lp-card-h">Ingest</h3>
-          <p class="lp-card-p">Write original notes inline. Drop PDFs, Markdown, URLs, or full archives — Obsidian vault, Notion export, Twitter data. Every input becomes the same agent-readable document.</p>
-        </div>
-        <div class="lp-card">
-          <h3 class="lp-card-h">Connect</h3>
-          <p class="lp-card-p">Subscribe to RSS. Live-sync an Obsidian vault with writeback. Notion, Google Drive, GitHub, Gmail connectors rolling out.</p>
+          <div class="lp-card-body">
+            <p class="lp-card-p">Every way knowledge gets in — you don't start from scratch. Whatever the method, each input becomes the same agent-readable document.</p>
+            <ul class="lp-im">
+              <li><span class="lp-im-k">Write</span><span class="lp-im-d">Original notes inline, in Markdown.</span></li>
+              <li><span class="lp-im-k">Upload</span><span class="lp-im-d">PDFs, Markdown, or full archive exports.</span></li>
+              <li><span class="lp-im-k">Add URL</span><span class="lp-im-d">Any web page, or an RSS / Atom feed.</span></li>
+              <li><span class="lp-im-k">Connect</span><span class="lp-im-d">Your existing tools — one-shot import, or stay live-synced:</span></li>
+            </ul>
+            <div class="lp-mig-logos" id="lp-mig-logos"></div>
+          </div>
         </div>
         <div class="lp-card">
           <h3 class="lp-card-h">Chat to enrich</h3>
-          <p class="lp-card-p">Every chat answer has a Save-to-corpus affordance. Explorations compound into your KB instead of disappearing into chat history.</p>
+          <p class="lp-card-p">Chat with your wiki and it grows from the conversation — Noosphere detects the insights worth keeping and folds them into the matching pages on its own. Drop in a URL, note, or file mid-chat and it's ingested, indexed, and cross-linked the same way. Nothing valuable is lost to chat history.</p>
         </div>
         <div class="lp-card">
           <h3 class="lp-card-h">Compile</h3>
@@ -978,7 +983,29 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   const ctaCloud=document.getElementById('lp-cta-cloud');
   if(ctaCloud)ctaCloud.onclick=()=>{if(_cloudMode&&!_authUser){location.hash='#/login'}else{location.hash='#/main'}};
   document.getElementById('lp-dark-btn').onclick=toggleTheme;
-  drawLPGraph();animateLPTerm()}
+  renderMigrateLogos();drawLPGraph();animateLPTerm()}
+
+/* Connector logo wall inside the Ingest → Connect method. Display-only:
+   no click handler, no status badge — it's purely a recognition cue
+   ("your tool is supported"), not an interactive surface. Real bundled
+   brand logos live in /static/logos (no third-party runtime dependency,
+   works self-hosted/offline). Apple Notes is intentionally absent: no
+   real vector/brand logo is published anywhere, and a generic note glyph
+   would misrepresent it — it still appears on the full /connectors page. */
+const _MIG_LOGOS=[
+  {name:'Obsidian',file:'obsidian.svg'},
+  {name:'Notion',file:'notion.svg'},
+  {name:'Readwise',file:'readwise.png'},
+  {name:'Evernote',file:'evernote.svg'},
+  {name:'Twitter / X',file:'x.svg'},
+];
+function renderMigrateLogos(){
+  const el=document.getElementById('lp-mig-logos');if(!el)return;
+  el.innerHTML=_MIG_LOGOS.map(l=>`<span class="lp-mig-logo">
+      <span class="lp-mig-ico"><img src="/static/logos/${l.file}" alt="${esc(l.name)}" loading="lazy" /></span>
+      <span class="lp-mig-nm">${esc(l.name)}</span>
+    </span>`).join('');
+}
 
 function renderLPTeam(){const el=document.getElementById('page-landing');el.innerHTML=`<div class="lp lp-team">
   <nav class="lp-top"><a href="#/" class="lp-brand"><svg width="17" height="17" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg> Noosphere</a><div class="lp-top-right"><a href="#/" class="lp-top-link">For solo creators</a><button class="lp-dark-btn" id="lp-team-dark-btn" title="Toggle dark mode"><svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button></div></nav>
@@ -3483,6 +3510,21 @@ const _SOURCE_CONNECTORS=[
      {group:'archive',id:'zip',name:'Upload data export (ZIP)',status:'ready',action:'upload_archive',archiveKind:'twitter',
       desc:'ZIP from twitter.com/settings/download_your_data. Tweets become documents.'},
    ]},
+  {kind:'readwise',name:'Readwise',desc:'Highlights from books, articles, podcasts, and Kindle.',mono:'R',bg:'#e8a33d',fg:'#1a1a1a',status:'soon',pro:false,
+   methods:[
+     {group:'archive',id:'export',name:'Import highlights export',status:'soon',action:'show_instructions',
+      desc:'Readwise → Export all highlights (Markdown / CSV). Each highlight lands as user_original, grouped by source. On the roadmap.'},
+   ]},
+  {kind:'evernote',name:'Evernote',desc:'Your notebooks and notes.',mono:'E',bg:'#00a82d',fg:'#ffffff',status:'soon',pro:false,
+   methods:[
+     {group:'archive',id:'enex',name:'Import .enex export',status:'soon',action:'show_instructions',
+      desc:'Evernote → export notebooks as .enex. Notes and their attachments become documents. On the roadmap.'},
+   ]},
+  {kind:'apple_notes',name:'Apple Notes',desc:'Notes from the Apple Notes app.',mono:'AN',bg:'#f5b800',fg:'#1a1a1a',status:'soon',pro:false,
+   methods:[
+     {group:'archive',id:'export',name:'Import exported notes',status:'soon',action:'show_instructions',
+      desc:'Export from Apple Notes and upload the folder. Notes become documents, folders become tags. On the roadmap.'},
+   ]},
   {kind:'gdrive',name:'Google Drive',desc:'Docs, Sheets, and folders',mono:'D',bg:'#1a73e8',fg:'#ffffff',status:'soon',pro:true,
    methods:[
      {group:'live',id:'oauth',name:'OAuth live sync',status:'soon',action:'show_instructions',pro:true,desc:'Authorize Drive folder access; Noosphere indexes Docs and Sheets live.'},
@@ -4126,13 +4168,16 @@ const _CONNECTOR_PRIORITY={
   // kind        personal, team
   obsidian:    [1, 8],
   notion:      [2, 5],
-  twitter:     [3, 9],
-  rss_auto:    [4, 7],
-  gdrive:      [5, 6],
-  github:      [6, 4],
-  gmail:       [7, 3],
-  slack:       [8, 1],
-  email_inbox: [9, 2],
+  twitter:     [3, 12],
+  readwise:    [4, 13],
+  evernote:    [5, 14],
+  apple_notes: [6, 15],
+  rss_auto:    [7, 7],
+  gdrive:      [8, 6],
+  github:      [9, 4],
+  gmail:       [10, 3],
+  slack:       [11, 1],
+  email_inbox: [12, 2],
 };
 
 function orderedConnectors(){
@@ -5077,7 +5122,7 @@ function refreshDocItemRow(item,doc){
   }
 }
 
-function appendAssistantChatBlock(area,text,citations,corpusId,userQuestion,sessionId){
+function appendAssistantChatBlock(area,text,citations,corpusId,userQuestion,sessionId,autoCap){
   const wrap=document.createElement('div');
   wrap.className='chat-msg assistant';
   wrap.insertAdjacentHTML('afterbegin',noosHd());
@@ -5094,22 +5139,26 @@ function appendAssistantChatBlock(area,text,citations,corpusId,userQuestion,sess
     citations.forEach(ct=>{const sp=document.createElement('span');sp.className='chat-cite';sp.textContent=ct.title||'';cd.appendChild(sp)});
     outer.appendChild(cd);
   }
-  const actions=document.createElement('div');
-  actions.className='chat-msg-actions';
-  const btn=document.createElement('button');
-  btn.type='button';
-  btn.className='btn-sm-ghost chat-save';
-  btn.textContent='Save to corpus';
-  btn.onclick=async()=>{
-    btn.disabled=true;
-    try{
-      const r=await fetch(`${API}/corpora/${corpusId}/capture`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:text,question:userQuestion||'',session_id:sessionId||undefined})});
-      if(!r.ok)throw new Error('capture failed');
-      toast('Saved as a capture document','success');
-    }catch(e){toast('Save failed');btn.disabled=false}
-  };
-  actions.appendChild(btn);
-  outer.appendChild(actions);
+  // Chat-to-enrich is automatic: the backend detects wiki-worthy knowledge in
+  // the exchange and folds it in on its own. We only surface a quiet
+  // confirmation (with Undo, so an unwanted auto-write is one click to remove).
+  // Nothing is shown when nothing was saved — no manual "save" affordance.
+  if(autoCap&&autoCap.saved&&autoCap.document_id){
+    const note=document.createElement('div');
+    note.className='chat-autosave';
+    const chk='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    const ttl=autoCap.title?` · ${esc(autoCap.title)}`:'';
+    note.innerHTML=`<span class="chat-autosave-lbl">${chk}Added to your wiki${ttl}</span><button type="button" class="chat-autosave-undo">Undo</button>`;
+    note.querySelector('.chat-autosave-undo').onclick=async(e)=>{
+      const b=e.currentTarget;b.disabled=true;
+      try{
+        const r=await fetch(`${API}/corpora/${corpusId}/documents/${autoCap.document_id}`,{method:'DELETE'});
+        if(!r.ok)throw new Error('undo failed');
+        note.innerHTML='<span class="chat-autosave-lbl chat-autosave-undone">Removed from your wiki</span>';
+      }catch(err){b.disabled=false;toast('Undo failed','error')}
+    };
+    outer.appendChild(note);
+  }
   wrap.appendChild(outer);
   area.appendChild(wrap);
 }
@@ -5170,7 +5219,7 @@ async function setupCorpusInteract(id,sessionId){
       const d=await r.json();document.getElementById('c-ld')?.remove();_chatH.push({role:'assistant',content:d.response});
       if(d.session_id)_sessionId=d.session_id;
       loadChatSessions();
-      appendAssistantChatBlock(area,d.response,d.citations||[],id,msg,_sessionId)}
+      appendAssistantChatBlock(area,d.response,d.citations||[],id,msg,_sessionId,d.auto_capture)}
     catch(e){document.getElementById('c-ld')?.remove();area.innerHTML+=`<div class="chat-msg assistant">${noosHd()}<div class="chat-err">${esc(e.message||'Failed to reach LLM provider.')}</div></div>`}send.disabled=false;area.scrollTop=area.scrollHeight}
   send.onclick=chat;ci.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}};
 }
@@ -6137,17 +6186,41 @@ function _showCreateOrgModal(){
   });
 }
 
-/* Settings — modal overlay, distinct from the page-level dashboards. Two
-   groups in the left nav: Personal (Account · Appearance · Subscription
-   when cloud) + Team · <name> (General) when in an org workspace. The
-   modal is its own visual language; it does NOT reuse cv-set-wrap (which
-   is the team-dashboard layout). Operational team work (members, invites,
-   connectors, audit log) stays in the team dashboard at #/orgs/:slug. */
+/* Settings — the single consolidated surface for personal + team config.
+   Notion-style modal overlay: left nav with two groups (Personal:
+   Account · Appearance · Subscription · cloud; Team · <name>: General ·
+   Members · Invites · Connectors · Audit). There is no separate team
+   dashboard page — #/orgs/:slug redirects in here. The modal is its own
+   visual language (settings-*), it does NOT reuse cv-set-wrap. */
 
 let _settingsSection='account';
 
-function _showSettingsModal(){
-  if(document.getElementById('settings-modal-overlay'))return;
+// Sections the active context can show. Team sub-pages exist only in an
+// org workspace; connectors + audit are admin-only (matches the API's
+// role gate so we don't render a pane that will 403 on fetch).
+function _settingsAllowedSections(){
+  const a=['account','appearance'];
+  if(_cloudMode&&_authUser)a.push('subscription');
+  if(_workspace.kind==='org'&&_workspace.org_id){
+    a.push('team-general','team-members','team-invites');
+    if(_settingsIsOrgAdmin())a.push('team-connectors','team-audit');
+  }
+  return a;
+}
+function _settingsActiveOrg(){return _orgs.find(o=>o.id===_workspace.org_id)||null}
+function _settingsIsOrgAdmin(){const o=_settingsActiveOrg();const r=o?.role||'';return r==='owner'||r==='admin'}
+function _settingsCloseModal(){document.getElementById('settings-modal-overlay')?.remove()}
+
+function _showSettingsModal(section){
+  if(section)_settingsSection=section;
+  const existing=document.getElementById('settings-modal-overlay');
+  if(existing){
+    // Already open (e.g. profile pill / #/orgs redirect while on Settings):
+    // just re-point it at the requested section instead of stacking.
+    if(!_settingsAllowedSections().includes(_settingsSection))_settingsSection='account';
+    _settingsRenderNav();_settingsRenderSection(_settingsSection);
+    return;
+  }
   const ov=document.createElement('div');
   ov.id='settings-modal-overlay';ov.className='settings-modal-overlay';
   ov.innerHTML=`
@@ -6167,11 +6240,7 @@ function _showSettingsModal(){
   ov.addEventListener('click',e=>{if(e.target===ov)close()});
   const onKey=e=>{if(e.key==='Escape')close()};
   document.addEventListener('keydown',onKey);
-  // Validate active section against current capabilities.
-  const allowed=['account','appearance'];
-  if(_cloudMode&&_authUser)allowed.push('subscription');
-  if(_workspace.kind==='org'&&_workspace.org_id)allowed.push('team-general');
-  if(!allowed.includes(_settingsSection))_settingsSection='account';
+  if(!_settingsAllowedSections().includes(_settingsSection))_settingsSection='account';
   _settingsRenderNav();
   _settingsRenderSection(_settingsSection);
 }
@@ -6192,9 +6261,13 @@ function _settingsRenderNav(){
     ${personalItems.join('')}
   </div>`;
   if(inOrg){
+    const isAdmin=_settingsIsOrgAdmin();
+    const teamItem=(sec,label)=>`<button class="settings-nav-item${_settingsSection===sec?' is-active':''}" data-section="${sec}" type="button">${label}</button>`;
+    const teamItems=[teamItem('team-general','General'),teamItem('team-members','Members'),teamItem('team-invites','Invites')];
+    if(isAdmin)teamItems.push(teamItem('team-connectors','Connectors'),teamItem('team-audit','Audit log'));
     html+=`<div class="settings-nav-group">
       <div class="settings-nav-label">Team · ${esc(orgName)}</div>
-      <button class="settings-nav-item${_settingsSection==='team-general'?' is-active':''}" data-section="team-general" type="button">General</button>
+      ${teamItems.join('')}
     </div>`;
   }
   nav.innerHTML=html;
@@ -6210,6 +6283,10 @@ function _settingsRenderSection(name){
   if(name==='appearance')_settingsRenderAppearance(p);
   else if(name==='subscription')_settingsRenderSubscription(p);
   else if(name==='team-general')_settingsRenderTeamGeneral(p);
+  else if(name==='team-members')_settingsRenderTeamMembers(p);
+  else if(name==='team-invites')_settingsRenderTeamInvites(p);
+  else if(name==='team-connectors')_settingsRenderTeamConnectors(p);
+  else if(name==='team-audit')_settingsRenderTeamAudit(p);
   else _settingsRenderAccount(p);
 }
 
