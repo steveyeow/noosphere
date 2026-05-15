@@ -5865,9 +5865,6 @@ function renderPricing(){
     <div class="pg-hd"><h1 class="pg-title">Plans</h1><p class="pg-sub">Static corpus or living knowledge base.<br>Start free, upgrade when Noos should grow with you.</p></div>
     ${_tierCardsHTML(currentTier)}
     ${payoutsHTML}
-    <div class="pg-self-host">
-      <strong>Self-hosted?</strong> All features are free and unlimited. No cloud account needed. <code>pip install noosphere && noosphere serve</code>
-    </div>
     ${isAuth?`<div class="pg-footer"><div class="pg-footer-email">${esc(email)}</div><button class="pg-footer-signout" id="pg-signout-btn">Sign Out</button></div>`:''}
   </div>`;
   _wireTierCardButtons(ct);
