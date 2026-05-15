@@ -1608,8 +1608,13 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .org-audit-res,.org-audit-meta{color:var(--tx3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
 
 /* Invite-accept page — wraps the cv-set-wrap card to center it on the screen */
-.invite-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:80px 24px;background:var(--bg)}
-.invite-page .cv-set-wrap{max-width:560px;width:100%}
+.invite-page{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:96px 24px 48px;background:var(--bg)}
+/* Card centered, then nudged slightly above the midline via a bottom
+   margin that the flex centering counts as part of the box. */
+.invite-page .cv-set-wrap{max-width:560px;width:100%;margin-bottom:16vh}
+.invite-brand{position:absolute;top:24px;left:clamp(20px,4vw,40px);display:inline-flex;align-items:center;gap:8px;font-family:'Libre Baskerville',Georgia,serif;font-size:16px;color:var(--tx);text-decoration:none;opacity:.92;transition:opacity .12s}
+.invite-brand:hover{opacity:1}
+.invite-brand svg{flex-shrink:0}
 .invite-accept-row{margin-top:20px;display:flex;justify-content:flex-end}
 .invite-accept-btn{padding:11px 22px;font-size:14px;background:var(--btnBg,var(--tx));color:var(--btnFg,var(--bg));border:0;border-radius:8px;cursor:pointer}
 .invite-accept-btn[disabled]{opacity:.6;cursor:wait}

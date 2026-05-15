@@ -240,8 +240,10 @@ async function initAuth(){
         // Let Supabase parse the tokens from the URL
         const{data,error}=await _supabase.auth.getSession();
         if(data.session){_authSession=data.session;_authUser=data.session.user}
-        // Clean up the URL — remove token params, go to main
-        history.replaceState(null,'',window.location.pathname+'#/main');
+        // Clean up the URL — remove token params. If the user signed in
+        // to accept an org invite, return to that invite so the join
+        // auto-completes; otherwise go to main.
+        history.replaceState(null,'',window.location.pathname+(_pendingInviteHash()||'#/main'));
       }else{
         const{data}=await _supabase.auth.getSession();
         if(data.session){_authSession=data.session;_authUser=data.session.user}
@@ -250,15 +252,29 @@ async function initAuth(){
         _authSession=session;_authUser=session?.user||null;
         renderAuthUI();
         if(event==='SIGNED_IN'){
-          // Clean URL if needed and navigate
+          // Clean URL if needed and navigate. A stashed invite (cloud
+          // sign-in to accept) takes priority over the default landing.
+          const _pi=_pendingInviteHash();
           if(window.location.hash.includes('access_token=')){
-            history.replaceState(null,'',window.location.pathname+'#/main');
-          }
+            history.replaceState(null,'',window.location.pathname+(_pi||'#/main'));
+          }else if(_pi){location.hash=_pi}
           route();
         }
       });
     }
   }catch(e){console.warn('Auth init:',e)}
+}
+
+/* An org invite stashed before bouncing an unauthenticated invitee
+   through sign-in (cloud mode). Returns the invite hash to land on
+   post-auth so the join auto-completes, or null. */
+function _pendingInviteHash(){
+  try{
+    const raw=localStorage.getItem('nph-pending-invite');
+    if(!raw)return null;
+    const p=JSON.parse(raw);
+    return p&&p.token?('#/invite/'+encodeURIComponent(p.token)):null;
+  }catch(e){return null}
 }
 
 function authHeaders(){
@@ -6627,13 +6643,23 @@ async function _settingsRenderTeamAudit(p){
   }).join('');
 }
 
+/* Shell for every invite-page state — fixes the brand mark top-left and
+   vertically centers the card (biased slightly above the midline). */
+function _invitePageHTML(inner){
+  return `<div class="invite-page">`
+    +`<a class="invite-brand" href="#/" title="Noosphere">`
+    +`<svg width="20" height="20" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="28" stroke="currentColor" stroke-width="3"/><circle cx="20" cy="24" r="5" fill="currentColor" opacity="0.7"/><circle cx="44" cy="20" r="4" fill="currentColor" opacity="0.6"/><circle cx="36" cy="42" r="6" fill="currentColor" opacity="0.8"/></svg>`
+    +`<span>Noosphere</span></a>`
+    +`<div class="cv-set-wrap">${inner}</div></div>`;
+}
+
 async function renderInviteAccept(token){
   const lp=document.getElementById('page-landing');if(!lp)return;
-  lp.innerHTML='<div class="invite-page"><div class="cv-set-wrap"><div class="cv-set-loading">Loading invite…</div></div></div>';
+  lp.innerHTML=_invitePageHTML('<div class="cv-set-loading">Loading invite…</div>');
   let info=null;
   try{const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token));if(!r.ok)throw new Error('not found');info=await r.json()}
   catch(e){
-    lp.innerHTML=`<div class="invite-page"><div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Invite not found</h2><div class="cv-set-sub">This link is invalid or expired. Ask the organization admin for a new one.</div></div><div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Back to home</span><span class="cv-set-row-dc">Pick up where you left off.</span></div><div class="cv-set-row-ctl"><a class="btn-sm" href="#/">Home</a></div></div></div></div></div>`;
+    lp.innerHTML=_invitePageHTML(`<div class="cv-set-hd"><h2 class="cv-set-h2">Invite not found</h2><div class="cv-set-sub">This link is invalid or expired. Ask the organization admin for a new one.</div></div><div class="cv-set-list"><div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">Back to home</span><span class="cv-set-row-dc">Pick up where you left off.</span></div><div class="cv-set-row-ctl"><a class="btn-sm" href="#/">Home</a></div></div></div>`);
     return;
   }
   const inv=info.invite||{};const org=info.org||{};
@@ -6677,26 +6703,60 @@ async function renderInviteAccept(token){
       </div>
     `;
   }
-  lp.innerHTML=`<div class="invite-page"><div class="cv-set-wrap">${headerHTML}${bodyHTML}</div></div>`;
+  lp.innerHTML=_invitePageHTML(`${headerHTML}${bodyHTML}`);
   const btn=document.getElementById('invite-accept-btn');
   const nameInput=document.getElementById('invite-name');
   if(nameInput)setTimeout(()=>nameInput.focus(),60);
-  if(btn)btn.addEventListener('click',async()=>{
-    btn.disabled=true;btn.textContent='Joining…';
+  async function doAccept(){
+    if(btn){btn.disabled=true;btn.textContent='Joining…';}
     _ensureSelfHostedUserId();
     const display_name=(nameInput?.value||'').trim();
-    const r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token)+'/accept',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({display_name}),
-    });
-    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));btn.disabled=false;btn.textContent='Accept and join →';return}
+    let r;
+    try{
+      r=await fetch(API+'/orgs/invites/'+encodeURIComponent(token)+'/accept',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({display_name}),
+      });
+    }catch(e){toast('Failed: network error');if(btn){btn.disabled=false;btn.textContent='Accept and join →';}return}
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));if(btn){btn.disabled=false;btn.textContent='Accept and join →';}return}
+    try{localStorage.removeItem('nph-pending-invite')}catch(e){}
     const m=await r.json();
     _orgs=[...(_orgs||[]),{id:m.org_id,name:org.name,slug:org.slug,role:m.role}];
     _workspace={kind:'org',org_id:m.org_id};_saveWorkspace();
     toast('Joined '+(org.name||'organization'),'success');
     location.hash='#/main';
+  }
+  if(btn)btn.addEventListener('click',async()=>{
+    // Cloud mode needs an authenticated identity to attribute membership.
+    // An invitee who isn't signed in would otherwise hit a hard 401
+    // ("Authentication required") with no recovery. Stash the invite,
+    // send them through sign-in, and auto-complete the join on return.
+    if(_cloudMode&&!_authUser){
+      try{localStorage.setItem('nph-pending-invite',JSON.stringify({token,display_name:(nameInput?.value||'').trim()}))}catch(e){}
+      toast('Sign in to accept your invite','info');
+      location.hash='#/login';
+      return;
+    }
+    doAccept();
   });
+  // Returning from sign-in: consume a matching stashed invite once and,
+  // if the invite is still acceptable, complete the join automatically.
+  if(_cloudMode&&_authUser){
+    try{
+      const raw=localStorage.getItem('nph-pending-invite');
+      if(raw){
+        const p=JSON.parse(raw);
+        if(p&&p.token===token){
+          localStorage.removeItem('nph-pending-invite');
+          if(!used&&!revoked&&!expired){
+            if(nameInput&&p.display_name&&!nameInput.value)nameInput.value=p.display_name;
+            doAccept();
+          }
+        }
+      }
+    }catch(e){}
+  }
 }
 
 function _renderUserPillName(uid){
