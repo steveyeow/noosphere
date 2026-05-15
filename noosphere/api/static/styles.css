@@ -1504,13 +1504,18 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 /* ── Settings modal (distinct from cv-set-wrap dashboards) ──────── */
 .settings-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;animation:settingsFadeIn 130ms ease-out}
 @keyframes settingsFadeIn{from{opacity:0}to{opacity:1}}
-.settings-modal{background:var(--bg);width:1180px;max-width:96vw;height:780px;max-height:92vh;border-radius:14px;border:1px solid var(--brd);box-shadow:0 28px 72px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
-.settings-modal-hd{display:flex;align-items:center;justify-content:space-between;padding:20px 28px;border-bottom:1px solid var(--brd);flex-shrink:0}
+/* Sized to Notion's proportions: a near-fullscreen sheet with a slim
+   margin on large monitors, bounded so it doesn't sprawl on ultrawides. */
+.settings-modal{background:var(--bg);width:min(1480px,95vw);height:min(940px,90vh);border-radius:14px;border:1px solid var(--brd);box-shadow:0 28px 72px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden}
+.settings-modal-hd{display:flex;align-items:center;justify-content:space-between;padding:22px 32px;border-bottom:1px solid var(--brd);flex-shrink:0}
 .settings-modal-title{margin:0;font-family:'Libre Baskerville',Georgia,serif;font-size:18px;font-weight:500;color:var(--tx);letter-spacing:.01em}
 .settings-modal-close{width:32px;height:32px;border-radius:7px;border:0;background:transparent;color:var(--tx2);font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 120ms ease,color 120ms ease}
 .settings-modal-close:hover{background:var(--bgH);color:var(--tx)}
 .settings-modal-body{flex:1;display:flex;min-height:0}
-.settings-nav{width:248px;flex-shrink:0;border-right:1px solid var(--brd);padding:18px 12px;overflow-y:auto;background:var(--bg2)}
+/* Same surface as the header + pane (var(--bg)); the border-right is the
+   only separator. Previously var(--bg2), which read as a mismatched panel
+   against the var(--bg) header strip directly above it. */
+.settings-nav{width:272px;flex-shrink:0;border-right:1px solid var(--brd);padding:22px 14px;overflow-y:auto;background:var(--bg)}
 .settings-nav-group{margin-bottom:16px}
 .settings-nav-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);padding:8px 12px 6px}
 .settings-nav-item{position:relative;display:flex;align-items:center;width:100%;padding:8px 12px;background:transparent;border:0;color:var(--tx2);font-size:13px;cursor:pointer;text-align:left;border-radius:6px;line-height:1.4;transition:background .12s,color .12s}
@@ -1519,8 +1524,11 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
    box: the inset ring read as a clunky button against the white nav. */
 .settings-nav-item.is-active{background:var(--accSoft);color:var(--tx);font-weight:500}
 .settings-nav-item.is-active::before{content:'';position:absolute;left:3px;top:7px;bottom:7px;width:2px;border-radius:2px;background:var(--acc)}
-.settings-pane{flex:1;padding:38px 56px;overflow-y:auto}
+.settings-pane{flex:1;padding:44px 76px;overflow-y:auto}
 .settings-pane-hd{margin-bottom:26px;max-width:680px}
+.settings-pane-hd--bar{max-width:none;display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+.settings-pane-hd-main{min-width:0}
+.settings-pane-hd--bar .btn-sm{flex-shrink:0;margin-top:2px}
 .settings-pane-h{margin:0 0 8px;font-family:'Libre Baskerville',Georgia,serif;font-size:24px;font-weight:400;color:var(--tx);letter-spacing:.01em}
 .settings-pane-sub{margin:0;font-size:13px;color:var(--tx2);line-height:1.55}
 .settings-link{color:var(--tx);text-decoration:underline;text-decoration-color:var(--tx3);text-underline-offset:2px}
@@ -1534,11 +1542,28 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .settings-row-ctl--name{align-items:stretch}
 .settings-input{padding:6px 10px;font-size:13px;border:1px solid var(--brd);border-radius:7px;background:var(--bg);color:var(--tx);width:220px;font-family:inherit}
 .settings-input:focus{outline:0;border-color:var(--tx2);box-shadow:0 0 0 3px rgba(0,0,0,.04)}
+/* Team-section primitives (members/invites/connectors/audit), modal-scoped */
+.settings-section-label{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);margin:30px 0 8px}
+.settings-row--line .settings-row-info{flex-direction:row;align-items:center;gap:10px}
+.settings-row--line .settings-row-nm{flex-shrink:0}
+.settings-row--line .settings-row-dc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settings-row--danger .settings-row-nm{color:#dc2626}
+.settings-danger-btn{padding:5px 14px;border-radius:16px;border:1px solid rgba(220,38,38,.4);background:transparent;color:#dc2626;font-size:12px;font-weight:500;cursor:pointer;transition:background .12s}
+.settings-danger-btn:hover{background:rgba(220,38,38,.08)}
+.settings-sel{padding:5px 10px;border:1px solid var(--brd);border-radius:7px;background:var(--bg);color:var(--tx);font-size:12.5px;font-family:inherit;cursor:pointer}
+.settings-sel:focus{outline:0;border-color:var(--tx2)}
+.settings-tag{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:capitalize;color:var(--tx2);background:var(--accSoft);padding:3px 9px;border-radius:11px;white-space:nowrap;flex-shrink:0}
+.settings-tag--plain{background:transparent;padding:0;font-weight:500;color:var(--tx2);text-transform:none;letter-spacing:0}
+.settings-mono{font-family:var(--mono);font-size:11.5px;color:var(--tx2);background:var(--bg2);border:1px solid var(--brd);padding:3px 8px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.settings-x{width:24px;height:24px;border:1px solid var(--brd);border-radius:6px;background:transparent;color:var(--tx2);cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;transition:background .12s,color .12s}
+.settings-x:hover{background:var(--bgH);color:var(--tx)}
+.settings-empty{padding:18px 2px;font-size:12.5px;color:var(--tx3)}
 @media (max-width:680px){
-  .settings-modal{height:auto;max-height:92vh}
+  .settings-modal{height:min(940px,92vh)}
   .settings-modal-body{flex-direction:column}
   .settings-nav{width:100%;border-right:0;border-bottom:1px solid var(--brd);max-height:160px}
-  .settings-pane{padding:22px 22px}
+  .settings-pane{padding:24px 22px}
+  .settings-pane-hd--bar{flex-direction:column;gap:14px}
 }
 
 /* Connector mono-square (org-settings Connectors tab) */

@@ -514,10 +514,12 @@ function _wireProfilePopover(bot,popover){
       const act=el.dataset.act;
       if(act==='ws-personal')setWorkspace({kind:'personal',org_id:null});
       else if(act==='ws-org')setWorkspace({kind:'org',org_id:el.dataset.id});
-      // Org card pills route to the team *dashboard* (operational pages).
-      else if(act==='org-manage')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/members';
-      else if(act==='org-invite')location.hash='#/orgs/'+encodeURIComponent(el.dataset.slug)+'/invites';
-      // Settings = set-once config (separate from the dashboard).
+      // Org card pills open the consolidated Settings modal on the matching
+      // Team section. The card only renders in an org workspace, so the
+      // active org is already correct — no slug resolution needed.
+      else if(act==='org-manage'){_ensureSettingsBackdrop();_showSettingsModal('team-members')}
+      else if(act==='org-invite'){_ensureSettingsBackdrop();_showSettingsModal('team-invites')}
+      // Settings = same modal, opens on Account.
       else if(act==='settings')location.hash='#/settings';
     });
   });
@@ -589,14 +591,16 @@ async function route(){const h=location.hash||'#/';stopAll();
     // currently rendered. On a cold URL hit (refresh into #/settings),
     // fall back to home as the backdrop so the modal doesn't float on
     // an empty page.
-    if(!document.querySelector('#content > *'))renderHome();
+    _ensureSettingsBackdrop();
     _showSettingsModal();
     return;
   }
   else if(h.startsWith('#/orgs/')){
+    // Team management is no longer a standalone page — it lives in the
+    // Settings modal. Old links / profile pills redirect here.
     const segs=h.substring('#/orgs/'.length).split('/');
-    const slug=segs[0];const tab=segs[1]||'members';
-    await renderOrgSettings(slug,tab);
+    const slug=decodeURIComponent(segs[0]||'');const tab=segs[1]||'';
+    await _openTeamSettings(slug,tab);
     return;
   }
   else if(h==='#/pricing')renderPricing();
@@ -6220,6 +6224,39 @@ function _settingsAllowedSections(){
 function _settingsActiveOrg(){return _orgs.find(o=>o.id===_workspace.org_id)||null}
 function _settingsIsOrgAdmin(){const o=_settingsActiveOrg();const r=o?.role||'';return r==='owner'||r==='admin'}
 function _settingsCloseModal(){document.getElementById('settings-modal-overlay')?.remove()}
+function _settingsNormalizeSection(){
+  // Keep the active section valid for the current context. An invalid team
+  // section in an org context falls back to Team → General (not Account) so
+  // a #/orgs deep link or admin-only pill lands somewhere coherent.
+  if(_settingsAllowedSections().includes(_settingsSection))return;
+  _settingsSection=(_workspace.kind==='org'&&_workspace.org_id)?'team-general':'account';
+}
+function _ensureSettingsBackdrop(){
+  // The modal floats over whatever page is rendered. On a cold URL hit there
+  // is no backdrop, so fall back to home so it doesn't float on emptiness.
+  if(!document.querySelector('#content > *'))renderHome();
+}
+async function _openTeamSettings(slug,tab){
+  let org=_orgs.find(o=>o.slug===slug||o.id===slug)||null;
+  if(!org){
+    try{
+      const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
+      if(!r.ok)throw new Error('not found');
+      org=await r.json();
+      // Cold deep-link: cache it so the switcher/nav/sections resolve. Role
+      // is unknown here (refined by loadMe); default to member.
+      if(!_orgs.some(o=>o.id===org.id))_orgs=[...(_orgs||[]),{...org,role:org.role||'member'}];
+    }catch(e){toast('Organization not found');location.hash='#/main';return}
+  }
+  // Don't use setWorkspace() — it re-routes non-context hashes to #/main and
+  // would unwind us before the modal opens. Set workspace directly instead.
+  if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
+    _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();
+  }
+  const map={members:'team-members',invites:'team-invites',connectors:'team-connectors',audit:'team-audit'};
+  _ensureSettingsBackdrop();
+  _showSettingsModal(map[tab]||'team-general');
+}
 
 function _showSettingsModal(section){
   if(section)_settingsSection=section;
@@ -6227,7 +6264,7 @@ function _showSettingsModal(section){
   if(existing){
     // Already open (e.g. profile pill / #/orgs redirect while on Settings):
     // just re-point it at the requested section instead of stacking.
-    if(!_settingsAllowedSections().includes(_settingsSection))_settingsSection='account';
+    _settingsNormalizeSection();
     _settingsRenderNav();_settingsRenderSection(_settingsSection);
     return;
   }
@@ -6250,7 +6287,7 @@ function _showSettingsModal(section){
   ov.addEventListener('click',e=>{if(e.target===ov)close()});
   const onKey=e=>{if(e.key==='Escape')close()};
   document.addEventListener('keydown',onKey);
-  if(!_settingsAllowedSections().includes(_settingsSection))_settingsSection='account';
+  _settingsNormalizeSection();
   _settingsRenderNav();
   _settingsRenderSection(_settingsSection);
 }
@@ -6391,230 +6428,204 @@ function _settingsRenderSubscription(p){
   p.querySelectorAll('[data-close]').forEach(el=>el.onclick=()=>document.getElementById('settings-modal-overlay')?.remove());
 }
 
-function _settingsRenderTeamGeneral(p){
-  const o=_orgs.find(o=>o.id===_workspace.org_id);
-  if(!o){p.innerHTML='<div class="settings-pane-hd"><h3 class="settings-pane-h">Team</h3></div><p class="settings-pane-sub">No team workspace.</p>';return}
+function _settingsTeamHd(o,sub,actionHTML){
+  // Shared pane header for every Team section: org name + calm meta line,
+  // optional right-aligned action (e.g. "Invite people").
   const memberCount=(typeof o.member_count==='number')?o.member_count:null;
-  // "Team" (not "Team plan") — org-level entitlements are not yet a thing
-  // and saying "plan" implies there is one to choose. See organizations.tier
-  // in noosphere/core/db.py (hardcoded 'team') and the unused Stripe columns.
-  const planMeta=memberCount!==null?`Team · ${memberCount} member${memberCount===1?'':'s'}`:'Team';
-  p.innerHTML=`
-    <div class="settings-pane-hd">
+  // "Team" (not "Team plan") — org-level entitlements aren't a thing yet;
+  // saying "plan" implies a choice that doesn't exist (organizations.tier
+  // is hardcoded; the Stripe columns are unused).
+  const meta=['Team'];
+  if(memberCount!==null)meta.push(`${memberCount} member${memberCount===1?'':'s'}`);
+  meta.push(`slug: ${esc(o.slug)}`);
+  meta.push(`your role: ${esc(o.role||'member')}`);
+  return `<div class="settings-pane-hd${actionHTML?' settings-pane-hd--bar':''}">
+    <div class="settings-pane-hd-main">
       <h3 class="settings-pane-h">${esc(o.name)}</h3>
-      <p class="settings-pane-sub">${esc(planMeta)}. Member management, invites, connectors, and audit log live in the <a class="settings-link" href="#/orgs/${encodeURIComponent(o.slug)}/members" data-close>team dashboard</a>.</p>
+      <p class="settings-pane-sub">${sub||meta.join(' · ')}</p>
     </div>
+    ${actionHTML||''}
+  </div>`;
+}
+
+function _settingsRenderTeamGeneral(p){
+  const o=_settingsActiveOrg();
+  if(!o){p.innerHTML='<div class="settings-pane-hd"><h3 class="settings-pane-h">Team</h3></div><p class="settings-pane-sub">No team workspace.</p>';return}
+  const isAdmin=_settingsIsOrgAdmin();
+  const isOwner=(o.role||'')==='owner';
+  const idRow=(label,desc,field,val)=>isAdmin
+    ? `<div class="settings-row">
+        <div class="settings-row-info"><div class="settings-row-nm">${label}</div><div class="settings-row-dc">${esc(desc)}</div></div>
+        <div class="settings-row-ctl settings-row-ctl--name">
+          <input type="text" class="settings-input" data-org-field="${field}" value="${esc(val)}" maxlength="60" />
+          <button class="btn-sm" data-org-save="${field}" type="button">Save</button>
+        </div>
+      </div>`
+    : `<div class="settings-row"><div class="settings-row-info"><div class="settings-row-nm">${label}</div><div class="settings-row-dc">${esc(val)}</div></div></div>`;
+  const danger=isOwner
+    ? `<div class="settings-row settings-row--danger">
+        <div class="settings-row-info"><div class="settings-row-nm">Delete organization</div><div class="settings-row-dc">Removes the workspace, members, and invites. Org-owned corpora are not deleted. This cannot be undone.</div></div>
+        <div class="settings-row-ctl"><button class="settings-danger-btn" id="org-delete-btn" type="button">Delete</button></div>
+      </div>`
+    : `<div class="settings-row settings-row--danger">
+        <div class="settings-row-info"><div class="settings-row-nm">Leave organization</div><div class="settings-row-dc">You'll lose access to every corpus in this workspace. An admin can re-invite you later.</div></div>
+        <div class="settings-row-ctl"><button class="settings-danger-btn" id="org-leave-btn" type="button">Leave</button></div>
+      </div>`;
+  p.innerHTML=`
+    ${_settingsTeamHd(o)}
     <div class="settings-rows">
-      <div class="settings-row">
-        <div class="settings-row-info">
-          <div class="settings-row-nm">Name</div>
-          <div class="settings-row-dc">${esc(o.name)}</div>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-info">
-          <div class="settings-row-nm">Slug</div>
-          <div class="settings-row-dc">${esc(o.slug)}</div>
-        </div>
-      </div>
-      <div class="settings-row">
-        <div class="settings-row-info">
-          <div class="settings-row-nm">Your role</div>
-          <div class="settings-row-dc">${esc(o.role||'member')}</div>
-        </div>
-      </div>
-    </div>`;
-  p.querySelectorAll('[data-close]').forEach(el=>el.onclick=()=>document.getElementById('settings-modal-overlay')?.remove());
-}
-
-async function renderOrgSettings(slug,tab){
-  const c=document.getElementById('content');if(!c)return;
-  // Org settings is a settings-style page, not a corpus detail — drop the
-  // right panel so its leftover NETWORK/ACCESS chrome doesn't follow us in.
-  document.getElementById('rpanel')?.classList.add('hidden');
-  // _orgs (populated by loadMe + createOrg) returns the same shape as
-  // GET /orgs/{slug}. Use it directly when we have it — eliminates the
-  // "Loading…" flash that previously hit on every org landing and tab change.
-  let org=_orgs.find(o=>o.slug===slug||o.id===slug)||null;
-  if(!org){
-    // Cold path: org not in local cache (invite link, race with loadMe).
-    // Render a skeleton shaped like the destination so the layout doesn't
-    // jump on arrival, then fetch.
-    c.innerHTML=`<div class="cv-set-wrap" aria-busy="true">
-      <div class="cv-set-hd cv-set-hd--org">
-        <span class="cv-set-org-avatar cv-skel-avatar"></span>
-        <div class="cv-set-org-text" style="flex:1;min-width:0">
-          <div class="cv-skel cv-skel--title"></div>
-          <div class="cv-skel cv-skel--sub"></div>
-        </div>
-      </div>
-      <div class="cv-tabs cv-tabs-org">${[1,2,3].map(()=>'<span class="cv-skel cv-skel--tab"></span>').join('')}</div>
-      <div class="cv-set-list">${'<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-skel cv-skel--line"></span><span class="cv-skel cv-skel--line cv-skel--line-sub"></span></div></div>'.repeat(3)}</div>
-    </div>`;
-    try{
-      const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
-      if(!r.ok){c.innerHTML=`<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Not found</h2><div class="cv-set-sub">That organization doesn't exist or you don't have access.</div></div></div>`;return}
-      org=await r.json();
-    }catch(e){c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Failed to load organization.</h2></div></div>';return}
-  }
-  // Auto-switch active workspace to this org while we're on its settings.
-  if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
-    _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();
-  }
-  const me=_orgs.find(o=>o.id===org.id);
-  const role=me?.role||'member';
-  const memberCount=(typeof me?.member_count==='number')?me.member_count:null;
-  const isAdmin=role==='owner'||role==='admin';
-  const tabs=isAdmin?['members','invites','connectors','audit']:['members','invites','audit'];
-  if(!tabs.includes(tab))tab='members';
-  const tabLabel=t=>t==='members'?'Members':t==='invites'?'Invites':t==='connectors'?'Connectors':'Audit log';
-  const initial=esc((org.name?.[0]||'?').toUpperCase());
-  // Header conveys identity (avatar + serif name) and core value
-  // (member count = "this is shared"). Plan + slug + role on a calm
-  // muted meta line.
-  const metaParts=['Team'];
-  if(memberCount!==null)metaParts.push(`${memberCount} member${memberCount===1?'':'s'}`);
-  metaParts.push(`slug: ${esc(org.slug)}`);
-  metaParts.push(`your role: ${esc(role)}`);
-  c.innerHTML=`
-    <div class="cv-set-wrap">
-      <div class="cv-set-hd cv-set-hd--org">
-        <span class="cv-set-org-avatar">${initial}</span>
-        <div class="cv-set-org-text">
-          <h2 class="cv-set-h2 cv-set-h2--org">${esc(org.name)}</h2>
-          <div class="cv-set-sub">${metaParts.join(' · ')}</div>
-        </div>
-      </div>
-      <div class="cv-tabs cv-tabs-org">
-        ${tabs.map(t=>`<a class="cv-tab${t===tab?' cv-tab--active':''}" href="#/orgs/${encodeURIComponent(org.slug)}/${t}">${tabLabel(t)}</a>`).join('')}
-      </div>
-      <div class="cv-set-sec" id="org-tab-body"></div>
+      ${idRow('Name','Shown in the workspace switcher and team header.','name',o.name)}
+      ${idRow('URL slug','Used in invite links. Lowercase letters, digits, hyphens.','slug',o.slug)}
+      <div class="settings-row"><div class="settings-row-info"><div class="settings-row-nm">Your role</div><div class="settings-row-dc">${esc(o.role||'member')}</div></div></div>
     </div>
-  `;
-  if(tab==='members')await _renderOrgMembersTab(org,isAdmin);
-  else if(tab==='invites')await _renderOrgInvitesTab(org,isAdmin);
-  else if(tab==='connectors')_renderOrgConnectorsTab(org,isAdmin);
-  else if(tab==='audit')await _renderOrgAuditTab(org,isAdmin);
-}
-
-function _renderOrgConnectorsTab(org,isAdmin){
-  const body=document.getElementById('org-tab-body');if(!body)return;
-  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
-  // Framework UI for org-shared connectors. Live OAuth is T-2; this surface
-  // teaches the model now: admin connects once, data flows into team
-  // corpora attributed to whoever installed the connector.
-  const conns=orderedConnectors();
-  const cards=conns.map(c=>`
-    <div class="cv-set-row cv-set-row--conn">
-      <div class="cv-set-row-info">
-        <span class="conn-mono" style="background:${c.bg};color:${c.fg}" aria-hidden="true">${esc(c.mono||'?')}</span>
-        <span class="cv-set-row-nm">${esc(c.name)}</span>
-        <span class="cv-set-row-dc">${esc(c.desc||'')}</span>
-      </div>
-      <div class="cv-set-row-ctl">
-        <span class="cv-set-row-tag">${c.status==='avail'?'Personal-scope ready':'Coming in T-2'}</span>
-      </div>
-    </div>
-  `).join('');
-  body.innerHTML=`
-    <div class="cv-set-hd">
-      <h3 class="cv-set-h3">Connectors</h3>
-      <div class="cv-set-sub">Org-shared connectors: an admin connects once; data flows into team corpora and every member's agent can query it.</div>
-    </div>
-    <div class="cv-set-list">${cards}</div>
-    <div class="cv-set-sub" style="margin-top:14px">Live OAuth ships in <strong>T-2</strong>. Personal-scope upload &amp; CLI sync work today via the home composer.</div>
-  `;
-}
-
-async function _renderOrgMembersTab(org,isAdmin){
-  const body=document.getElementById('org-tab-body');if(!body)return;
-  body.innerHTML='<div class="cv-set-loading">Loading members…</div>';
-  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members');
-  if(!r.ok){body.innerHTML='<div class="cv-set-empty">Failed to load members.</div>';return}
-  const members=await r.json();
-  const rows=members.map(m=>{
-    const me=m.user_id===_userId;
-    const label=me
-      ? (m.display_name||'You')
-      : (m.display_name||_renderUserPillName(m.user_id));
-    // Show the raw user_id only when it's the only identifier we have;
-    // a member with a display_name doesn't need their hash on display.
-    const sub=m.display_name?(me?'You · '+m.user_id:m.user_id):m.user_id;
-    const roleCtl=isAdmin&&!me?`<select class="cv-set-row-input" data-uid="${esc(m.user_id)}" data-role-sel>${['owner','admin','editor','viewer'].map(r=>`<option value="${r}"${m.role===r?' selected':''}>${r}</option>`).join('')}</select>`:`<span class="cv-set-row-static">${esc(m.role)}</span>`;
-    const removeBtn=isAdmin&&!me&&m.role!=='owner'?`<button class="cv-set-row-rm" data-uid="${esc(m.user_id)}" title="Remove">×</button>`:'';
-    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm">${esc(label)}</span><span class="cv-set-row-dc">${esc(sub)}</span></div><div class="cv-set-row-ctl">${roleCtl}${removeBtn}</div></div>`;
-  }).join('');
-  body.innerHTML=`<div class="cv-set-hd"><h3 class="cv-set-h3">Members</h3><div class="cv-set-sub">Roles control read/write access to every org corpus.</div></div><div class="cv-set-list">${rows||'<div class="cv-set-empty">No members.</div>'}</div>`;
-  body.querySelectorAll('[data-role-sel]').forEach(sel=>sel.addEventListener('change',async()=>{
-    const uid=sel.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:sel.value})});
+    <div class="settings-section-label">Danger zone</div>
+    <div class="settings-rows">${danger}</div>`;
+  p.querySelectorAll('[data-org-save]').forEach(btn=>btn.onclick=async()=>{
+    const field=btn.dataset.orgSave;
+    const inp=p.querySelector(`[data-org-field="${field}"]`);
+    const val=(inp.value||'').trim();
+    if(!val){toast(field==='name'?'Name is required':'Slug is required');return}
+    btn.disabled=true;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({[field]:val})});
+    btn.disabled=false;
     if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
-    toast('Role updated','success');
-  }));
-  body.querySelectorAll('.cv-set-row-rm').forEach(btn=>btn.addEventListener('click',async()=>{
-    if(!confirm('Remove this member?'))return;
-    const uid=btn.dataset.uid;const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/members/'+encodeURIComponent(uid),{method:'DELETE'});
-    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
-    toast('Removed','success');await _renderOrgMembersTab(org,isAdmin);
-  }));
-}
-
-async function _renderOrgInvitesTab(org,isAdmin){
-  const body=document.getElementById('org-tab-body');if(!body)return;
-  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
-  body.innerHTML='<div class="cv-set-loading">Loading invites…</div>';
-  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites');
-  const invites=r.ok?await r.json():[];
-  const inviteUrl=t=>location.origin+'/#/invite/'+t;
-  const rows=invites.length?invites.map(i=>{
-    return `<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-set-row-nm"><span class="org-invite-role">${esc(i.role)}</span></span><code class="cv-set-row-dc cv-set-row-mono">${esc(inviteUrl(i.token))}</code></div><div class="cv-set-row-ctl"><button class="btn-sm org-invite-copy" data-link="${esc(inviteUrl(i.token))}">Copy</button><button class="btn-sm-ghost org-invite-revoke" data-id="${esc(i.id)}">Revoke</button></div></div>`;
-  }).join(''):'<div class="cv-set-empty">No active invites.</div>';
-  body.innerHTML=`
-    <div class="cv-set-hd">
-      <h3 class="cv-set-h3">Invites</h3>
-      <div class="cv-set-sub">Single-use shared links. Send one to each new teammate.</div>
-    </div>
-    <div class="cv-set-row cv-set-row-form">
-      <div class="cv-set-row-info">
-        <span class="cv-set-row-nm">New invite link</span>
-        <span class="cv-set-row-dc">Role grants what the recipient can do once they join.</span>
-      </div>
-      <div class="cv-set-row-ctl">
-        <select id="org-invite-role" class="cv-set-row-input">${['admin','editor','viewer'].map(r=>`<option value="${r}"${r==='editor'?' selected':''}>${r}</option>`).join('')}</select>
-        <button class="btn-sm" id="org-invite-go">Generate link</button>
-      </div>
-    </div>
-    <div class="cv-set-list">${rows}</div>
-  `;
-  document.getElementById('org-invite-go').addEventListener('click',async()=>{
-    const role=document.getElementById('org-invite-role').value;
-    const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,ttl_days:14})});
-    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
-    const inv=await r.json();
-    _showInfoModal({title:'Invite link created',subtitle:`Role: ${inv.role}. Expires in 14 days. Single-use — share with one person.`,copyText:inviteUrl(inv.token)});
-    await _renderOrgInvitesTab(org,isAdmin);
+    const updated=await r.json();
+    // Keep the local cache (drives nav label, switcher, header) in sync.
+    const idx=_orgs.findIndex(x=>x.id===o.id);
+    if(idx>=0)_orgs[idx]={..._orgs[idx],name:updated.name,slug:updated.slug};
+    btn.textContent='Saved';setTimeout(()=>btn.textContent='Save',900);
+    renderWorkspaceSwitcher();
+    _settingsRenderNav();_settingsRenderSection('team-general');
   });
-  body.querySelectorAll('.org-invite-copy').forEach(b=>b.addEventListener('click',()=>cp(b.dataset.link,b)));
-  body.querySelectorAll('.org-invite-revoke').forEach(b=>b.addEventListener('click',async()=>{
-    if(!confirm('Revoke this invite?'))return;
-    const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/invites/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});
+  const leaveBtn=document.getElementById('org-leave-btn');
+  if(leaveBtn)leaveBtn.onclick=async()=>{
+    if(!confirm(`Leave ${o.name}? You'll lose access to its corpora.`))return;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/members/'+encodeURIComponent(_userId),{method:'DELETE'});
     if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
-    toast('Revoked','success');await _renderOrgInvitesTab(org,isAdmin);
-  }));
+    _settingsLeaveOrgCleanup(o,'Left '+o.name);
+  };
+  const delBtn=document.getElementById('org-delete-btn');
+  if(delBtn)delBtn.onclick=async()=>{
+    if(!confirm(`Delete ${o.name}? This permanently removes the workspace, its members, and invites. This cannot be undone.`))return;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id),{method:'DELETE'});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    _settingsLeaveOrgCleanup(o,'Deleted '+o.name);
+  };
 }
 
-async function _renderOrgAuditTab(org,isAdmin){
-  const body=document.getElementById('org-tab-body');if(!body)return;
-  if(!isAdmin){body.innerHTML='<div class="cv-set-empty">Admin only.</div>';return}
-  body.innerHTML='<div class="cv-set-loading">Loading audit log…</div>';
-  const r=await fetch(API+'/orgs/'+encodeURIComponent(org.id)+'/audit-logs?limit=200');
-  if(!r.ok){body.innerHTML='<div class="cv-set-empty">Failed to load.</div>';return}
+function _settingsLeaveOrgCleanup(o,msg){
+  _orgs=(_orgs||[]).filter(x=>x.id!==o.id);
+  _settingsCloseModal();
+  toast(msg,'success');
+  setWorkspace({kind:'personal',org_id:null});
+}
+
+async function _settingsRenderTeamMembers(p){
+  const o=_settingsActiveOrg();
+  if(!o){p.innerHTML='<div class="settings-empty">No team workspace.</div>';return}
+  const isAdmin=_settingsIsOrgAdmin();
+  const action=isAdmin?`<button class="btn-sm" id="org-members-invite" type="button">Invite people</button>`:'';
+  p.innerHTML=_settingsTeamHd(o,'Roles control read and write access to every corpus in this workspace.',action)
+    +`<div class="settings-rows" id="org-members-list"><div class="settings-empty">Loading members…</div></div>`;
+  const inv=document.getElementById('org-members-invite');
+  if(inv)inv.onclick=()=>{_settingsSection='team-invites';_settingsRenderNav();_settingsRenderSection('team-invites')};
+  const list=document.getElementById('org-members-list');
+  const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/members');
+  if(!r.ok){list.innerHTML='<div class="settings-empty">Failed to load members.</div>';return}
+  const members=await r.json();
+  list.innerHTML=members.map(m=>{
+    const me=m.user_id===_userId;
+    const label=me?(m.display_name||'You'):(m.display_name||_renderUserPillName(m.user_id));
+    const sub=m.display_name?(me?'You · '+m.user_id:m.user_id):m.user_id;
+    const roleCtl=isAdmin&&!me
+      ? `<select class="settings-sel" data-uid="${esc(m.user_id)}" data-role-sel>${['owner','admin','editor','viewer'].map(rr=>`<option value="${rr}"${m.role===rr?' selected':''}>${rr}</option>`).join('')}</select>`
+      : `<span class="settings-tag">${esc(m.role)}</span>`;
+    const rm=isAdmin&&!me&&m.role!=='owner'?`<button class="settings-x" data-uid="${esc(m.user_id)}" title="Remove" type="button">×</button>`:'';
+    return `<div class="settings-row"><div class="settings-row-info"><div class="settings-row-nm">${esc(label)}</div><div class="settings-row-dc">${esc(sub)}</div></div><div class="settings-row-ctl">${roleCtl}${rm}</div></div>`;
+  }).join('')||'<div class="settings-empty">No members.</div>';
+  list.querySelectorAll('[data-role-sel]').forEach(sel=>sel.onchange=async()=>{
+    const rr=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/members/'+encodeURIComponent(sel.dataset.uid),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:sel.value})});
+    if(!rr.ok){const e=await rr.json().catch(()=>({}));toast('Failed: '+(e.detail||rr.status));return}
+    toast('Role updated','success');
+  });
+  list.querySelectorAll('.settings-x').forEach(btn=>btn.onclick=async()=>{
+    if(!confirm('Remove this member?'))return;
+    const rr=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/members/'+encodeURIComponent(btn.dataset.uid),{method:'DELETE'});
+    if(!rr.ok){const e=await rr.json().catch(()=>({}));toast('Failed: '+(e.detail||rr.status));return}
+    toast('Removed','success');_settingsRenderTeamMembers(p);
+  });
+}
+
+async function _settingsRenderTeamInvites(p){
+  const o=_settingsActiveOrg();
+  if(!o){p.innerHTML='<div class="settings-empty">No team workspace.</div>';return}
+  if(!_settingsIsOrgAdmin()){p.innerHTML=_settingsTeamHd(o,'Invites')+'<div class="settings-empty">Admin only.</div>';return}
+  const inviteUrl=t=>location.origin+'/#/invite/'+t;
+  p.innerHTML=_settingsTeamHd(o,'Single-use shared links. Generate one per teammate; the role grants what they can do once they join.')
+    +`<div class="settings-rows">
+        <div class="settings-row">
+          <div class="settings-row-info"><div class="settings-row-nm">New invite link</div><div class="settings-row-dc">Expires in 14 days · single-use.</div></div>
+          <div class="settings-row-ctl">
+            <select id="org-invite-role" class="settings-sel">${['admin','editor','viewer'].map(rr=>`<option value="${rr}"${rr==='editor'?' selected':''}>${rr}</option>`).join('')}</select>
+            <button class="btn-sm" id="org-invite-go" type="button">Generate link</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-rows" id="org-invites-list"><div class="settings-empty">Loading invites…</div></div>`;
+  const list=document.getElementById('org-invites-list');
+  const load=async()=>{
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/invites');
+    const invites=r.ok?await r.json():[];
+    list.innerHTML=invites.length?invites.map(i=>`<div class="settings-row settings-row--line"><div class="settings-row-info"><span class="settings-tag">${esc(i.role)}</span><code class="settings-mono">${esc(inviteUrl(i.token))}</code></div><div class="settings-row-ctl"><button class="btn-sm settings-inv-copy" data-link="${esc(inviteUrl(i.token))}" type="button">Copy</button><button class="btn-sm-ghost settings-inv-revoke" data-id="${esc(i.id)}" type="button">Revoke</button></div></div>`).join(''):'<div class="settings-empty">No active invites.</div>';
+    list.querySelectorAll('.settings-inv-copy').forEach(b=>b.onclick=()=>cp(b.dataset.link,b));
+    list.querySelectorAll('.settings-inv-revoke').forEach(b=>b.onclick=async()=>{
+      if(!confirm('Revoke this invite?'))return;
+      const rr=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/invites/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});
+      if(!rr.ok){const e=await rr.json().catch(()=>({}));toast('Failed: '+(e.detail||rr.status));return}
+      toast('Revoked','success');load();
+    });
+  };
+  document.getElementById('org-invite-go').onclick=async()=>{
+    const role=document.getElementById('org-invite-role').value;
+    const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/invites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,ttl_days:14})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));toast('Failed: '+(e.detail||r.status));return}
+    const i=await r.json();
+    _showInfoModal({title:'Invite link created',subtitle:`Role: ${i.role}. Expires in 14 days. Single-use — share with one person.`,copyText:inviteUrl(i.token)});
+    load();
+  };
+  load();
+}
+
+function _settingsRenderTeamConnectors(p){
+  const o=_settingsActiveOrg();
+  if(!o){p.innerHTML='<div class="settings-empty">No team workspace.</div>';return}
+  if(!_settingsIsOrgAdmin()){p.innerHTML=_settingsTeamHd(o,'Connectors')+'<div class="settings-empty">Admin only.</div>';return}
+  const conns=orderedConnectors();
+  const cards=conns.map(c=>`<div class="settings-row settings-row--line"><div class="settings-row-info"><span class="conn-mono" style="background:${c.bg};color:${c.fg}" aria-hidden="true">${esc(c.mono||'?')}</span><div class="settings-row-nm">${esc(c.name)}</div><div class="settings-row-dc">${esc(c.desc||'')}</div></div><div class="settings-row-ctl"><span class="settings-tag settings-tag--plain">${c.status==='avail'?'Personal-scope ready':'Coming in T-2'}</span></div></div>`).join('');
+  p.innerHTML=_settingsTeamHd(o,'Org-shared connectors: an admin connects once; data flows into team corpora and every member’s agent can query it.')
+    +`<div class="settings-rows">${cards}</div>
+      <p class="settings-pane-sub" style="margin-top:14px">Live OAuth ships in <strong>T-2</strong>. Personal-scope upload &amp; CLI sync work today via the home composer.</p>`;
+}
+
+async function _settingsRenderTeamAudit(p){
+  const o=_settingsActiveOrg();
+  if(!o){p.innerHTML='<div class="settings-empty">No team workspace.</div>';return}
+  if(!_settingsIsOrgAdmin()){p.innerHTML=_settingsTeamHd(o,'Audit log')+'<div class="settings-empty">Admin only.</div>';return}
+  p.innerHTML=_settingsTeamHd(o,'Every state change in this organization, newest first.')
+    +`<div class="settings-rows" id="org-audit-list"><div class="settings-empty">Loading audit log…</div></div>`;
+  const list=document.getElementById('org-audit-list');
+  const r=await fetch(API+'/orgs/'+encodeURIComponent(o.id)+'/audit-logs?limit=200');
+  if(!r.ok){list.innerHTML='<div class="settings-empty">Failed to load.</div>';return}
   const logs=await r.json();
-  if(!logs.length){body.innerHTML='<div class="cv-set-empty">No activity yet.</div>';return}
-  body.innerHTML=`<div class="cv-set-hd"><h3 class="cv-set-h3">Audit log</h3><div class="cv-set-sub">Every state change in this organization, newest first.</div></div><div class="org-audit-list cv-set-list">${logs.map(l=>{
+  if(!logs.length){list.innerHTML='<div class="settings-empty">No activity yet.</div>';return}
+  list.innerHTML=logs.map(l=>{
     const t=new Date(l.created_at).toLocaleString();
+    const who=_renderUserPillName(l.actor_user_id);
+    const res=l.resource_type?`${esc(l.resource_type)}:${esc((l.resource_id||'').slice(0,10))}`:'';
     const meta=l.metadata?Object.entries(l.metadata).map(([k,v])=>`${esc(k)}=${esc(typeof v==='string'?v:JSON.stringify(v))}`).join(' · '):'';
-    return `<div class="org-audit-row"><span class="org-audit-when">${esc(t)}</span><span class="org-audit-who">${esc(_renderUserPillName(l.actor_user_id))}</span><span class="org-audit-act">${esc(l.action)}</span>${l.resource_type?`<span class="org-audit-res">${esc(l.resource_type)}:${esc((l.resource_id||'').slice(0,10))}</span>`:''}${meta?`<span class="org-audit-meta">${meta}</span>`:''}</div>`;
-  }).join('')}</div>`;
+    const parts=[esc(who),esc(t)];if(res)parts.push(res);if(meta)parts.push(meta);
+    return `<div class="settings-row"><div class="settings-row-info"><div class="settings-row-nm settings-row-nm--mono">${esc(l.action)}</div><div class="settings-row-dc">${parts.join(' · ')}</div></div></div>`;
+  }).join('');
 }
 
 async function renderInviteAccept(token){
