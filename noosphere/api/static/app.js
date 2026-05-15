@@ -6068,7 +6068,10 @@ function _showCreateOrgModal(){
       const r=await fetch(API+'/orgs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.name,slug:v.slug||''})});
       if(!r.ok){const e=await r.json().catch(()=>({}));toast('Create failed: '+(e.detail||r.status));return}
       const org=await r.json();_closeModal();
-      _orgs=[...(_orgs||[]),{...org,role:'owner'}];
+      // member_count:1 — we are the sole member. Lets renderOrgSettings show
+      // the real header (with "1 member") immediately on landing, instead of
+      // a Loading flash while it re-fetches data we already have.
+      _orgs=[...(_orgs||[]),{...org,role:'owner',member_count:1}];
       await setWorkspace({kind:'org',org_id:org.id});
       location.hash='#/orgs/'+encodeURIComponent(org.slug);
     }
@@ -6280,15 +6283,31 @@ async function renderOrgSettings(slug,tab){
   // Org settings is a settings-style page, not a corpus detail — drop the
   // right panel so its leftover NETWORK/ACCESS chrome doesn't follow us in.
   document.getElementById('rpanel')?.classList.add('hidden');
-  // Match the corpus-settings layout (cv-set-wrap) so the chrome stays
-  // visually identical when you switch from a corpus into an org.
-  c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-loading">Loading…</div></div>';
-  let org=null;
-  try{
-    const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
-    if(!r.ok){c.innerHTML=`<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Not found</h2><div class="cv-set-sub">That organization doesn't exist or you don't have access.</div></div></div>`;return}
-    org=await r.json();
-  }catch(e){c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Failed to load organization.</h2></div></div>';return}
+  // _orgs (populated by loadMe + createOrg) returns the same shape as
+  // GET /orgs/{slug}. Use it directly when we have it — eliminates the
+  // "Loading…" flash that previously hit on every org landing and tab change.
+  let org=_orgs.find(o=>o.slug===slug||o.id===slug)||null;
+  if(!org){
+    // Cold path: org not in local cache (invite link, race with loadMe).
+    // Render a skeleton shaped like the destination so the layout doesn't
+    // jump on arrival, then fetch.
+    c.innerHTML=`<div class="cv-set-wrap" aria-busy="true">
+      <div class="cv-set-hd cv-set-hd--org">
+        <span class="cv-set-org-avatar cv-skel-avatar"></span>
+        <div class="cv-set-org-text" style="flex:1;min-width:0">
+          <div class="cv-skel cv-skel--title"></div>
+          <div class="cv-skel cv-skel--sub"></div>
+        </div>
+      </div>
+      <div class="cv-tabs cv-tabs-org">${[1,2,3].map(()=>'<span class="cv-skel cv-skel--tab"></span>').join('')}</div>
+      <div class="cv-set-list">${'<div class="cv-set-row"><div class="cv-set-row-info"><span class="cv-skel cv-skel--line"></span><span class="cv-skel cv-skel--line cv-skel--line-sub"></span></div></div>'.repeat(3)}</div>
+    </div>`;
+    try{
+      const r=await fetch(API+'/orgs/'+encodeURIComponent(slug));
+      if(!r.ok){c.innerHTML=`<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Not found</h2><div class="cv-set-sub">That organization doesn't exist or you don't have access.</div></div></div>`;return}
+      org=await r.json();
+    }catch(e){c.innerHTML='<div class="cv-set-wrap"><div class="cv-set-hd"><h2 class="cv-set-h2">Failed to load organization.</h2></div></div>';return}
+  }
   // Auto-switch active workspace to this org while we're on its settings.
   if(_workspace.kind!=='org'||_workspace.org_id!==org.id){
     _workspace={kind:'org',org_id:org.id};_saveWorkspace();renderWorkspaceSwitcher();

@@ -1522,6 +1522,17 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 /* Org settings — reuses .cv-set-wrap aesthetic; one-off pieces below */
 .cv-set-h3{font-family:'Libre Baskerville',Georgia,serif;font-size:16px;font-weight:600;color:var(--tx);margin:0}
 .cv-set-loading,.cv-set-empty{padding:24px;text-align:center;color:var(--tx3);border:1px dashed var(--brd);border-radius:10px;background:var(--bg2);font-size:13px}
+/* Skeleton placeholders — shown only on cold loads of /orgs/{slug} where we
+   don't yet have the org in _orgs. Shaped like the destination header + tabs
+   so the page doesn't jump on arrival. */
+@keyframes cv-skel-pulse{0%,100%{opacity:.55}50%{opacity:.9}}
+.cv-skel{display:block;background:var(--bg2);border:1px solid var(--brd);border-radius:6px;animation:cv-skel-pulse 1.4s ease-in-out infinite}
+.cv-skel-avatar{background:var(--bg2);border:1px solid var(--brd);animation:cv-skel-pulse 1.4s ease-in-out infinite}
+.cv-skel--title{height:22px;width:42%;margin-bottom:6px}
+.cv-skel--sub{height:11px;width:58%}
+.cv-skel--tab{display:inline-block;height:18px;width:72px;margin-right:10px;vertical-align:middle}
+.cv-skel--line{display:inline-block;height:13px;width:140px;border-radius:4px;vertical-align:middle}
+.cv-skel--line-sub{width:220px;opacity:.65;margin-left:6px}
 .cv-set-row-static{font-size:12px;color:var(--tx2);text-transform:capitalize}
 .cv-set-row-input{padding:5px 8px;border:1px solid var(--brd);border-radius:6px;background:var(--bg);color:var(--tx);font-size:12px}
 .cv-set-row-rm{width:24px;height:24px;border:1px solid var(--brd);border-radius:6px;background:transparent;color:var(--tx2);cursor:pointer;font-size:14px;line-height:1}
