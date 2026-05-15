@@ -379,14 +379,20 @@ function renderAuthUI(){
     return;
   }
   // Avatar reflects *where* (org initial for team, user avatar for
-  // personal); the label is *who* (the preferred / operator name). In
-  // cloud mode we tuck a small tier label between the name and the
-  // chevron — left-right layout uses the otherwise-empty right edge so
-  // users can glance their plan without opening the popover.
+  // personal); the label is *who* (the preferred / operator name). The
+  // small chip on the right edge says *which workspace mode* the user is
+  // in — "Team" when an org is active, the personal plan tier otherwise.
+  // The personal Pro/Free badge is meaningless in a team workspace because
+  // we have not yet introduced org-level entitlements (see organizations.tier
+  // — hardcoded 'team' for all orgs; org Stripe path is scaffolded but unused).
   let tierText='';
   if(_cloudMode&&_authUser){
-    const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
-    tierText=t==='pro'?'Pro':'Free';
+    if(_workspace.kind==='org'&&_workspace.org_id){
+      tierText='Team';
+    }else{
+      const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
+      tierText=t==='pro'?'Pro':'Free';
+    }
   }
   bot.innerHTML=`
     <div class="sb-profile sb-profile-ws" id="sb-profile">
@@ -6011,11 +6017,45 @@ document.addEventListener('DOMContentLoaded',async()=>{
 
 /* ── Team workspaces UI ───────────────────────────────────────── */
 
+// The "Noosphere" wordmark is brand space — it never gets replaced. In an
+// org workspace we add a small muted "Team" footnote directly under it so
+// the mode shift is legible without touching the logo itself; *which* team
+// is surfaced by the bottom-left profile (avatar + popover card). Personal
+// context has no footnote — just the bare wordmark, as before.
+function renderSidebarBrand(){
+  const logo=document.querySelector('.sb-logo');if(!logo)return;
+  const inOrg=_workspace.kind==='org'&&_workspace.org_id&&_orgs.find(o=>o.id===_workspace.org_id);
+  let stack=logo.querySelector('.sb-lt-stack');
+  let plain=logo.querySelector('.sb-lt:not(.sb-lt--sub)');
+  if(inOrg){
+    if(!stack){
+      // Wrap the existing "Noosphere" span in a column so we can hang the
+      // footnote off it without disturbing the wordmark's own styling.
+      stack=document.createElement('span');
+      stack.className='sb-lt-stack';
+      const sub=document.createElement('span');
+      sub.className='sb-lt sb-lt--sub';
+      sub.textContent='Team';
+      if(plain){plain.replaceWith(stack);stack.appendChild(plain);}
+      stack.appendChild(sub);
+    }
+    logo.classList.add('sb-logo--team');
+  }else if(stack){
+    // Unwrap: lift the wordmark back out, drop the footnote + column.
+    const word=stack.querySelector('.sb-lt:not(.sb-lt--sub)');
+    if(word)stack.replaceWith(word);else stack.remove();
+    logo.classList.remove('sb-logo--team');
+  }else{
+    logo.classList.remove('sb-logo--team');
+  }
+}
+
 function renderWorkspaceSwitcher(){
   // Refresh the chip whenever workspace identity or display name changes.
   // The chip is one row: avatar (workspace-aware) + user name. We can't
   // just text-swap an avatar element since cloud uses <img> while team
   // uses a span — replace the avatar node entirely each time.
+  renderSidebarBrand();
   const profile=document.getElementById('sb-profile');
   if(profile){
     const oldAv=profile.querySelector('.sb-auth-avatar, .sb-auth-initial');
@@ -6026,12 +6066,30 @@ function renderWorkspaceSwitcher(){
     }
     const nameEl=profile.querySelector('#sb-profile-name');
     if(nameEl)nameEl.textContent=_operatorChipText();
-    // Tier may have just been mirrored from /api/v1/me (post-Stripe upgrade);
-    // refresh the sub-line so the chip reflects the latest tier without a reload.
-    const tierEl=profile.querySelector('.sb-profile-tier');
-    if(tierEl&&_cloudMode&&_authUser){
-      const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
-      tierEl.textContent=t==='pro'?'Pro':'Free';
+    // Chip label may need to swap on workspace change (org ↔ personal) or
+    // after a Stripe upgrade mirrors a new tier into _authUser.user_metadata.
+    // Keep the rule consistent with renderAuthUI: org → "Team", personal →
+    // Pro/Free. If the chip element was never rendered (e.g. tierText was
+    // empty at first paint and we now need one), inject it.
+    let tierEl=profile.querySelector('.sb-profile-tier');
+    if(_cloudMode&&_authUser){
+      let nextText='';
+      if(_workspace.kind==='org'&&_workspace.org_id){
+        nextText='Team';
+      }else{
+        const t=(_authUser.user_metadata?.tier||'free').toLowerCase();
+        nextText=t==='pro'?'Pro':'Free';
+      }
+      if(tierEl){
+        tierEl.textContent=nextText;
+      }else if(nextText){
+        const span=document.createElement('span');
+        span.className='sb-profile-tier sb-lb';
+        span.textContent=nextText;
+        const chev=profile.querySelector('.sb-profile-chev');
+        if(chev)profile.insertBefore(span,chev);
+        else profile.appendChild(span);
+      }
     }
   }
   // Legacy hooks (kept harmless for any caller that still pokes at them).
@@ -6068,12 +6126,16 @@ function _showCreateOrgModal(){
       const r=await fetch(API+'/orgs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.name,slug:v.slug||''})});
       if(!r.ok){const e=await r.json().catch(()=>({}));toast('Create failed: '+(e.detail||r.status));return}
       const org=await r.json();_closeModal();
-      // member_count:1 — we are the sole member. Lets renderOrgSettings show
-      // the real header (with "1 member") immediately on landing, instead of
-      // a Loading flash while it re-fetches data we already have.
+      // member_count:1 — we are the sole member. Cached so the workspace card
+      // and any team-aware surface (composer hint, suggested writes) render
+      // with the right shape immediately, no Loading flash on first paint.
       _orgs=[...(_orgs||[]),{...org,role:'owner',member_count:1}];
       await setWorkspace({kind:'org',org_id:org.id});
-      location.hash='#/orgs/'+encodeURIComponent(org.slug);
+      // Landing on the chat home (not the admin dashboard) is what the user
+      // wants 99% of the time after creating a team: start writing. The team
+      // dashboard at #/orgs/:slug is reachable from the workspace popover's
+      // Manage pill and from settings → Team general.
+      location.hash='#/main';
     }
   });
 }
@@ -6249,7 +6311,10 @@ function _settingsRenderTeamGeneral(p){
   const o=_orgs.find(o=>o.id===_workspace.org_id);
   if(!o){p.innerHTML='<div class="settings-pane-hd"><h3 class="settings-pane-h">Team</h3></div><p class="settings-pane-sub">No team workspace.</p>';return}
   const memberCount=(typeof o.member_count==='number')?o.member_count:null;
-  const planMeta=memberCount!==null?`Team plan · ${memberCount} member${memberCount===1?'':'s'}`:'Team plan';
+  // "Team" (not "Team plan") — org-level entitlements are not yet a thing
+  // and saying "plan" implies there is one to choose. See organizations.tier
+  // in noosphere/core/db.py (hardcoded 'team') and the unused Stripe columns.
+  const planMeta=memberCount!==null?`Team · ${memberCount} member${memberCount===1?'':'s'}`:'Team';
   p.innerHTML=`
     <div class="settings-pane-hd">
       <h3 class="settings-pane-h">${esc(o.name)}</h3>
@@ -6323,7 +6388,7 @@ async function renderOrgSettings(slug,tab){
   // Header conveys identity (avatar + serif name) and core value
   // (member count = "this is shared"). Plan + slug + role on a calm
   // muted meta line.
-  const metaParts=['Team plan'];
+  const metaParts=['Team'];
   if(memberCount!==null)metaParts.push(`${memberCount} member${memberCount===1?'':'s'}`);
   metaParts.push(`slug: ${esc(org.slug)}`);
   metaParts.push(`your role: ${esc(role)}`);

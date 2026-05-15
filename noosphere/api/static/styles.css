@@ -134,6 +134,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .sb-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px}
 .sb-logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:18px;color:var(--tx);text-decoration:none}
 .sb-logo-icon{display:none;flex-shrink:0}
+/* Team workspace: the "Noosphere" wordmark is untouched; a small muted
+   "Team" footnote hangs directly beneath it. The column wrapper keeps the
+   footnote tight to the wordmark without altering its size or font. */
+.sb-lt-stack{display:flex;flex-direction:column;gap:1px;line-height:1.1;min-width:0}
+.sb-lt--sub{font-size:10px;font-weight:500;color:var(--tx3);letter-spacing:.1em;text-transform:uppercase;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
 .sb-btn{width:30px;height:30px;border-radius:8px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--tx3);transition:background .15s,color .15s}.sb-btn:hover{background:var(--bgH);color:var(--tx)}
 .sb-new{display:flex;align-items:center;gap:8px;width:auto;margin:0 12px 4px;padding:8px 12px;border-radius:8px;border:none;background:transparent;color:var(--tx2);font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;text-decoration:none}.sb-new:hover{background:var(--bgH);color:var(--tx)}.sb-new.active{color:var(--tx)}
 .sb-nav{display:flex;align-items:center;gap:8px;padding:8px 12px;font-family:'Libre Baskerville',Georgia,serif;font-size:13px;font-weight:500;color:var(--tx2);text-decoration:none;border-radius:8px;margin:0 12px 4px;transition:background .12s,color .12s}
@@ -1488,9 +1493,12 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .settings-nav{width:248px;flex-shrink:0;border-right:1px solid var(--brd);padding:18px 12px;overflow-y:auto;background:var(--bg2)}
 .settings-nav-group{margin-bottom:16px}
 .settings-nav-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx3);padding:8px 12px 6px}
-.settings-nav-item{display:flex;align-items:center;width:100%;padding:8px 12px;background:transparent;border:0;color:var(--tx2);font-size:13px;cursor:pointer;text-align:left;border-radius:6px;line-height:1.4}
+.settings-nav-item{position:relative;display:flex;align-items:center;width:100%;padding:8px 12px;background:transparent;border:0;color:var(--tx2);font-size:13px;cursor:pointer;text-align:left;border-radius:6px;line-height:1.4;transition:background .12s,color .12s}
 .settings-nav-item:hover{background:var(--bgH);color:var(--tx)}
-.settings-nav-item.is-active{background:var(--bg);color:var(--tx);font-weight:500;box-shadow:0 0 0 1px var(--brd) inset}
+/* Active = calm soft tint + a thin monochrome accent rail. No bordered
+   box: the inset ring read as a clunky button against the white nav. */
+.settings-nav-item.is-active{background:var(--accSoft);color:var(--tx);font-weight:500}
+.settings-nav-item.is-active::before{content:'';position:absolute;left:3px;top:7px;bottom:7px;width:2px;border-radius:2px;background:var(--acc)}
 .settings-pane{flex:1;padding:38px 56px;overflow-y:auto}
 .settings-pane-hd{margin-bottom:26px;max-width:680px}
 .settings-pane-h{margin:0 0 8px;font-family:'Libre Baskerville',Georgia,serif;font-size:24px;font-weight:400;color:var(--tx);letter-spacing:.01em}
