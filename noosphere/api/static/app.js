@@ -989,15 +989,22 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
    no click handler, no status badge — it's purely a recognition cue
    ("your tool is supported"), not an interactive surface. Real bundled
    brand logos live in /static/logos (no third-party runtime dependency,
-   works self-hosted/offline). Apple Notes is intentionally absent: no
-   real vector/brand logo is published anywhere, and a generic note glyph
-   would misrepresent it — it still appears on the full /connectors page. */
+   works self-hosted/offline). Covers the product's connector set: note
+   tools first, then live work sources, then feeds. RSS uses the universal
+   feed mark in the product's RSS orange. Apple Notes and generic email
+   forwarding are intentionally absent — no real brand logo exists for
+   them; both still appear on the full /connectors page. */
 const _MIG_LOGOS=[
   {name:'Obsidian',file:'obsidian.svg'},
   {name:'Notion',file:'notion.svg'},
   {name:'Readwise',file:'readwise.png'},
   {name:'Evernote',file:'evernote.svg'},
   {name:'Twitter / X',file:'x.svg'},
+  {name:'GitHub',file:'github.svg'},
+  {name:'Google Drive',file:'gdrive.svg'},
+  {name:'Gmail',file:'gmail.svg'},
+  {name:'Slack',file:'slack.svg'},
+  {name:'RSS',file:'rss.svg'},
 ];
 function renderMigrateLogos(){
   const el=document.getElementById('lp-mig-logos');if(!el)return;
