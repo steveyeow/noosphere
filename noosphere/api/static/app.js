@@ -1012,9 +1012,8 @@ const _MIG_LOGOS=[
 ];
 function renderMigrateLogos(){
   const el=document.getElementById('lp-mig-logos');if(!el)return;
-  el.innerHTML=_MIG_LOGOS.map(l=>`<span class="lp-mig-logo">
+  el.innerHTML=_MIG_LOGOS.map(l=>`<span class="lp-mig-logo" title="${esc(l.name)}">
       <span class="lp-mig-ico"><img src="/static/logos/${l.file}" alt="${esc(l.name)}" loading="lazy" /></span>
-      <span class="lp-mig-nm">${esc(l.name)}</span>
     </span>`).join('');
 }
 

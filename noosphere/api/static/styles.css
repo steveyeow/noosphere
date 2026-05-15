@@ -121,14 +121,17 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lp-im-k{flex:0 0 76px;font-family:'Libre Baskerville',Georgia,serif;font-weight:700;color:var(--tx)}
 .lp-im-d{color:var(--tx2)}
 @media(max-width:640px){.lp-im li{flex-direction:column;gap:1px}.lp-im-k{flex-basis:auto}}
-.lp-card-ingest .lp-mig-logos{margin-top:14px;padding-left:88px}
-@media(max-width:640px){.lp-card-ingest .lp-mig-logos{padding-left:0}}
-.lp-mig-logos{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 18px}
-.lp-mig-logo{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0;flex:0 0 auto}
-.lp-mig-ico{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:#fff;color:#15151a;border:1px solid rgba(0,0,0,.07);box-shadow:0 1px 2px rgba(0,0,0,.06)}
-.lp-mig-ico img{width:62%;height:62%;object-fit:contain;display:block}
-.lp-mig-nm{font-size:11.5px;color:var(--tx2);line-height:1.2;text-align:center;white-space:nowrap}
-@media(max-width:640px){.lp-mig-ico{width:40px;height:40px;border-radius:10px}}
+.lp-card-ingest .lp-mig-logos{margin-top:16px}
+/* Single row, icons only — labels removed so every connector fits one
+   line (the brand marks are self-evident; full names live on
+   /connectors). nowrap guarantees one row; overflow-x:auto is a silent
+   safety valve on the rare narrow desktop. Phones wrap instead. */
+.lp-mig-logos{display:flex;flex-wrap:nowrap;align-items:center;gap:13px;overflow-x:auto;scrollbar-width:none}
+.lp-mig-logos::-webkit-scrollbar{display:none}
+.lp-mig-logo{display:flex;padding:0;flex:0 0 auto}
+.lp-mig-ico{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fff;color:#15151a;border:1px solid rgba(0,0,0,.07);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.lp-mig-ico img{width:60%;height:60%;object-fit:contain;display:block}
+@media(max-width:640px){.lp-mig-logos{flex-wrap:wrap;overflow:visible;gap:12px}.lp-mig-ico{width:38px;height:38px}}
 
 /* CTA row — S5. Three inline buttons, no card chrome. First is primary
    (filled); the other two are ghost links. */
