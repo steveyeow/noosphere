@@ -975,6 +975,84 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       </div></div>
   </section>
 
+  <section class="lp-sec lp-sec-market">
+    <div class="lp-sec-inner">
+      <h2 class="lp-sec-h">A self-growing human knowledge layer. An autonomous AI data marketplace.</h2>
+      <p class="lp-sec-sub">Noosphere changes how knowledge reaches AI: not free capture by platforms, not buyer-directed dispatch work, but living knowledge bases that stay with their creators and become agent-readable, discoverable, licensable, and paid.</p>
+
+      <div class="lp-mech-map" aria-label="Creators own the supply, an automated market matches AI demand, and payment plus reputation return to the owner">
+        <div class="lp-flow-row">
+          <div class="lp-flow-node">
+            <span class="lp-flow-k">Creators</span>
+            <p class="lp-flow-d">Build and keep growing corpora for their own work.</p>
+          </div>
+          <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
+          <div class="lp-flow-node">
+            <span class="lp-flow-k">Automated market</span>
+            <p class="lp-flow-d">Agents discover, preview, and pay — no broker. License and provenance on every answer.</p>
+          </div>
+          <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
+          <div class="lp-flow-node">
+            <span class="lp-flow-k">AI consumers</span>
+            <p class="lp-flow-d">Read as runtime answers, post-training data, or bulk licenses.</p>
+          </div>
+        </div>
+        <div class="lp-flow-return">
+          <span class="lp-flow-arr" aria-hidden="true">←</span>
+          <p>Payment and reputation return to the owner.</p>
+        </div>
+      </div>
+
+      <div class="lp-advantage">
+        <div class="lp-mech-eyebrow">Versus data vendors</div>
+        <p class="lp-sec-sub">Data vendors make data to order. Noosphere starts from knowledge people and teams already build and grow for their own work, then choose what agents can use — every advantage below follows from that one difference.</p>
+        <div class="lp-shift-list">
+          <div class="lp-shift-row lp-shift-head">
+            <div class="lp-shift-old"><span>Traditional data vendors</span></div>
+            <div class="lp-shift-new"><span>Noosphere</span></div>
+          </div>
+          <div class="lp-shift-row">
+            <div class="lp-shift-old">
+              <span>Per-spec cost chain</span>
+              <p>Every buyer spec re-runs recruiting, QA, and vendor operations — the buyer funds that chain each time.</p>
+            </div>            <div class="lp-shift-new">
+              <span>An order of magnitude cheaper</span>
+              <p>The knowledge is produced autonomously by its creator, not commissioned, so there is no production chain for the buyer to pay for.</p>
+            </div>
+          </div>
+          <div class="lp-shift-row">
+            <div class="lp-shift-old">
+              <span>Manual dispatch</span>
+              <p>Post a job, recruit, dispatch, review, deliver — a human in every step.</p>
+            </div>            <div class="lp-shift-new">
+              <span>Fully automated, no broker</span>
+              <p>An agent discovers, previews, and pays directly; that real usage is what earns the knowledge base its reputation — no one posting or dispatching work in between.</p>
+            </div>
+          </div>
+          <div class="lp-shift-row">
+            <div class="lp-shift-old">
+              <span>Piecework for the maker</span>
+              <p>One-off task income; the vendor keeps the catalog and the margin.</p>
+            </div>            <div class="lp-shift-new">
+              <span>Ownership and a compounding asset</span>
+              <p>The creator keeps ownership and controls access and price. Because owned knowledge is reusable, both the knowledge and the revenue accumulate as they keep building for their own work.</p>
+            </div>
+          </div>
+          <div class="lp-shift-row">
+            <div class="lp-shift-old">
+              <span>Generic, made to pass review</span>
+              <p>Vendors can only produce generic to-spec data, and piecework drifts toward whatever just passes the buyer's review.</p>
+            </div>            <div class="lp-shift-new">
+              <span>First-party and true at the source</span>
+              <p>Built for the creator's own work, learning, and research — knowledge vendors can't reach, and never shaped to pass someone's check.</p>
+            </div>
+          </div>
+        </div>
+        <p class="lp-sec-foot">Underneath all of it: every answer carries the owner's license and its provenance, auditable — so an agent can use what it paid for without guessing at the rights.</p>
+      </div>
+    </div>
+  </section>
+
   <section class="lp-sec lp-sec-team-tile">
     <div class="lp-sec-inner">
       <div class="lp-team-tile">

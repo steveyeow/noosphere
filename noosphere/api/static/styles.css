@@ -88,6 +88,34 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lp-sec-foot{font-size:14px;line-height:1.65;color:var(--tx2);margin-top:24px;max-width:680px}
 .lp-sec-foot code{font-family:var(--mono);background:var(--accSoft);padding:1px 6px;border-radius:3px;font-size:13px}
 .lp-sec-foot strong{color:var(--tx);font-weight:600}
+.lp-mech-map{margin-top:18px;padding:24px 0;border-top:1px solid var(--brd);border-bottom:1px solid var(--brd)}
+.lp-flow-row{display:grid;grid-template-columns:minmax(0,1fr) 32px minmax(0,1fr) 32px minmax(0,1fr);gap:20px;align-items:start}
+.lp-flow-node{min-width:0;display:flex;flex-direction:column;gap:8px}
+.lp-flow-k{display:block;font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--tx);margin:0;line-height:1.3}
+.lp-flow-d{margin:0;font-size:14px;line-height:1.55;color:var(--tx2);text-wrap:pretty}
+.lp-flow-edge{display:flex;align-items:flex-start;justify-content:center;line-height:1.3}
+.lp-flow-arr{font-family:var(--mono);font-size:14px;line-height:1;color:var(--tx3)}
+.lp-flow-return{display:flex;align-items:baseline;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--brd)}
+.lp-flow-return p{margin:0;font-size:14px;line-height:1.5;color:var(--tx2)}
+.lp-mech-eyebrow{font-size:11px;font-weight:650;letter-spacing:.15em;text-transform:uppercase;color:var(--tx3);margin-bottom:12px}
+.lp-advantage{margin-top:28px;padding-top:20px;border-top:1px solid var(--brd)}
+.lp-shift-list{margin-top:16px;border:1px solid var(--brd);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.5);backdrop-filter:blur(20px) saturate(1.3);-webkit-backdrop-filter:blur(20px) saturate(1.3);box-shadow:0 8px 40px rgba(0,0,0,.05),inset 0 1px 0 rgba(255,255,255,.5)}
+.lp-shift-row{display:grid;grid-template-columns:1fr 1.12fr}
+.lp-shift-old,.lp-shift-new{min-width:0;padding:24px 28px}
+.lp-shift-new{background:rgba(29,29,31,.07);border-left:1px solid var(--brd)}
+.dark .lp-shift-list{background:rgba(44,44,46,.45);box-shadow:0 8px 40px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05)}
+.dark .lp-shift-new{background:rgba(255,255,255,.10)}
+@media(prefers-color-scheme:dark){:root:not(.light) .lp-shift-list{background:rgba(44,44,46,.45);box-shadow:0 8px 40px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.05)}:root:not(.light) .lp-shift-new{background:rgba(255,255,255,.10)}}
+.lp-shift-old>span,.lp-shift-new>span{display:block;font-size:11px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;margin-bottom:9px}
+.lp-shift-old>span{color:var(--tx3)}
+.lp-shift-new>span{color:var(--tx)}
+.lp-shift-old p,.lp-shift-new p{font-size:13px;line-height:1.6;margin:0;text-wrap:pretty}
+.lp-shift-old p{color:var(--tx3)}
+.lp-shift-new p{color:var(--tx2)}
+.lp-shift-head .lp-shift-old,.lp-shift-head .lp-shift-new{padding-top:14px;padding-bottom:14px;display:flex;align-items:center;gap:9px}
+.lp-shift-head .lp-shift-old>span,.lp-shift-head .lp-shift-new>span{margin-bottom:0;letter-spacing:.16em}
+.lp-shift-head .lp-shift-new::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--tx);flex:none}
+@media(max-width:860px){.lp-flow-row{grid-template-columns:1fr;gap:14px}.lp-flow-edge{transform:rotate(90deg)}.lp-shift-row{grid-template-columns:1fr}.lp-shift-new{border-left:0}.lp-shift-head{display:none}}
 
 /* Row-list — replaces the heavy card grid for S2 and S5. No borders, no
    backgrounds, no icons. Just a term + explanation separated by hairlines. */
