@@ -982,7 +982,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           <h2 class="lp-sec-h">For teams →</h2>
           <p class="lp-sec-sub">A shared living brain for your team. Captures from Slack, meetings, and tickets at the edge; synthesized through compile and distill; readable and queryable by every member and every agent.</p>
         </div>
-        <a href="#/team" class="lp-team-tile-cta">See team Noosphere →</a>
+        <a href="#/team" class="lp-team-tile-cta">See Noosphere·Team →</a>
       </div>
     </div>
   </section>
