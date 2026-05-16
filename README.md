@@ -22,6 +22,19 @@ Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publi
 4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem.
 5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 6. **A shared living brain for teams.** Most of what a team knows lives scattered across Slack threads, meeting transcripts, customer calls, design docs, tickets — none of it queryable by anyone, human or agent. Team Noosphere captures from the edge where work actually happens, synthesizes through compile and distill, and exposes one living record every member and every agent can query. Organizational memory survives turnover; the brain compounds as the team works.
+7. **Order-of-magnitude cheaper for buyers, compounding for creators.** People keep producing knowledge for their own work, learning, research, and teams. Noosphere makes that living, first-party supply agent-readable and owner-priced without turning creators into assigned labor: no recruiting chain, no middle-vendor operating cost, no per-spec collection. Because the rights stay with the user and the same knowledge is non-rival, one corpus can serve many agents at a fraction of today's per-access cost — plausibly 10–100× lower — while the creator's knowledge base compounds into an asset that earns more as they keep using it.
+
+### Social media → data vendors → Noosphere
+
+Three ways human knowledge has reached AI. The first gave the creator nothing; the second is slow, made-to-order, and expensive; Noosphere is the third.
+
+| | Social media | Data vendors (Scale / Surge / Mercor / Luel) | **Noosphere** |
+|---|---|---|---|
+| **Where it comes from** | posted for attention | produced on assignment, to a buyer's spec | built and maintained by people for their own use |
+| **Who owns it · who's paid** | the platform takes it; the creator earns nothing | the vendor keeps the margin; the person is piecework labor | the creator owns it, sets terms, keeps the revenue |
+| **Reuse · lifespan** | scraped once, then exhausted; static | single sale to one buyer; static deliverable | non-rival — one corpus, unlimited buyers; self-growing |
+| **How AI gets it · cost** | bulk scrape, murky rights, now tapped out | manual dispatch chain; expensive | agents discover & pay automatically; ~10–100× cheaper |
+| **Creator upside** | attention, not ownership | one-off task income | just keep building your own knowledge; ownership, reputation, and revenue compound |
 
 ## The loop
 
@@ -49,6 +62,48 @@ Karpathy's LLM Wiki and Garry Tan's GBrain are early single-user instances of th
 ## The design
 
 How the five value propositions above are actually built.
+
+### Operating structure
+
+One line: a user-owned, self-growing network of first-party knowledge —
+access-controlled, automated, and agent-friendly — where "agents" spans both
+runtime AI agents and AI-lab training needs.
+
+The line that separates this from every data vendor (Scale, Surge, Mercor,
+Luel): they run made-to-order production — a buyer posts a spec, humans are
+recruited or dispatched to fulfill it. Noosphere starts from user-owned
+knowledge that people and teams keep building for their own work; the owner
+elects what agents can access. It is not posting, dispatch, and assignment
+fulfillment. Non-rivalry and automated agent-initiated access both follow from
+that production model.
+
+```
+   PRODUCTION  ───────▶  MECHANISM  ───────▶  CONSUMPTION
+   ▲                                                     │
+   └───────────  revenue + usage signals  ───────────────┘
+
+   PRODUCTION    you or your team build and keep growing it for
+                 your own work; you set access, price, license
+
+   MECHANISM     automated, no dispatch — manifest / well-known
+                 standard interface, plus need-driven search,
+                 preview_ask, compile, distill; x402 pay
+
+   CONSUMPTION   one non-rival supply, three uses:
+                   runtime agent   per-query lookup; used in context
+                   post-training   a team licenses a corpus to fine-tune
+                   pre-training    a lab licenses it in bulk
+```
+
+Only originated content is monetizable.
+
+The access side has two complementary designs. First, public corpora advertise
+their scope, source composition, license terms, and caller requirements through
+the manifest or a well-known file. Second, the more important path is
+need-driven: an agent brings a demand object, evaluates candidates through
+manifest, `kb_reputation`, `preview_ask`, and search, then Noosphere compiles or
+distills a response or export shaped to that need before license and payment
+settle.
 
 ### Ingest paths
 
@@ -175,7 +230,7 @@ Three categories are under your control — declared (write the manifest), compu
 
 **Creators (supply side):** Build your own knowledge base — like [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) or [Garry Tan's GBrain](https://github.com/garrytan/gbrain), but without the engineering setup. Upload your files, paste your blog URLs, subscribe to RSS feeds. Your knowledge base grows over time. Share it free, or charge for access.
 
-**Agents and organizations (demand side):** Find expert knowledge across the entire network. Today, companies like Mercor hire domain experts one by one to train AI. Noosphere flips this — experts publish their knowledge on their own terms, and agents discover what they need through the network. A crypto trading agent can draw on trading strategy knowledge bases from multiple experts. A startup agent can pull from product, growth, and pricing experts simultaneously.
+**Agents and organizations (demand side):** Find expert knowledge across the entire network. Today, companies like Mercor hire domain experts one by one to train AI. Noosphere flips this — experts publish their knowledge on their own terms, and agents discover what they need through the network. A crypto trading agent can draw on trading strategy knowledge bases from multiple experts. A startup agent can pull from product, growth, and pricing experts simultaneously. "Demand side" is broader than runtime agents: the same owned, non-rival corpus is also licensed as fine-tune/RLHF substrate for post-training and as a bulk corpus for pre-training (see [Operating structure](#operating-structure)) — one supply, consumed three ways, never re-collected.
 
 ```
 Supply side                              Demand side

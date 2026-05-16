@@ -23,11 +23,15 @@ Noosphere solves both problems. It is the infrastructure layer that:
 - **Connects** isolated knowledge bases into a shared discovery network — agents can search across all public knowledge bases at once, finding the right expert knowledge wherever it lives.
 
 ```
-                    Agent-native
+                    Agent-readable
                         ↑
                         |
    Karpathy LLM Wiki   |    ← Noosphere
    GBrain              |    (networked + democratized)
+   Scale / Mercor      |
+   Luel                |
+   (manual, platform-  |
+    controlled data)   |
                         |
   ──────────────────────┼──────────────────── Anyone can publish
    Closed /             |
@@ -42,7 +46,7 @@ Noosphere solves both problems. It is the infrastructure layer that:
                     Human-readable
 ```
 
-Karpathy's LLM Wiki and Garry Tan's GBrain sit in the upper-left: agent-native, but single-user and technically demanding. Noosphere occupies the upper-right: agent-native AND open to anyone, with a network that connects them all.
+Karpathy's LLM Wiki and Garry Tan's GBrain sit in the upper-left: agent-readable, but single-user and technically demanding. Scale, Mercor, and Luel also sit on the left: agent-facing, but platform-controlled and manually dispatched around buyer specs. Noosphere occupies the upper-right: agent-readable AND open to anyone, with a network that connects them all.
 
 ### Information platforms evolve
 
@@ -900,7 +904,40 @@ Discovery is the core value proposition of Noosphere: experts publish knowledge 
 
 ### The demand-side problem
 
-Today, companies like Mercor hire domain experts one by one to train AI models. The process is manual, slow, and expensive. Noosphere flips this: experts publish their knowledge as living knowledge bases, and agents discover what they need through the network. A crypto trading agent can draw on multiple trading strategy knowledge bases. A startup agent can pull from product, growth, and pricing experts simultaneously. The supply side publishes once; the demand side discovers dynamically.
+Today, companies like Mercor hire domain experts one by one to train AI models.
+The process is manual, slow, and expensive because production starts from the
+buyer's order: post a spec, recruit or dispatch people, review the output, and
+deliver a static dataset. Noosphere flips the mechanism. People and teams keep
+building living knowledge bases for their own work; owners choose what agents
+can discover, preview, license, and use. A crypto trading agent can draw on
+multiple trading strategy corpora. A startup agent can pull from product,
+growth, and pricing experts simultaneously. The supply side keeps growing; the
+demand side discovers dynamically.
+
+**The core differentiator (state it precisely).** Every data vendor — Scale,
+Surge, Mercor, Luel — runs made-to-order production: a buyer posts a spec, the
+platform dispatches and recruits humans to fulfill it (post-job → dispatch →
+take-order → upload). Noosphere is the opposite: first it is a free,
+user-owned knowledge production network where people and teams build and keep
+growing corpora for their own reasons; then owners elect what agents can access,
+under what terms. **Not assignment fulfillment.** Two properties follow:
+**non-rivalry** (one supply licensed to unlimited consumers — no re-collection,
+no exclusivity, no single sale) and an **automated, agent-initiated
+transaction** (no human posting/dispatching work in between). "agents" spans
+both runtime agents (the native mode — open-book lookup, never trained on) and
+AI-lab training needs (a batch licensing adjacency on the same supply). Future
+Noosphere can also support creators intentionally producing new corpora for
+agent/model demand, but that is an extension of the channel, not the founding
+production model.
+
+**Two access designs.** (a) **Two-sided standard interface** — on `public`, the
+manifest (or a well-known file) auto-advertises access-friendly supply and
+exposes the minimal requirements a consumer must meet (a standardized
+supply↔demand handshake). (b) **Minimal base + need-driven middle** — the
+consumer's need drives discovery/acquisition/payment through `compile` /
+`distill` / `search` plus manifest / `kb_reputation` / `preview_ask`. (b) is
+the critical, load-bearing mechanism; see Phase 4g for the missing demand-side
+half.
 
 ### Design: the cloud app IS the registry
 
@@ -1280,7 +1317,7 @@ Deliverables:
 - [x] Health endpoint + /.well-known/noosphere.json
 - [x] Registry client (auto-registration)
 - [x] RetrievalEngine abstraction (local + remote)
-- [x] Web frontend redesign: agent-native UX (terminal, prominent endpoints, inline docs)
+- [x] Web frontend redesign: agent-readable UX (terminal, prominent endpoints, inline docs)
 - [x] Global search across all corpora
 - [x] README with quick start guide
 - [x] Token-gated access (generate/revoke access keys)
@@ -1409,6 +1446,21 @@ Networking is the substrate (every corpus is reachable in the network by default
 - [ ] Scheduled enrichment: periodic compile + maintain runs (dream-cycle style)
 - [ ] Feynman integration: Noosphere corpora as source-grounded minds
 - [ ] Audio transcription (Whisper, cloud paid feature)
+
+**4g. Two-sided matching — the demand side (settled direction, 2026-05-16; the load-bearing next work)**
+
+Today only the supply side is machine-decidable (the manifest). Automated, non-broker matching needs the demand side in the same vocabulary, and a contract a buyer's principal can audit without a human reading prose. This is the conversion that turns described supply into an actual market.
+
+- [ ] **Demand object** — a schema an agent carries to state its need (task type, topic, required provenance / calibration / freshness / license), mirroring the supply-side manifest so matching is two-sided in one vocabulary.
+- [ ] **Conformance preview** — extend `preview_ask` to report conformance *against the caller's stated demand object*, including an honest "cannot satisfy."
+- [ ] **`compile`/`distill` output contract** — claim-level output; each claim carries provenance, scope, asserted-at / superseded-by, confidence.
+- [ ] **Machine-verifiable license/consent/provenance object** — promote `license_terms` + `source_composition` into a structured, buyer-auditable contract (permitted-use enum: single-use / cache / train / redistribute; per-claim binding; only originated content monetizable).
+- [ ] **Per-need-type reputation** — `kb_reputation` accumulates conditioned on need-type, so the accumulated mapping replaces the broker's matching judgment.
+- [ ] **Standard interface (design a)** — on `public`, auto-emit an access-friendly advertisement + minimal consumer requirements in the manifest / a well-known file.
+- [ ] **Need-driven export path (design b)** — define how search + compile + distill produce either a per-query answer or a batch dataset shaped to a declared demand object, including rejection when the corpus cannot satisfy the need.
+- [ ] **Directed-production extension** — design how a creator could later choose to build new corpora for known agent/model demand without turning Noosphere into a job-posting and dispatch marketplace.
+
+Strategy note: native mode is runtime (per-query, no weights); post/pre-training are batch licensing adjacency off the same supply. Which mode to prioritize as the first commercial wedge is an open decision (current lean: post-training). Strategy/why lives in `docs/agent-data-market-thesis.md`; buildable roadmap lives here.
 
 ---
 
