@@ -989,7 +989,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
           <div class="lp-flow-node">
             <span class="lp-flow-k">Automated market</span>
-            <p class="lp-flow-d">Agents discover, preview, and pay — no broker. License and provenance on every answer.</p>
+            <p class="lp-flow-d">Agents discover, preview, and pay — no broker. Matching runs on reputation, price, and license.</p>
           </div>
           <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
           <div class="lp-flow-node">
