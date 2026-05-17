@@ -922,15 +922,15 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
 
   <section class="lp-sec lp-sec-agent">
     <div class="lp-sec-inner">
-      <h2 class="lp-sec-h">Agent-readable by design.</h2>
+      <h2 class="lp-sec-h">Agent-readable, automatically matched.</h2>
       <p class="lp-sec-sub">Publish a corpus to the network and every agent on it can describe, ask, cite. Legacy media ranked for attention — <strong>popular beat valuable</strong>. Agents only care about information value and verifiable provenance. Every Noosphere corpus speaks the same small toolbox — MCP-native, plus REST.</p>
       <div class="lp-tool-list">
-        <div class="lp-tool"><code>describe</code><span>Machine-readable capability card — task types, samples, pricing, calibration policy.</span></div>
-        <div class="lp-tool"><code>ask</code><span>Synthesized answer with inline [N] citations + calibrated confidence.</span></div>
-        <div class="lp-tool"><code>preview_ask</code><span>Let agents evaluate with a real question — bypasses the paid gate.</span></div>
-        <div class="lp-tool"><code>search</code><span>Ranked raw chunks with citations, for retrieval-heavy flows.</span></div>
-        <div class="lp-tool"><code>route</code><span>Redirect out-of-scope questions honestly — save everyone a wasted call.</span></div>
-        <div class="lp-tool"><code>kb_reputation</code><span>Score from real citations, returns, and calibration accuracy — no pay-to-promote, no hidden ranking.</span></div>
+        <div class="lp-tool"><code>manifest</code><span>Machine-readable capability card — scope, task types, license, and the requirements a caller must meet.</span></div>
+        <div class="lp-tool"><code>ask</code><span>Full synthesized answer with inline [N] citations + calibrated confidence; respects the access gate.</span></div>
+        <div class="lp-tool"><code>preview_ask</code><span>A free, truncated preview of that answer — so an agent judges fit before paying.</span></div>
+        <div class="lp-tool"><code>kb_reputation</code><span>Earned from real citations, returns, and calibration — no pay-to-promote, no hidden ranking.</span></div>
+        <div class="lp-tool"><code>standard interface</code><span>A public KB auto-advertises its access-friendly supply and the minimum a caller must meet, via the manifest or a well-known file — a standardized supply↔demand handshake.</span></div>
+        <div class="lp-tool"><code>need-driven middle</code><span>A minimal base; the agent brings its own need, which drives discovery, compile/distill, and payment — automated, no broker.</span></div>
       </div>
     </div>
   </section>
@@ -989,7 +989,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
           <div class="lp-flow-node">
             <span class="lp-flow-k">Automated market</span>
-            <p class="lp-flow-d">Agents discover, preview, and pay — no broker. Matching runs on reputation, price, and license.</p>
+            <p class="lp-flow-d">Discover, preview, pay — no broker. Matched on manifest · preview_ask · per-use reputation.</p>
           </div>
           <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
           <div class="lp-flow-node">
@@ -1005,7 +1005,6 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
 
       <div class="lp-advantage">
         <div class="lp-mech-eyebrow">Versus data vendors</div>
-        <p class="lp-sec-sub">Data vendors make data to order. Noosphere starts from knowledge people and teams already build and grow for their own work, then choose what agents can use — every advantage below follows from that one difference.</p>
         <div class="lp-shift-list">
           <div class="lp-shift-row lp-shift-head">
             <div class="lp-shift-old"><span>Traditional data vendors</span></div>
