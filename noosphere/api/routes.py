@@ -2062,10 +2062,11 @@ async def api_get_entity(corpus_id: str, entity_id: str, request: Request):
     """
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
-    from noosphere.core.entities import get_entity_with_related_docs
+    from noosphere.core.entities import get_entity_with_related_docs, get_entity_edges
     ent = get_entity_with_related_docs(entity_id)
     if not ent or ent.get("corpus_id") != corpus["id"]:
         raise HTTPException(status_code=404, detail="Entity not found")
+    ent["edges"] = get_entity_edges(entity_id)
     return ent
 
 

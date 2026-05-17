@@ -446,6 +446,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .ep-compiled-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .ep-compiled-lbl{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ep-compiled-body{font-size:14px;color:var(--tx);line-height:1.7;font-family:'Libre Baskerville',Georgia,serif}
+.ep-collapse{margin:0 0 28px;padding:14px 22px;border-radius:12px;background:color-mix(in srgb,var(--bgH) 40%,transparent);border:1px solid var(--brd)}
+.ep-collapse>summary{cursor:pointer;font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;list-style:none}
+.ep-collapse>summary::-webkit-details-marker{display:none}
+.ep-collapse[open]>summary{margin-bottom:12px}
+.ep-collapse .ep-compiled-body{margin-bottom:12px}
 .ep-compile-empty{display:flex;align-items:center;gap:12px;margin-bottom:24px;padding:14px 16px;border-radius:10px;background:var(--bg2);border:1px dashed var(--brd)}
 .ep-compile-hint{font-size:12px;color:var(--tx3)}
 .ep-bucket{margin-bottom:28px}

@@ -5135,10 +5135,23 @@ async function renderEntity(corpusId,entityId){
   const bucketHTML=buckets.map(b=>`<div class="ep-bucket"><div class="ep-bucket-lbl">${esc(b.label)} <span class="ep-bucket-cnt">${b.docs.length}</span></div><div class="ep-doc-list">${b.docs.map(d=>`<a class="ep-doc" href="#/corpus/${corpusId}/doc/${d.id}" onclick="event.preventDefault();location.hash='#/corpus/${corpusId}';"><div class="ep-doc-title">${esc(d.title)}</div><div class="ep-doc-meta">${esc(d.doc_type||'')}${d.date?' · '+esc(d.date):''}${d.word_count?' · '+d.word_count+' words':''}<span class="ep-doc-sk sk-${d.source_kind}">${esc(d.source_kind)}</span></div></a>`).join('')}</div></div>`).join('');
   const canCompile=ent.doc_count>0;
   const compileBtnLabel=ent.description?'Recompile':'Compile truth';
+  const edges=ent.edges||{outbound:[],inbound:[]};
+  const edgeOut=edges.outbound||[],edgeIn=edges.inbound||[];
+  const edgeCount=edgeOut.length+edgeIn.length;
+  const _VERB={founded:'founded',works_at:'works at',advises:'advises',invested_in:'invested in',attended:'attended',close_to:'close to',related:'related to'};
+  const relRow=(e,inbound)=>{
+    const verb=_VERB[e.type]||e.type;
+    // Show the source cue only when it adds context the verb doesn't —
+    // i.e. generic 'related to' edges. Otherwise the verb already says it.
+    const ctx=(e.type==='related'&&e.label)?' · '+esc(e.label):'';
+    return `<a class="ep-doc" href="#/corpus/${corpusId}/entity/${e.entity_id}"${e.label?` title="from: ${esc(e.label)}"`:''}><div class="ep-doc-title">${esc(e.name)}</div><div class="ep-doc-meta">${inbound?'← ':''}${esc(verb)}${ctx} · ${esc(e.kind)}</div></a>`;
+  };
+  const relHTML=edgeCount?`<div class="ep-bucket"><div class="ep-bucket-lbl">Relationships <span class="ep-bucket-cnt">${edgeCount}</span></div><div class="ep-doc-list">${edgeOut.map(e=>relRow(e,false)).join('')}${edgeIn.map(e=>relRow(e,true)).join('')}</div></div>`:'';
   const compiledBlock=ent.description
-    ? `<div class="ep-compiled"><div class="ep-compiled-hd"><span class="ep-compiled-lbl">Compiled truth</span><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></div><div class="ep-compiled-body doc-bd-md" id="ep-compiled-body">${_mdToHtml(ent.description||'')}</div></div>`
+    ? `<details class="ep-collapse"><summary class="ep-collapse-sum">Compiled truth</summary><div class="ep-compiled-body doc-bd-md" id="ep-compiled-body">${_mdToHtml(ent.description||'')}</div><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></details>`
     : (canCompile?`<div class="ep-compile-empty"><button class="btn-sm" id="ep-compile-btn">${compileBtnLabel}</button><span class="ep-compile-hint">Synthesize a summary from the ${ent.doc_count} related doc${ent.doc_count===1?'':'s'}</span></div>`:'');
-  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats"><span><strong>${ent.doc_count||0}</strong> document${ent.doc_count===1?'':'s'}</span>${ent.authored_by?.length?`<span>${ent.authored_by.length} authored</span>`:''}${ent.participated?.length?`<span>${ent.participated.length} participated</span>`:''}${ent.mentioned_in?.length?`<span>${ent.mentioned_in.length} mentioned</span>`:''}</div></div>${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
+  const connHTML=edgeCount?`<span><strong>${edgeCount}</strong> connection${edgeCount===1?'':'s'}</span>`:'';
+  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats">${connHTML}<span><strong>${ent.doc_count||0}</strong> source${ent.doc_count===1?'':'s'}</span></div></div>${relHTML}${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
 
   async function doCompile(btnId){
     const btn=document.getElementById(btnId);if(!btn)return;

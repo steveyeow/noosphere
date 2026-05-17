@@ -245,6 +245,101 @@ def _row_to_dict(row) -> dict:
     return d
 
 
+# ── Typed relationship edges ─────────────────────────────────────────
+
+# Canonical edge types inferred from the page structure a cross-link sits
+# under (zero LLM — mirrors gbrain's deterministic "the brain wires itself").
+_EDGE_TYPE_CUES = [
+    ("founded", ("founder", "co-founder", "cofounder", "founded", "founding")),
+    ("works_at", ("role", "works at", "company", "employer", "title", "position")),
+    ("advises", ("advis", "board", "mentor")),
+    ("invested_in", ("invest", "backed", "portfolio")),
+    ("attended", ("attended", "education", "school", "alma mater", "studied")),
+    ("close_to", ("close to", "network", "crew", "knows", "friend", "relationship")),
+]
+
+
+def classify_edge_type(cue: str) -> str:
+    """Map a gbrain section/bullet cue (e.g. 'Role:', '## Network') to a
+    canonical edge type. Unknown cues fall back to 'related'."""
+    c = (cue or "").strip().lower()
+    for etype, needles in _EDGE_TYPE_CUES:
+        if any(n in c for n in needles):
+            return etype
+    return "related"
+
+
+def add_entity_edge(
+    corpus_id: str,
+    src_entity_id: str,
+    dst_entity_id: str,
+    *,
+    type: str = "related",
+    label: str = "",
+    source_doc_id: str | None = None,
+) -> str | None:
+    """Insert a typed edge, or return the id of an existing match.
+
+    Dedup key: (corpus_id, src, dst, type) — first-seen label/source kept.
+    No self-edges. SELECT-then-INSERT to stay dialect-safe (sqlite + pg).
+    """
+    if not src_entity_id or not dst_entity_id or src_entity_id == dst_entity_id:
+        return None
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM entity_edges WHERE corpus_id=? AND src_entity_id=? "
+        "AND dst_entity_id=? AND type=?",
+        (corpus_id, src_entity_id, dst_entity_id, type),
+    ).fetchone()
+    if row:
+        return row["id"]
+    eid = uuid.uuid4().hex[:12]
+    conn.execute(
+        "INSERT INTO entity_edges (id, corpus_id, src_entity_id, dst_entity_id, "
+        "type, label, source_doc_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
+        (eid, corpus_id, src_entity_id, dst_entity_id, type, label or "",
+         source_doc_id, _now()),
+    )
+    conn.commit()
+    return eid
+
+
+def get_entity_edges(entity_id: str) -> dict:
+    """Outbound (this entity is src) + inbound/backlinks (this entity is dst),
+    each joined with the other endpoint's name/kind for rendering and
+    graph traversal.
+    """
+    conn = get_conn()
+    if not conn.execute("SELECT 1 FROM entities WHERE id=?", (entity_id,)).fetchone():
+        return {"outbound": [], "inbound": []}
+    out_rows = conn.execute(
+        "SELECT e.type, e.label, e.source_doc_id, en.id AS oid, "
+        "en.canonical_name AS oname, en.kind AS okind "
+        "FROM entity_edges e JOIN entities en ON en.id=e.dst_entity_id "
+        "WHERE e.src_entity_id=? ORDER BY e.type, en.canonical_name",
+        (entity_id,),
+    ).fetchall()
+    in_rows = conn.execute(
+        "SELECT e.type, e.label, e.source_doc_id, en.id AS oid, "
+        "en.canonical_name AS oname, en.kind AS okind "
+        "FROM entity_edges e JOIN entities en ON en.id=e.src_entity_id "
+        "WHERE e.dst_entity_id=? ORDER BY e.type, en.canonical_name",
+        (entity_id,),
+    ).fetchall()
+
+    def _fmt(r) -> dict:
+        return {
+            "type": r["type"], "label": r["label"] or "",
+            "source_doc_id": r["source_doc_id"],
+            "entity_id": r["oid"], "name": r["oname"], "kind": r["okind"],
+        }
+
+    return {
+        "outbound": [_fmt(r) for r in out_rows],
+        "inbound": [_fmt(r) for r in in_rows],
+    }
+
+
 # ── HTML author detection (free — no LLM) ────────────────────────────
 
 

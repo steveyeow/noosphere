@@ -209,6 +209,20 @@ CREATE TABLE IF NOT EXISTS entities (
 CREATE INDEX IF NOT EXISTS idx_entities_corpus ON entities(corpus_id);
 CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(corpus_id, kind);
 
+CREATE TABLE IF NOT EXISTS entity_edges (
+    id TEXT PRIMARY KEY,
+    corpus_id TEXT NOT NULL REFERENCES corpora(id),
+    src_entity_id TEXT NOT NULL REFERENCES entities(id),
+    dst_entity_id TEXT NOT NULL REFERENCES entities(id),
+    type TEXT NOT NULL DEFAULT 'related',
+    label TEXT DEFAULT '',
+    source_doc_id TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(corpus_id, src_entity_id, dst_entity_id, type)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_edges_src ON entity_edges(corpus_id, src_entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_edges_dst ON entity_edges(corpus_id, dst_entity_id);
+
 CREATE TABLE IF NOT EXISTS chunks (
     id TEXT PRIMARY KEY,
     corpus_id TEXT NOT NULL REFERENCES corpora(id),

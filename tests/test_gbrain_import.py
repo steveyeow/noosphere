@@ -56,6 +56,7 @@ def brain(tmp_path):
     (root / "companies" / "acme.md").write_text(
         "---\ntype: company\n---\n"
         "# Acme\n\nAcme builds widgets.\n\n"
+        "## State\n- Founders: [Jane Doe](../people/jane-doe.md)\n\n"
         "---\n\n## Timeline\n- 2025-09-01 | Series A\n"
     )
     (root / "concepts" / "product-market-fit.md").write_text(
@@ -143,6 +144,37 @@ def test_cross_links_resolve_to_entities(corpus, brain):
     # the page is attached to its own entity (so it renders on Jane's
     # entity page) exactly once — pass 2 must not duplicate it
     assert mentioned.count(jane_id) == 1
+
+
+def test_classify_edge_type():
+    from noosphere.core.entities import classify_edge_type
+    assert classify_edge_type("Founders") == "founded"
+    assert classify_edge_type("Role") == "works_at"
+    assert classify_edge_type("Close to") == "close_to"
+    assert classify_edge_type("State") == "related"
+    assert classify_edge_type("") == "related"
+
+
+def test_typed_edges_and_backlinks(corpus, brain):
+    from noosphere.core.entities import get_entity_edges
+    import_gbrain_repo(corpus["id"], str(brain))
+    ents = {e["canonical_name"]: e for e in list_entities(corpus["id"])}
+    jane, acme = ents["Jane Doe"]["id"], ents["Acme"]["id"]
+
+    je = get_entity_edges(jane)
+    out = {(o["name"], o["type"]) for o in je["outbound"]}
+    # Jane's page links Acme + John under "## State" → untyped 'related'
+    assert ("Acme", "related") in out
+    assert ("John Smith", "related") in out
+    # Acme lists Jane under "Founders:" → typed 'founded', appears as a
+    # backlink on Jane (inbound)
+    assert any(i["name"] == "Acme" and i["type"] == "founded" for i in je["inbound"])
+
+    ae = get_entity_edges(acme)
+    assert any(o["name"] == "Jane Doe" and o["type"] == "founded" for o in ae["outbound"])
+    assert any(i["name"] == "Jane Doe" and i["type"] == "related" for i in ae["inbound"])
+    # never a self-edge
+    assert all(o["entity_id"] != jane for o in je["outbound"])
 
 
 def test_idempotent_reimport(corpus, brain):

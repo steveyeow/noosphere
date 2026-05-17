@@ -503,7 +503,7 @@ def import_gbrain_repo(
             errors += 1
 
     links_resolved = _resolve_gbrain_links(
-        link_targets, slug_to_eid, name_to_eid, get_conn
+        corpus_id, link_targets, slug_to_eid, name_to_eid, get_conn
     )
 
     imported = entities_made + concepts + sources
@@ -526,7 +526,38 @@ def import_gbrain_repo(
     }
 
 
+_GBRAIN_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+_GBRAIN_BULLET_KEY = re.compile(r"^\s*(?:[-*+]\s+)?\*{0,2}([A-Za-z][\w /&-]{0,38}?)\*{0,2}\s*:")
+
+
+def _gbrain_link_cue(body: str, pos: int) -> str:
+    """The structural cue a cross-link sits under — for zero-LLM edge typing.
+
+    Prefers a bullet/field key on the link's own line (`- Role: ...`,
+    `**Founders:** ...`); else the nearest preceding markdown heading
+    (`## Network`, `See Also`). Empty when neither is present. This mirrors
+    how gbrain derives a typed edge from page structure without an LLM.
+    """
+    line_start = body.rfind("\n", 0, pos) + 1
+    nl = body.find("\n", pos)
+    line = body[line_start: nl if nl != -1 else len(body)]
+    mk = _GBRAIN_BULLET_KEY.match(line)
+    if mk:
+        return mk.group(1).strip()
+    for prev in reversed(body[:line_start].splitlines()):
+        s = prev.strip()
+        if not s:
+            continue
+        mh = _GBRAIN_HEADING.match(prev)
+        if mh:
+            return mh.group(1).strip()
+        if s.lower().startswith("see also"):
+            return "See Also"
+    return ""
+
+
 def _resolve_gbrain_links(
+    corpus_id: str,
     link_targets: list[tuple[str, str, str | None]],
     slug_to_eid: dict[str, str],
     name_to_eid: dict[str, str],
@@ -535,28 +566,42 @@ def _resolve_gbrain_links(
     """Second pass: map gbrain cross-links in each doc body to entity ids.
 
     gbrain references other pages by filename slug — as a markdown link to a
-    `*.md` path, or as a `[[wikilink]]`. Resolve both to entity ids and merge
-    into the doc's metadata.mentioned_entity_ids (so referenced people/orgs
-    light up on each other's entity pages). Idempotent per run.
+    `*.md` path, or as a `[[wikilink]]`. Resolve both to entity ids and (a)
+    merge into the doc's metadata.mentioned_entity_ids and (b) for an entity
+    page, write a typed `entity_edges` row whose type is inferred from the
+    page structure the link sits under (zero LLM). Idempotent per run.
     """
     if not link_targets:
         return 0
+    from noosphere.core.entities import add_entity_edge, classify_edge_type
+
     conn = get_conn()
     total_links = 0
     for doc_id, body, own_eid in link_targets:
         found: list[str] = []
+        edges: list[tuple[str, str, str]] = []  # (dst_eid, type, label)
 
-        def _add(eid: str | None) -> None:
-            if eid and eid != own_eid and eid not in found:
+        def _consider(eid: str | None, pos: int) -> None:
+            if not eid or eid == own_eid:
+                return
+            if eid not in found:
                 found.append(eid)
+            if own_eid:
+                cue = _gbrain_link_cue(body, pos)
+                edges.append((eid, classify_edge_type(cue), cue[:60]))
 
         for m in _MD_PAGE_LINK_PATTERN.finditer(body):
             target_slug = Path(m.group(1)).stem.lower()
-            _add(slug_to_eid.get(target_slug))
+            _consider(slug_to_eid.get(target_slug), m.start())
         for m in _WIKILINK_PATTERN.finditer(body):
             target = m.group(1).strip()
             key = target.split("/")[-1].strip().lower()
-            _add(slug_to_eid.get(key) or name_to_eid.get(key))
+            _consider(slug_to_eid.get(key) or name_to_eid.get(key), m.start())
+
+        if own_eid:
+            for dst, etype, label in edges:
+                add_entity_edge(corpus_id, own_eid, dst, type=etype,
+                                 label=label, source_doc_id=doc_id)
 
         if not found:
             continue
