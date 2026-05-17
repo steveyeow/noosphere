@@ -376,11 +376,12 @@ Obsidian gets first-class support with two methods, both reachable from the **Ob
 **2. CLI two-way sync** — persistent. The [Karpathy "LLM-maintained wiki"](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: your vault stays on disk, Obsidian stays your editor, Noosphere mirrors edits in the background and keeps the index fresh.
 
 ```bash
-# One-time: point Noosphere at your vault
-python -m noosphere.cli sync ~/my-vault --corpus my-knowledge --obsidian
+# One step: create the corpus AND import the vault (prints the corpus id)
+noosphere connect-obsidian ~/my-vault --name "My Knowledge"
 
-# Keep it live: re-sync on every file change (Ctrl+C to stop)
-python -m noosphere.cli sync ~/my-vault --corpus my-knowledge --obsidian --watch
+# Keep it live: re-sync on every file change, Ctrl+C to stop
+# (use the corpus id connect-obsidian printed)
+noosphere sync ~/my-vault --corpus <corpus-id> --obsidian --watch
 ```
 
 Both methods preserve:
