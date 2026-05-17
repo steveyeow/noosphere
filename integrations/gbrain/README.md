@@ -1,8 +1,10 @@
 # GBrain → Noosphere
 
 Bring an existing [gbrain](https://github.com/garrytan/gbrain) brain onto the
-Noosphere network. The brain repo stays the system of record on disk;
-Noosphere becomes the network, access-control, and monetization layer on top.
+Noosphere network. Your repo stays the source of truth. Noosphere makes that
+brain discoverable and queryable by any agent, lets it learn from other
+brains on the network (updates land only with your approval), and keeps it
+private, open, or paid.
 
 ## What the adapter maps
 

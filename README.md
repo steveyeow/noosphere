@@ -447,7 +447,7 @@ The first three create a new corpus AND run the initial sync in one step. ZIP up
 
 ### Coming from GBrain? Import your repo (Tan-style)
 
-Already running [Garry Tan's GBrain](https://github.com/garrytan/gbrain) — a markdown repo of `people/`, `companies/`, `concepts/` pages with compiled-truth-on-top, timeline-below? Bring it onto the network in one command. The repo stays your system of record; Noosphere becomes the agent-readable, access-controlled, monetizable layer on top.
+Already running [Garry Tan's GBrain](https://github.com/garrytan/gbrain) — a markdown repo of `people/`, `companies/`, `concepts/` pages with compiled-truth-on-top, timeline-below? Bring it onto the network in one command. **Your repo stays the source of truth. Noosphere makes that brain discoverable and queryable by any agent, lets it learn from other brains on the network (updates land only with your approval), and keeps it private, open, or paid.**
 
 ```bash
 noosphere connect-gbrain ~/your-brain --name "My Brain" --access-level public

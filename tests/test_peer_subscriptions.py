@@ -141,64 +141,89 @@ def test_due_subscriptions_picks_only_active_past_due():
 # ── Runner — local peer happy path ──────────────────────────────────
 
 
-def test_run_subscription_describe_local_ingests_capability_card():
+def _peer_docs(corpus_id):
+    from noosphere.core.db import get_conn
+    return get_conn().execute(
+        "SELECT title, doc_type, source_kind FROM documents "
+        "WHERE corpus_id=? AND source_kind='peer_subscription'",
+        (corpus_id,),
+    ).fetchall()
+
+
+def test_run_subscription_stages_pending_not_ingested():
+    """Review-before-apply: a cycle is STAGED, never written straight into
+    the subscriber corpus. Owner must approve for it to land."""
     from noosphere.core.peer_runner import run_subscription
+    from noosphere.core.peer_subscriptions import (
+        list_pending, pending_count, approve_pending,
+    )
 
     subscriber = create_corpus("Subscriber")
     peer = create_corpus("Peer KB", description="A peer with interesting content", tags=["ai"])
-    # Give the peer some content so describe returns a non-trivial card
     ingest_text(peer["id"], title="Peer doc", content="peer content about AI and alignment", source_kind="user_original")
 
     sub = create_subscription(
-        subscriber["id"],
-        mode="describe",
-        target_corpus_id=peer["id"],
-        cadence_minutes=60,
+        subscriber["id"], mode="describe", target_corpus_id=peer["id"], cadence_minutes=60,
     )
     result = run_subscription(sub["id"])
     assert result["outcome"] == "ok"
-    assert result["docs_ingested"] == 1
+    assert result["docs_ingested"] == 0          # nothing ingested
+    assert result["pending"] == 1                # staged for review
 
-    # Capability card landed in subscriber's documents
-    from noosphere.core.db import get_conn
-    rows = get_conn().execute(
-        "SELECT title, doc_type, source_kind FROM documents WHERE corpus_id=?",
-        (subscriber["id"],),
-    ).fetchall()
-    # 1 manifest (system) + 1 capability_card (peer_subscription)
-    peer_docs = [r for r in rows if r["source_kind"] == "peer_subscription"]
-    assert len(peer_docs) == 1
-    assert peer_docs[0]["doc_type"] == "capability_card"
-    assert peer_docs[0]["title"].startswith("Capability card:")
+    # NOT in the corpus yet — the trust boundary holds.
+    assert len(_peer_docs(subscriber["id"])) == 0
+    assert pending_count(sub["id"]) == 1
+    items = list_pending(sub["id"])
+    assert len(items) == 1 and items[0]["title"].startswith("Capability card:")
 
     runs = list_runs(sub["id"])
-    assert len(runs) == 1
-    assert runs[0]["outcome"] == "ok"
-    assert runs[0]["docs_ingested"] == 1
+    assert runs[0]["outcome"] == "ok" and runs[0]["docs_ingested"] == 1
+
+    # Owner approves → now it lands, provenance retained.
+    assert approve_pending(sub["id"]) == 1
+    pd = _peer_docs(subscriber["id"])
+    assert len(pd) == 1 and pd[0]["doc_type"] == "capability_card"
+    assert pending_count(sub["id"]) == 0
 
 
-def test_run_subscription_dedupes_same_content():
-    """Running the same subscription twice doesn't create duplicate docs —
-    content_hash dedupe kicks in and the second run records no_new_content.
-    """
+def test_run_subscription_dedupes_same_content_while_pending():
+    """A second cycle producing the same content doesn't double-stage —
+    dedupe hits the still-pending row."""
     from noosphere.core.peer_runner import run_subscription
+    from noosphere.core.peer_subscriptions import pending_count
 
     subscriber = create_corpus("S")
     peer = create_corpus("P", description="stable description")
     ingest_text(peer["id"], title="P1", content="content", source_kind="user_original")
 
-    sub = create_subscription(
-        subscriber["id"], mode="describe", target_corpus_id=peer["id"],
-    )
+    sub = create_subscription(subscriber["id"], mode="describe", target_corpus_id=peer["id"])
     first = run_subscription(sub["id"])
-    assert first["outcome"] == "ok"
-    assert first["docs_ingested"] == 1
+    assert first["outcome"] == "ok" and first["pending"] == 1
 
     second = run_subscription(sub["id"])
-    # Same describe payload → content hash match → nothing new ingested
-    assert second["docs_ingested"] == 0
-    # Either "ok" with 0 ingested or "no_new_content" are both acceptable
+    assert second["pending"] == 0
     assert second["outcome"] in ("ok", "no_new_content")
+    assert pending_count(sub["id"]) == 1   # still just the one staged item
+
+
+def test_discard_pending_drops_without_ingest():
+    from noosphere.core.peer_runner import run_subscription
+    from noosphere.core.peer_subscriptions import (
+        discard_pending, pending_count, approve_pending,
+    )
+
+    subscriber = create_corpus("S2")
+    peer = create_corpus("P2", description="d")
+    ingest_text(peer["id"], title="x", content="c", source_kind="user_original")
+    sub = create_subscription(subscriber["id"], mode="describe", target_corpus_id=peer["id"])
+    run_subscription(sub["id"])
+    assert pending_count(sub["id"]) == 1
+
+    assert discard_pending(sub["id"]) == 1
+    assert pending_count(sub["id"]) == 0
+    assert len(_peer_docs(subscriber["id"])) == 0
+    # Nothing left to approve.
+    assert approve_pending(sub["id"]) == 0
 
 
 def test_run_subscription_records_failure_when_target_missing():

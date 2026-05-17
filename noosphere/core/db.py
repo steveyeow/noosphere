@@ -420,6 +420,24 @@ CREATE TABLE IF NOT EXISTS peer_subscription_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_peer_run_sub_date ON peer_subscription_runs(subscription_id, ran_at DESC);
 
+CREATE TABLE IF NOT EXISTS peer_subscription_pending (
+    id TEXT PRIMARY KEY,
+    subscription_id TEXT NOT NULL,
+    run_id TEXT,
+    subscriber_corpus_id TEXT NOT NULL,
+    title TEXT,
+    content TEXT,
+    doc_type TEXT,
+    tags_json TEXT DEFAULT '[]',
+    metadata_json TEXT DEFAULT '{}',
+    content_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_peer_pending_sub ON peer_subscription_pending(subscription_id, status);
+CREATE INDEX IF NOT EXISTS idx_peer_pending_run ON peer_subscription_pending(run_id);
+
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,
     slug TEXT NOT NULL UNIQUE,

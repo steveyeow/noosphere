@@ -3588,6 +3588,48 @@ async def api_run_peer_subscription_now(corpus_id: str, sub_id: str, request: Re
     return run_subscription(sub_id)
 
 
+@router.get("/corpora/{corpus_id}/subscriptions/{sub_id}/pending")
+async def api_peer_subscription_pending(corpus_id: str, sub_id: str, request: Request):
+    """The review digest: cycles staged by this subscription, awaiting the
+    owner's approve/discard. Owner-only."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription, list_pending
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    items = list_pending(sub_id)
+    return {"pending": items, "count": len(items)}
+
+
+@router.post("/corpora/{corpus_id}/subscriptions/{sub_id}/pending/approve")
+async def api_peer_subscription_approve(corpus_id: str, sub_id: str, request: Request):
+    """Owner approves the staged cycle(s): ingest into the corpus, retaining
+    peer_subscription provenance. Owner-only."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription, approve_pending
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    applied = approve_pending(sub_id)
+    return {"applied": applied}
+
+
+@router.post("/corpora/{corpus_id}/subscriptions/{sub_id}/pending/discard")
+async def api_peer_subscription_discard(corpus_id: str, sub_id: str, request: Request):
+    """Owner discards the staged cycle(s) — nothing enters the corpus.
+    Owner-only."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.peer_subscriptions import get_subscription, discard_pending
+    sub = get_subscription(sub_id)
+    if not sub or sub.get("subscriber_corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    discarded = discard_pending(sub_id)
+    return {"discarded": discarded}
+
+
 @router.post("/cron/run-peer-subscriptions")
 async def api_cron_run_peer_subscriptions(limit: int = 20):
     """Scheduler tick — execute up to `limit` due subscriptions.

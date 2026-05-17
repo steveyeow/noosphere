@@ -1,28 +1,31 @@
 """Outbound peer subscription runner — L3 Networked autonomy.
 
-Executes a single subscription cycle: pull from the peer, ingest results
-as documents with source_kind='peer_subscription', log the run.
+Executes a single subscription cycle: pull from the peer, then **stage** the
+results as pending review (source_kind='peer_subscription' carried in
+metadata) — it never writes straight into the subscriber's corpus. The
+owner approves or discards the staged cycle (review-before-apply); see
+peer_subscriptions.stage_pending / approve_pending. "Human always wins"
+across the trust boundary, since a subscription pulls from a corpus the
+owner does not control.
 
-Follows the pseudo-code in docs/l3-networked.md §4.2. Phase 1 implements
-the happy path + basic error handling (HTTP status mapping, content hash
-dedupe via ingest_text). Budget enforcement and notifications are deferred
-to Phase 3 — this runner records `cents_spent` but does not gate on budget.
+Budget enforcement is recorded (`cents_spent`) but not gated here.
 """
 
 import json
 import logging
 import time
+import uuid
 
 import httpx
 
 from noosphere.core.corpus import get_corpus
 from noosphere.core.db import get_conn
-from noosphere.core.ingest import ingest_text
 from noosphere.core.peer_subscriptions import (
     bump_failure,
     get_subscription,
     mark_run,
     reset_failures,
+    stage_pending,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,48 +50,6 @@ def _build_headers(sub: dict) -> dict[str, str]:
     if sub.get("bearer_token"):
         h["Authorization"] = f"Bearer {sub['bearer_token']}"
     return h
-
-
-def _provenance(sub: dict) -> dict:
-    return {
-        "subscription_id": sub["id"],
-        "peer_corpus_id": sub.get("target_corpus_id"),
-        "peer_endpoint": sub.get("target_endpoint"),
-        "peer_name": _peer_display_name(sub),
-    }
-
-
-def _ingest_peer_document(
-    subscriber_id: str, sub: dict, *, title: str, content: str,
-    doc_type: str, tags: list[str] | None = None,
-    extra_meta: dict | None = None,
-) -> dict | None:
-    meta = _provenance(sub)
-    if extra_meta:
-        meta.update(extra_meta)
-    # Content hash dedupe inside ingest_text isn't automatic; we pre-check here
-    # so repeated pulls of the same doc don't litter the doc list.
-    if _already_ingested(subscriber_id, content):
-        return None
-    return ingest_text(
-        subscriber_id,
-        title=title or "Untitled",
-        content=content,
-        doc_type=doc_type,
-        source_kind="peer_subscription",
-        tags=tags or [],
-        metadata=meta,
-    )
-
-
-def _already_ingested(corpus_id: str, content: str) -> bool:
-    import hashlib
-    h = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    row = get_conn().execute(
-        "SELECT id FROM documents WHERE corpus_id=? AND content_hash=? LIMIT 1",
-        (corpus_id, h),
-    ).fetchone()
-    return row is not None
 
 
 def _run_ask_local(sub: dict, target_corpus_id: str) -> tuple[str, list[dict], int]:
@@ -306,29 +267,24 @@ def run_subscription(sub_id: str) -> dict:
         bump_failure(sub_id, str(e))
         return {"sub_id": sub_id, "outcome": "error", "docs_ingested": 0}
 
-    ingested = 0
+    # Review-before-apply: stage the cycle as pending — never write straight
+    # into the subscriber corpus. The owner approves/discards it later.
+    staged = 0
+    run_id = uuid.uuid4().hex[:12]
     if outcome == "ok" and docs:
-        for d in docs:
-            saved = _ingest_peer_document(
-                sub["subscriber_corpus_id"], sub,
-                title=d["title"], content=d["content"],
-                doc_type=d.get("doc_type", "doc"),
-                tags=d.get("tags"),
-                extra_meta=d.get("extra_meta"),
-            )
-            if saved:
-                ingested += 1
-        if ingested == 0:
+        staged = stage_pending(sub["subscriber_corpus_id"], sub, run_id, docs)
+        if staged == 0:
             outcome = "no_new_content"
 
     latency_ms = int((time.monotonic() - started) * 1000)
     mark_run(
         sub_id,
         outcome=outcome if not outcome.startswith("error:") else "error",
-        docs_ingested=ingested,
+        docs_ingested=staged,
         cents_spent=cents,
         latency_ms=latency_ms,
         error_detail=None if outcome in ("ok", "no_new_content") else outcome,
+        run_id=run_id,
     )
     if outcome in ("ok", "no_new_content"):
         reset_failures(sub_id)
@@ -346,7 +302,8 @@ def run_subscription(sub_id: str) -> dict:
     return {
         "sub_id": sub_id,
         "outcome": outcome,
-        "docs_ingested": ingested,
+        "docs_ingested": 0,        # nothing ingested — staged for review
+        "pending": staged,
         "cents_spent": cents,
         "latency_ms": latency_ms,
     }

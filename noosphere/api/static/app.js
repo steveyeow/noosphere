@@ -3602,7 +3602,7 @@ const _SOURCE_CONNECTORS=[
      {group:'live',id:'plugin',name:'Obsidian plugin',status:'beta',action:'show_plugin_docs',
       desc:'One-click sync from inside Obsidian — ribbon icon, watch mode, settings UI. Self-hosted today; build from the repo\'s plugin/ folder.'},
    ]},
-  {kind:'gbrain',name:'GBrain',desc:'Your local gbrain repo — people & companies become entities, concepts become Wiki.',mono:'gb',bg:'#10a37f',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
+  {kind:'gbrain',name:'GBrain',desc:'Queryable by any agent, learns from other brains (you approve what lands), private/open/paid — your repo stays the source of truth.',mono:'gb',bg:'#10a37f',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
    methods:[
      {group:'archive',id:'cli',name:'CLI import (recommended)',status:'ready',action:'copy_cli',
       cli:'noosphere connect-gbrain ~/your-brain --name "My Brain"',
@@ -5054,6 +5054,54 @@ async function loadCorpusEntities(corpusId){
   }catch(e){list.innerHTML='<div class="empty" style="font-size:12px">Failed to load</div>'}
 }
 
+async function showPeerReviewModal(c,sub,onDone){
+  const peer=esc(sub.target_slug||sub.target_endpoint||sub.target_corpus_id||'peer');
+  const wrap=document.createElement('div');wrap.className='acm-overlay';
+  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px">
+    <div class="acm-title">Review · ${peer}</div>
+    <div class="acm-sub">Staged from a peer KB you don't control — nothing has entered your corpus yet. Approve to ingest (peer provenance kept) or discard.</div>
+    <div id="prv-list" style="max-height:50vh;overflow-y:auto;margin:12px 0;display:flex;flex-direction:column;gap:8px"><div class="rp-sub-empty">Loading…</div></div>
+    <div class="acm-actions"><button class="btn-sm-ghost" id="prv-discard">Discard all</button><button class="btn-sm" id="prv-approve" disabled>Approve</button></div>
+  </div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
+  const listEl=wrap.querySelector('#prv-list');
+  const apBtn=wrap.querySelector('#prv-approve');
+  const dsBtn=wrap.querySelector('#prv-discard');
+  let n=0;
+  try{
+    const r=await fetch(`${API}/corpora/${c.id}/subscriptions/${sub.id}/pending`);
+    const d=await r.json();const items=d.pending||[];n=items.length;
+    if(!n)listEl.innerHTML='<div class="rp-sub-empty">Nothing pending.</div>';
+    else{
+      listEl.innerHTML=items.map(it=>`<div class="prv-item"><div class="prv-item-t">${esc(it.title||'Untitled')}</div><div class="prv-item-m">${esc(it.doc_type||'doc')} · ${it.word_count||0} words</div><div class="prv-item-s">${esc(it.snippet||'')}</div></div>`).join('');
+      apBtn.disabled=false;apBtn.textContent=`Approve ${n}`;
+    }
+  }catch(e){listEl.innerHTML='<div class="rp-sub-empty">Failed to load.</div>'}
+  apBtn.onclick=async()=>{
+    apBtn.disabled=true;apBtn.textContent='Approving…';
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/subscriptions/${sub.id}/pending/approve`,{method:'POST'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(d.detail||'Failed');
+      toast(`Approved ${d.applied||0} — added to ${esc(c.name)}`,'success');
+      close();if(onDone)onDone(true);
+    }catch(e){toast('Approve failed: '+e.message,'error');apBtn.disabled=false;apBtn.textContent=`Approve ${n}`}
+  };
+  dsBtn.onclick=async()=>{
+    if(!confirm('Discard all pending items from this subscription? They will not enter your corpus.'))return;
+    dsBtn.disabled=true;
+    try{
+      const r=await fetch(`${API}/corpora/${c.id}/subscriptions/${sub.id}/pending/discard`,{method:'POST'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(d.detail||'Failed');
+      toast(`Discarded ${d.discarded||0}`,'info');
+      close();if(onDone)onDone(false);
+    }catch(e){toast('Discard failed: '+e.message,'error');dsBtn.disabled=false}
+  };
+}
+
 function showAddSubscriptionModal(c,onSaved){
   // Minimal Phase-1 subscribe flow: pick a local peer corpus, a mode, and a
   // cadence. Remote (network) peers + budget/token auth are Phase 2+.
@@ -5868,7 +5916,9 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
         const cad=Number(s.cadence_minutes||0);
         const cadTxt=cad>=10080?`${Math.round(cad/10080)}w`:cad>=1440?`${Math.round(cad/1440)}d`:`${cad}m`;
         const status=s.status||'active';
-        return `<div class="rp-sub-row" data-sub-id="${esc(s.id)}"><span class="rp-sub-dot rp-sub-dot--${status}" title="${esc(status)}"></span><span class="rp-sub-peer">${name}</span><span class="rp-sub-meta">${mode} · ${cadTxt}</span><button class="rp-sub-act" data-sub-run="${esc(s.id)}" title="Run now">▶</button><button class="rp-sub-act rp-sub-act--rm" data-sub-rm="${esc(s.id)}" title="Revoke">×</button></div>`;
+        const pend=Number(s.pending_count||0);
+        const revBtn=pend>0?`<button class="rp-sub-act rp-sub-act--rev" data-sub-review="${esc(s.id)}" title="${pend} update${pend===1?'':'s'} awaiting your review">${pend}·review</button>`:'';
+        return `<div class="rp-sub-row" data-sub-id="${esc(s.id)}"><span class="rp-sub-dot rp-sub-dot--${status}" title="${esc(status)}"></span><span class="rp-sub-peer">${name}</span><span class="rp-sub-meta">${mode} · ${cadTxt}</span>${revBtn}<button class="rp-sub-act" data-sub-run="${esc(s.id)}" title="Run now">▶</button><button class="rp-sub-act rp-sub-act--rm" data-sub-rm="${esc(s.id)}" title="Revoke">×</button></div>`;
       }).join('');
       list.querySelectorAll('[data-sub-run]').forEach(b=>{
         b.onclick=async(ev)=>{
@@ -5878,9 +5928,9 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
             const rr=await fetch(`${API}/corpora/${c.id}/subscriptions/${id}/run`,{method:'POST'});
             const body=await rr.json().catch(()=>({}));
             if(!rr.ok){toast(body.detail||'Run failed','error');b.disabled=false;b.textContent='▶';return}
-            const ing=body.docs_ingested||0;
-            toast(ing?`Ingested ${ing} doc${ing===1?'':'s'} (${body.outcome})`:`No new content (${body.outcome})`,ing?'success':'info');
-            loadSubs();if(ing)renderCorpusSafe(c.id);
+            const pend=body.pending||0;
+            toast(pend?`${pend} update${pend===1?'':'s'} staged — review to apply`:`No new content (${body.outcome})`,pend?'success':'info');
+            loadSubs();
           }catch(e){toast('Run failed: '+e.message,'error');b.disabled=false;b.textContent='▶'}
         };
       });
@@ -5894,6 +5944,13 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
             if(!rr.ok){toast('Revoke failed','error');return}
             toast('Subscription revoked','success');loadSubs();
           }catch(e){toast('Revoke failed: '+e.message,'error')}
+        };
+      });
+      list.querySelectorAll('[data-sub-review]').forEach(b=>{
+        b.onclick=(ev)=>{
+          ev.preventDefault();
+          const s=subs.find(x=>x.id===b.dataset.subReview);
+          if(s)showPeerReviewModal(c,s,(applied)=>{loadSubs();if(applied)renderCorpusSafe(c.id)});
         };
       });
     }catch(e){list.innerHTML='<span class="rp-sub-empty">Failed to load</span>'}

@@ -94,11 +94,22 @@ def get_subscription(sub_id: str) -> dict | None:
 
 
 def list_subscriptions(corpus_id: str) -> list[dict]:
-    rows = get_conn().execute(
+    conn = get_conn()
+    rows = conn.execute(
         "SELECT * FROM peer_subscriptions WHERE subscriber_corpus_id=? ORDER BY created_at DESC",
         (corpus_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    subs = [dict(r) for r in rows]
+    if subs:
+        pend = conn.execute(
+            "SELECT subscription_id, COUNT(*) AS n FROM peer_subscription_pending "
+            "WHERE subscriber_corpus_id=? AND status='pending' GROUP BY subscription_id",
+            (corpus_id,),
+        ).fetchall()
+        pmap = {p["subscription_id"]: int(p["n"] or 0) for p in pend}
+        for s in subs:
+            s["pending_count"] = pmap.get(s["id"], 0)
+    return subs
 
 
 def _set_status(sub_id: str, status: str) -> dict | None:
@@ -126,6 +137,7 @@ def revoke_subscription(sub_id: str) -> bool:
     if not sub:
         return False
     conn = get_conn()
+    conn.execute("DELETE FROM peer_subscription_pending WHERE subscription_id=?", (sub_id,))
     conn.execute("DELETE FROM peer_subscription_runs WHERE subscription_id=?", (sub_id,))
     conn.execute("DELETE FROM peer_subscriptions WHERE id=?", (sub_id,))
     conn.commit()
@@ -188,9 +200,14 @@ def mark_run(
     latency_ms: int = 0,
     error_detail: str | None = None,
     advance_schedule: bool = True,
+    run_id: str | None = None,
 ) -> str:
-    """Append a run-log row. Optionally advances `next_run_at` / `last_run_at`."""
-    run_id = uuid.uuid4().hex[:12]
+    """Append a run-log row. Optionally advances `next_run_at` / `last_run_at`.
+
+    `run_id` may be supplied so the caller can link staged pending items to
+    this run before the row exists; defaults to a fresh id.
+    """
+    run_id = run_id or uuid.uuid4().hex[:12]
     now = _now()
     conn = get_conn()
     conn.execute(
@@ -252,6 +269,146 @@ def reset_failures(sub_id: str):
         (sub_id,),
     )
     conn.commit()
+
+
+# ── Review-before-apply: staged pending cycles ───────────────────────
+#
+# A subscription pulls from a corpus the owner does NOT control (possibly
+# paid, possibly drifting). So the runner never writes straight into the
+# corpus — it stages a cycle as `pending`, the owner sees the digest, then
+# approves (ingest, provenance retained) or discards. "Human always wins"
+# across the trust boundary.
+
+
+def stage_pending(subscriber_corpus_id: str, sub: dict, run_id: str, docs: list[dict]) -> int:
+    """Stage a cycle's docs as pending review — NOT ingested. Deduped by
+    content hash against both already-ingested documents and existing
+    pending rows for this subscription. Returns the number staged."""
+    import hashlib
+    import json
+    if not docs:
+        return 0
+    conn = get_conn()
+    now = _now()
+    staged = 0
+    for d in docs:
+        content = d.get("content") or ""
+        if not content.strip():
+            continue
+        h = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if conn.execute(
+            "SELECT 1 FROM documents WHERE corpus_id=? AND content_hash=? LIMIT 1",
+            (subscriber_corpus_id, h),
+        ).fetchone():
+            continue
+        if conn.execute(
+            "SELECT 1 FROM peer_subscription_pending WHERE subscription_id=? "
+            "AND content_hash=? AND status='pending' LIMIT 1",
+            (sub["id"], h),
+        ).fetchone():
+            continue
+        meta = dict(d.get("extra_meta") or {})
+        meta.update({
+            "subscription_id": sub["id"],
+            "peer_corpus_id": sub.get("target_corpus_id"),
+            "peer_endpoint": sub.get("target_endpoint"),
+        })
+        conn.execute(
+            "INSERT INTO peer_subscription_pending (id, subscription_id, run_id, "
+            "subscriber_corpus_id, title, content, doc_type, tags_json, "
+            "metadata_json, content_hash, status, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?, 'pending', ?)",
+            (uuid.uuid4().hex[:12], sub["id"], run_id, subscriber_corpus_id,
+             d.get("title") or "Untitled", content, d.get("doc_type") or "doc",
+             json.dumps(d.get("tags") or []), json.dumps(meta), h, now),
+        )
+        staged += 1
+    conn.commit()
+    return staged
+
+
+def list_pending(sub_id: str, limit: int = 200) -> list[dict]:
+    """Pending items for the owner's review digest (content trimmed)."""
+    rows = get_conn().execute(
+        "SELECT id, run_id, title, doc_type, content, created_at FROM "
+        "peer_subscription_pending WHERE subscription_id=? AND status='pending' "
+        "ORDER BY created_at DESC LIMIT ?",
+        (sub_id, limit),
+    ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        c = d.pop("content", "") or ""
+        d["snippet"] = c[:240]
+        d["word_count"] = len(c.split())
+        out.append(d)
+    return out
+
+
+def pending_count(sub_id: str) -> int:
+    row = get_conn().execute(
+        "SELECT COUNT(*) AS n FROM peer_subscription_pending "
+        "WHERE subscription_id=? AND status='pending'",
+        (sub_id,),
+    ).fetchone()
+    return int(row["n"] or 0) if row else 0
+
+
+def approve_pending(sub_id: str) -> int:
+    """Owner approves: ingest every pending item into the subscriber corpus
+    (retaining `source_kind='peer_subscription'` provenance), mark applied.
+    Returns the number ingested."""
+    import json
+    from noosphere.core.ingest import ingest_text
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM peer_subscription_pending WHERE subscription_id=? "
+        "AND status='pending' ORDER BY created_at ASC",
+        (sub_id,),
+    ).fetchall()
+    applied = 0
+    for r in rows:
+        try:
+            tags = json.loads(r["tags_json"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            tags = []
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        ingest_text(
+            r["subscriber_corpus_id"],
+            title=r["title"] or "Untitled",
+            content=r["content"] or "",
+            doc_type=r["doc_type"] or "doc",
+            source_kind="peer_subscription",
+            tags=tags,
+            metadata=meta,
+        )
+        conn.execute(
+            "UPDATE peer_subscription_pending SET status='applied', decided_at=? WHERE id=?",
+            (_now(), r["id"]),
+        )
+        applied += 1
+    conn.commit()
+    return applied
+
+
+def discard_pending(sub_id: str) -> int:
+    """Owner discards the staged cycle(s) — nothing enters the corpus."""
+    conn = get_conn()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM peer_subscription_pending "
+        "WHERE subscription_id=? AND status='pending'",
+        (sub_id,),
+    ).fetchone()
+    conn.execute(
+        "UPDATE peer_subscription_pending SET status='discarded', decided_at=? "
+        "WHERE subscription_id=? AND status='pending'",
+        (_now(), sub_id),
+    )
+    conn.commit()
+    return int(n["n"] or 0) if n else 0
 
 
 def has_active_subscription(corpus_id: str) -> bool:
