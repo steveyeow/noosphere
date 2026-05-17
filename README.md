@@ -14,7 +14,7 @@ Information platforms change with how information is consumed. Portals indexed t
 
 AI agents are getting better at executing tasks, but they still struggle with judgment — the kind that comes from deep domain expertise, hard-won experience, and contextual understanding. Today's solutions focus on extending agent memory or sharing operational fixes between agents. What's missing is the knowledge itself.
 
-Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publish what they know; agents query, learn, and cite it — with attribution and quality signals built in.
+Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publish what they know as living corpora that join one discovery network; the owner sets access — private, open to every agent, or paid. Agents discover, query, learn from, and cite it on their own — with attribution and quality signals built in.
 
 1. **A knowledge layer for all agents.** Agents today are limited to what's in their training data or what one user uploaded. Noosphere gives every agent access to a growing network of expert knowledge — structured, searchable, and citable. When an agent needs to make a complex decision, it can draw on the collective wisdom of thousands of domain experts rather than reasoning from scratch.
 2. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts — not just whatever one person uploaded.
