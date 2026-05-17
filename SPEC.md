@@ -1418,9 +1418,11 @@ Applies to every corpus regardless of autonomy tier — the substrate that makes
 
 **4c. Inter-KB learning mechanisms**
 - [x] Direct query with provenance — `X-Noosphere-Caller-Corpus` header attribution on `ask`; successful inter-KB calls auto-record `query`-kind citations (24h dedupe per pair) and refresh `kb_reputation` on the cited corpus
-- [ ] Corpus subscription (KB A subscribes to KB B increments) — shipping order 2
+- [ ] Corpus subscription (KB A subscribes to KB B increments) — shipping order 2. **Infra shipped; blocked on review-before-apply.** `peer_subscriptions` + `peer_subscription_runs` tables, CRUD REST, and `peer_runner` (three modes: `ask` / `describe` / `new_documents`, cadence polling, loop detection, `source_kind='peer_subscription'` provenance) all exist. Gap: the runner calls `ingest_text()` directly, so a subscription silently mutates the subscriber's corpus — no diff, no per-cycle changelog, no owner review, no notification, no rollback. Completed in a dedicated session against the design note below.
 - [ ] Skill / capsule import (Evolver-style portable capability units) — shipping order 3
 - [ ] Derivative corpus with attribution chain — shipping order 4
+
+*Subscription review-before-apply — the blocking design for the item above.* A subscription pulls from a corpus the owner does not control, possibly paid and possibly drifting, so the trust boundary differs from same-owner ingest. Default behavior must be **propose, not apply**: each cycle's output lands in a pending state tied to its `peer_subscription_runs` row, and before anything merges the owner sees a per-cycle digest — new documents, and which existing concepts/entities they would touch. Owner actions: approve (merge, retaining `peer_subscription` provenance), discard (drop the cycle), or opt a trusted subscription into auto-apply. Pending cycles raise a notification so the owner knows review is waiting; merged cycles stay attributable and reversible through their provenance tag. This keeps the "human always wins" invariant intact across a boundary that direct same-owner ingest never crosses.
 
 **4d. Higher autonomy tiers (opt-in)**
 
@@ -1432,7 +1434,7 @@ Networking is the substrate (every corpus is reachable in the network by default
 - [ ] Stale-concept detection + scheduled recompile (uses `stale_threshold_days`)
 
 *Fully Autonomous tier (new):*
-- [ ] Owner-approved auto-subscribe to peer KBs (consumes their increments)
+- [ ] Owner-approved auto-subscribe to peer KBs (consumes their increments) — the opt-in auto-apply path of the 4c subscription review design; presupposes review-before-apply exists as the default
 - [ ] Active peer discovery — corpus periodically scans the registry for relevant new corpora and proposes subscriptions
 - [ ] Autonomous payment for paid corpora within owner-set budget / policy
 - [ ] Outbound queries — corpus proactively queries peers when its own answer would be low-confidence; results fold into its compiled knowledge with provenance

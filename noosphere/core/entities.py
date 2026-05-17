@@ -22,7 +22,7 @@ from noosphere.core.db import get_conn
 
 logger = logging.getLogger(__name__)
 
-VALID_KINDS = {"person", "concept", "work", "place"}
+VALID_KINDS = {"person", "organization", "concept", "work", "place"}
 _EXTRACTION_MAX_CHARS = 3000
 _MIN_WORDS_FOR_EXTRACTION = 20
 
@@ -315,9 +315,10 @@ def extract_entities_from_text(text: str) -> list[dict]:
 
     prompt_text = (
         "Extract named entities from the text. Respond with JSON only, no markdown fences:\n"
-        '{"entities": [{"name": "Full Name", "kind": "person|concept|work|place"}]}\n\n'
+        '{"entities": [{"name": "Full Name", "kind": "person|organization|concept|work|place"}]}\n\n'
         "Rules:\n"
-        "- person: an individual (e.g. 'Paul Graham', 'Andrej Karpathy'). Group names go to concept.\n"
+        "- person: an individual (e.g. 'Paul Graham', 'Andrej Karpathy').\n"
+        "- organization: a company, fund, lab, school, or institution (e.g. 'Stripe', 'Y Combinator', 'OpenAI').\n"
         "- concept: a well-defined idea, theme, or recurring topic (e.g. 'product-market fit', 'living knowledge base').\n"
         "- work: a named book, paper, newsletter, product, or project (e.g. 'The Lean Startup', 'Lenny's Newsletter').\n"
         "- place: a geographic location only when clearly load-bearing to the content.\n"

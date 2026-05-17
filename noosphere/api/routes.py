@@ -1949,6 +1949,75 @@ async def api_import_obsidian(corpus_id: str, request: Request, file: UploadFile
             pass
 
 
+def _gbrain_repo_root(base: str) -> str:
+    """Find the real gbrain repo root inside an extracted zip.
+
+    Zip tools add a single wrapper folder (e.g. `brain/people/...`). Descend
+    through single-wrapper dirs until we reach the level that holds the typed
+    folders or markdown directly. Ignores `.` dirs and macOS noise.
+    """
+    from pathlib import Path
+    cur = Path(base)
+    for _ in range(4):
+        entries = [
+            e for e in cur.iterdir()
+            if not e.name.startswith(".") and e.name != "__MACOSX"
+        ]
+        dirs = [e for e in entries if e.is_dir()]
+        has_md = any(e.is_file() and e.suffix.lower() == ".md" for e in entries)
+        if has_md or len(dirs) != 1:
+            return str(cur)
+        cur = dirs[0]
+    return str(cur)
+
+
+@router.post("/corpora/{corpus_id}/import/gbrain")
+async def api_import_gbrain(corpus_id: str, request: Request, file: UploadFile = File(...)):
+    """Import a GBrain repo (zipped directory) at full fidelity.
+
+    people/ + companies/ become entities (compiled truth = description),
+    concepts/ become Wiki pages, the rest become source docs, and gbrain
+    cross-page slug links resolve to entity references. user_original.
+    """
+    import shutil
+    import tempfile
+    import zipfile
+
+    corpus = _resolve_corpus(corpus_id)
+    contributor_uid = _get_user_id(request)
+    _require_owner(request, corpus)
+    _check_document_limit(request, corpus["id"])
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Expected a .zip archive of your gbrain repo")
+    path = await _save_upload_to_temp(file)
+    workdir = tempfile.mkdtemp(prefix="gbrain-")
+    try:
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                zf.extractall(workdir)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Not a valid .zip archive")
+        root = _gbrain_repo_root(workdir)
+        from noosphere.core.importers import import_gbrain_repo
+        result = import_gbrain_repo(corpus["id"], root, contributor_user_id=contributor_uid)
+        if corpus.get("org_id"):
+            orgs_mod.log_audit(
+                "doc.ingest", org_id=corpus["org_id"], actor_user_id=contributor_uid,
+                resource_type="corpus", resource_id=corpus["id"],
+                metadata={"source": "gbrain", "imported": result.get("imported", 0)},
+                ip_addr=_client_ip(request),
+            )
+        return result
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 # ── Entity extraction (Phase 0.5) ──
 
 

@@ -540,6 +540,107 @@ def connect_obsidian_cmd(vault_path, name, access_level, provider, no_writeback,
         click.echo(f"  noosphere sync {vault} --corpus {cid} --obsidian --watch")
 
 
+@cli.command("import-gbrain")
+@click.argument("repo_path")
+@click.option("--corpus", required=True, help="Corpus ID or slug to import into")
+@click.option("--provider", default="", help="Embedding provider (re-index after import)")
+def import_gbrain_cmd(repo_path, corpus, provider):
+    """Import a GBrain repo directory into an existing corpus.
+
+    Maps gbrain's structure into Noosphere at full fidelity:
+      people/ + companies/  → entities (compiled truth = entity description)
+      concepts/             → Wiki concept pages
+      meetings/ ideas/ ...  → source documents
+    Cross-page slug links resolve to entity references.
+    """
+    from pathlib import Path
+    from noosphere.core.corpus import get_corpus, get_corpus_by_slug
+    from noosphere.core.importers import import_gbrain_repo
+    from noosphere.core.indexer import index_corpus
+
+    repo = Path(repo_path).expanduser()
+    if not repo.is_dir():
+        click.echo(f"Not a directory: {repo}", err=True)
+        raise SystemExit(1)
+    c = get_corpus(corpus) or get_corpus_by_slug(corpus)
+    if not c:
+        click.echo(f"Corpus not found: {corpus}", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Importing GBrain repo {repo} → {c['name']} ({c['id']})...")
+    r = import_gbrain_repo(c["id"], str(repo))
+    click.echo(f"  {r['entities']} entities, {r['concepts']} concept pages, "
+               f"{r['sources']} sources, {r['links_resolved']} cross-links resolved")
+    if r["skipped"] or r["errors"]:
+        click.echo(f"  {r['skipped']} skipped, {r['errors']} errors")
+    if provider:
+        click.echo("  Re-indexing with provider...")
+        index_corpus(c["id"], provider=provider)
+    click.echo(f"\nDone: {c['id']}")
+
+
+@cli.command("connect-gbrain")
+@click.argument("repo_path")
+@click.option("--name", default="", help="Name for the new corpus (default: repo folder name)")
+@click.option("--access-level", default="private",
+              type=click.Choice(["public", "private", "token", "paid"]),
+              help="Access level for the new corpus (default: private)")
+@click.option("--provider", default="", help="Embedding provider")
+def connect_gbrain_cmd(repo_path, name, access_level, provider):
+    """Create a new corpus and import a GBrain repo into it in one step.
+
+    The fastest path for a gbrain user onto the Noosphere network:
+
+        noosphere connect-gbrain ~/brain --name "My Brain" --access-level public
+
+    people/ and companies/ become entity pages whose compiled truth is the
+    entity description; concepts/ become Wiki pages; the rest become sources.
+    A non-private corpus is published to the network immediately.
+    """
+    from pathlib import Path
+    from noosphere.core.corpus import create_corpus
+    from noosphere.core.importers import import_gbrain_repo
+    from noosphere.core.indexer import index_corpus
+    from noosphere.core.registry import resync_registry
+
+    repo = Path(repo_path).expanduser()
+    if not repo.is_dir():
+        click.echo(f"Repo path is not a directory: {repo}", err=True)
+        raise SystemExit(1)
+
+    corpus_name = name.strip() or repo.name or "My GBrain"
+    click.echo(f"Creating corpus '{corpus_name}' (access: {access_level})...")
+    corpus = create_corpus(
+        corpus_name,
+        description=f"Imported from GBrain repo at {repo}",
+        access_level=access_level,
+    )
+    cid = corpus["id"]
+    click.echo(f"  ID: {cid}")
+    click.echo(f"  Slug: {corpus['slug']}")
+
+    click.echo(f"\nImporting GBrain repo {repo}...")
+    r = import_gbrain_repo(cid, str(repo))
+    click.echo(f"  {r['entities']} entities, {r['concepts']} concept pages, "
+               f"{r['sources']} sources, {r['links_resolved']} cross-links resolved")
+    if r["skipped"] or r["errors"]:
+        click.echo(f"  {r['skipped']} skipped, {r['errors']} errors")
+    if provider:
+        click.echo("  Re-indexing with provider...")
+        index_corpus(cid, provider=provider)
+
+    if access_level != "private":
+        resync_registry()
+        click.echo("  Published to the network.")
+
+    click.echo(f"\nCorpus ready: {cid}")
+    if access_level != "private":
+        click.echo("\nTo serve it for agents on the network:")
+        click.echo("  noosphere serve --public-url https://your-host")
+    click.echo("\nTo re-import after your brain changes:")
+    click.echo(f"  noosphere import-gbrain {repo} --corpus {cid}")
+
+
 @cli.command("ingest-feed")
 @click.option("--corpus", required=True, help="Corpus ID or slug")
 @click.argument("feed_url")
