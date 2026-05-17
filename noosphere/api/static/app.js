@@ -1047,7 +1047,6 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
             </div>
           </div>
         </div>
-        <p class="lp-sec-foot">Underneath all of it: every answer carries the owner's license and its provenance, auditable — so an agent can use what it paid for without guessing at the rights.</p>
       </div>
     </div>
   </section>
