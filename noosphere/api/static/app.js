@@ -4567,7 +4567,7 @@ async function renderCorpus(id,sessionId,opts){
   // via hash: #/corpus/{id} = Overview, #/corpus/{id}/insights = Insights.
   // Keeping the URL shape stable now so future Agent-activity data lands
   // without a migration.
-  const tabStripHTML=`<div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab cv-tab--active">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a><a href="#/corpus/${id}/settings" class="cv-tab">Settings</a></div>`;
+  const tabStripHTML=`<div class="cv-tabs"><a href="#/corpus/${id}" class="cv-tab cv-tab--active">Overview</a><a href="#/corpus/${id}/insights" class="cv-tab">Insights</a><a href="#/corpus/${id}/settings" class="cv-tab">Settings</a><span class="cv-viewtoggle" id="cv-viewtoggle" title="Switch how content renders when you open a row"><button class="cv-vt${_docView==='html'?' cv-vt--on':''}" data-v="html">Rendered</button><button class="cv-vt${_docView==='md'?' cv-vt--on':''}" data-v="md">Markdown</button></span></div>`;
   // Wiki sub-label counts EVERY item rendered in the section (manifest +
   // concept notes). Earlier version counted concepts only — users saw 2
   // rows with "1" in the header and reasonably asked "why 1?". Match the
@@ -4759,16 +4759,17 @@ async function renderCorpus(id,sessionId,opts){
     if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||e.target.closest('.ent-rel')||e.target.closest('.ent-recompile')||item.classList.contains('editing'))return;
     if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
     if(item.classList.contains('doc-item--entity')){await _expandEntityItem(item,id);return}
-    item.classList.add('expanded');
-    try{
-      const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
-      const d=await r.json();
-      const b=document.createElement('div');b.className='doc-bd doc-bd-md';
-      b.innerHTML=_mdToHtml(d.content||'');
-      _bindWikilinks(b,id);
-      item.appendChild(b);
-    }catch(e){}
+    await _expandDocItem(item,id);
   })});
+  const _vt=document.getElementById('cv-viewtoggle');
+  if(_vt)_vt.querySelectorAll('.cv-vt').forEach(btn=>btn.onclick=()=>{
+    const v=btn.dataset.v;
+    if(v===_docView)return;
+    _docView=v;
+    try{localStorage.setItem('noos-docview',v)}catch(_){}
+    _vt.querySelectorAll('.cv-vt').forEach(b=>b.classList.toggle('cv-vt--on',b.dataset.v===v));
+    _reopenExpanded(id);
+  });
   if(opts&&opts.expandEntity){
     const sel='.doc-item--entity[data-entity-id="'+(window.CSS&&CSS.escape?CSS.escape(opts.expandEntity):opts.expandEntity)+'"]';
     const row=ct.querySelector(sel);
@@ -5127,6 +5128,15 @@ function showAddSubscriptionModal(c,onSaved){
 
 const _ENT_VERB={founded:'founded',works_at:'works at',advises:'advises',invested_in:'invested in',attended:'attended',close_to:'close to',related:'related to'};
 
+// Unified content view: 'html' (rendered markdown) or 'md' (raw source).
+// Toggled from the corpus tab strip; persisted across sessions.
+let _docView=(()=>{try{return localStorage.getItem('noos-docview')==='md'?'md':'html'}catch(_){return'html'}})();
+function _proseHTML(src){
+  return _docView==='md'
+    ? `<pre class="doc-bd-raw">${esc(src||'')}</pre>`
+    : _mdToHtml(src||'');
+}
+
 function entityExpandHTML(corpusId,en){
   const edges=en.edges||{outbound:[],inbound:[]};
   const out=edges.outbound||[],inb=edges.inbound||[];
@@ -5140,7 +5150,9 @@ function entityExpandHTML(corpusId,en){
   const n=out.length+inb.length;
   const relBlock=n?`<div class="ent-rel-sec"><div class="ent-rel-lbl">Relationships <span class="ent-rel-cnt">${n}</span></div><div class="ent-rel-list">${out.map(e=>rel(e,false)).join('')}${inb.map(e=>rel(e,true)).join('')}</div></div>`:'';
   const truth=en.description
-    ? `<div class="ent-truth">${_mdToHtml(en.description)}</div>`
+    ? (_docView==='md'
+        ? `<pre class="doc-bd-raw">${esc(en.description)}</pre>`
+        : `<div class="ent-truth">${_mdToHtml(en.description)}</div>`)
     : '<p class="doc-bd-empty">No compiled truth yet.</p>';
   const recompile=(en.doc_count>0)?`<button class="btn-sm-ghost ent-recompile">${en.description?'Recompile':'Compile truth'}</button>`:'';
   return relBlock+truth+recompile;
@@ -5197,6 +5209,32 @@ function _flash(el){
   void el.offsetWidth;            // restart the animation if re-triggered
   el.classList.add('doc-item--flash');
   setTimeout(()=>el.classList.remove('doc-item--flash'),1300);
+}
+
+async function _expandDocItem(item,corpusId){
+  if(item.classList.contains('expanded'))return;
+  item.classList.add('expanded');
+  try{
+    const r=await fetch(`${API}/corpora/${corpusId}/documents/${item.dataset.id}`);
+    const d=await r.json();
+    const b=document.createElement('div');
+    b.className=_docView==='md'?'doc-bd':'doc-bd doc-bd-md';
+    b.innerHTML=_proseHTML(d.content);
+    if(_docView!=='md')_bindWikilinks(b,corpusId);
+    item.appendChild(b);
+  }catch(e){}
+}
+
+// Re-render any open rows after a view-mode toggle so the switch is
+// immediate (collapse → re-expand through the shared expanders).
+async function _reopenExpanded(corpusId){
+  const open=[...document.querySelectorAll('#content .doc-item.expanded')];
+  for(const it of open){
+    const b=it.querySelector('.doc-bd');if(b)b.remove();
+    it.classList.remove('expanded');
+    if(it.classList.contains('doc-item--entity'))await _expandEntityItem(it,corpusId);
+    else await _expandDocItem(it,corpusId);
+  }
 }
 
 // Source kind options shown on Sources rows. Mirrors the upload panels at
