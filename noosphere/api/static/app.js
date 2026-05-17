@@ -635,7 +635,9 @@ async function route(){const h=location.hash||'#/';stopAll();
     const segs=pathPart.split('/');
     const corpusId=segs[0];
     if(segs[1]==='entity'&&segs[2]){
-      await renderEntity(corpusId,segs[2]);
+      // Entity has no separate page — deep-link into the corpus surface
+      // with that entity's Wiki row pre-expanded (keeps the URL citable).
+      await renderCorpus(corpusId,null,{expandEntity:segs[2]});
     }else if(segs[1]==='insights'){
       await renderCorpusInsights(corpusId);
     }else if(segs[1]==='settings'){
@@ -4492,7 +4494,7 @@ function openShareDialog(corpus,doc){
   };
 }
 
-async function renderCorpus(id,sessionId){
+async function renderCorpus(id,sessionId,opts){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
   // Public corpora get structured metadata so AI/search crawlers can index
@@ -4754,27 +4756,24 @@ async function renderCorpus(id,sessionId){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{
-    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||e.target.closest('.ent-fullpage-link')||item.classList.contains('editing'))return;
+    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||e.target.closest('.ent-rel')||e.target.closest('.ent-recompile')||item.classList.contains('editing'))return;
     if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
+    if(item.classList.contains('doc-item--entity')){await _expandEntityItem(item,id);return}
     item.classList.add('expanded');
-    const isEnt=item.classList.contains('doc-item--entity');
     try{
+      const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
+      const d=await r.json();
       const b=document.createElement('div');b.className='doc-bd doc-bd-md';
-      if(isEnt){
-        const eid=item.dataset.entityId;
-        const r=await fetch(`${API}/corpora/${id}/entities/${eid}`);
-        const en=await r.json();
-        b.innerHTML=(en.description?_mdToHtml(en.description):'<p class="doc-bd-empty">No compiled truth yet.</p>')
-          +`<a class="ent-fullpage-link" href="#/corpus/${id}/entity/${eid}">Open full page &rarr;</a>`;
-      }else{
-        const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
-        const d=await r.json();
-        b.innerHTML=_mdToHtml(d.content||'');
-        _bindWikilinks(b,id);
-      }
+      b.innerHTML=_mdToHtml(d.content||'');
+      _bindWikilinks(b,id);
       item.appendChild(b);
     }catch(e){}
   })});
+  if(opts&&opts.expandEntity){
+    const sel='.doc-item--entity[data-entity-id="'+(window.CSS&&CSS.escape?CSS.escape(opts.expandEntity):opts.expandEntity)+'"]';
+    const row=ct.querySelector(sel);
+    if(row){await _expandEntityItem(row,id);row.scrollIntoView({behavior:'smooth',block:'center'});_flash(row);}
+  }
 }
 
 /* ══════ INSIGHTS TAB — Agent activity ══════ */
@@ -5121,53 +5120,83 @@ function showAddSubscriptionModal(c,onSaved){
   };
 }
 
-async function renderEntity(corpusId,entityId){
-  const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
-  hideRP();
-  let c=null;try{const r=await fetch(`${API}/corpora/${corpusId}`);if(r.ok)c=await r.json()}catch(e){}
-  let ent=null;try{const r=await fetch(`${API}/corpora/${corpusId}/entities/${entityId}`);if(!r.ok){ct.innerHTML=`<a class="cv-back" href="#/corpus/${corpusId}">&larr; Back</a><div class="empty" style="margin-top:40px">Entity not found</div>`;return}ent=await r.json()}catch(e){ct.innerHTML='<div class="empty">Failed to load</div>';return}
-  const aliases=Array.isArray(ent.aliases)?ent.aliases:[];
-  const buckets=[
-    {key:'authored_by',label:'Authored',docs:ent.authored_by||[]},
-    {key:'participated',label:'Participated in',docs:ent.participated||[]},
-    {key:'mentioned_in',label:'Mentioned in',docs:ent.mentioned_in||[]},
-  ].filter(b=>b.docs.length>0);
-  const bucketHTML=buckets.map(b=>`<div class="ep-bucket"><div class="ep-bucket-lbl">${esc(b.label)} <span class="ep-bucket-cnt">${b.docs.length}</span></div><div class="ep-doc-list">${b.docs.map(d=>`<a class="ep-doc" href="#/corpus/${corpusId}/doc/${d.id}" onclick="event.preventDefault();location.hash='#/corpus/${corpusId}';"><div class="ep-doc-title">${esc(d.title)}</div><div class="ep-doc-meta">${esc(d.doc_type||'')}${d.date?' · '+esc(d.date):''}${d.word_count?' · '+d.word_count+' words':''}<span class="ep-doc-sk sk-${d.source_kind}">${esc(d.source_kind)}</span></div></a>`).join('')}</div></div>`).join('');
-  const canCompile=ent.doc_count>0;
-  const compileBtnLabel=ent.description?'Recompile':'Compile truth';
-  const edges=ent.edges||{outbound:[],inbound:[]};
-  const edgeOut=edges.outbound||[],edgeIn=edges.inbound||[];
-  const edgeCount=edgeOut.length+edgeIn.length;
-  const _VERB={founded:'founded',works_at:'works at',advises:'advises',invested_in:'invested in',attended:'attended',close_to:'close to',related:'related to'};
-  const relRow=(e,inbound)=>{
-    const verb=_VERB[e.type]||e.type;
-    // Show the source cue only when it adds context the verb doesn't —
-    // i.e. generic 'related to' edges. Otherwise the verb already says it.
-    const ctx=(e.type==='related'&&e.label)?' · '+esc(e.label):'';
-    return `<a class="ep-doc" href="#/corpus/${corpusId}/entity/${e.entity_id}"${e.label?` title="from: ${esc(e.label)}"`:''}><div class="ep-doc-title">${esc(e.name)}</div><div class="ep-doc-meta">${inbound?'← ':''}${esc(verb)}${ctx} · ${esc(e.kind)}</div></a>`;
-  };
-  const relHTML=edgeCount?`<div class="ep-bucket"><div class="ep-bucket-lbl">Relationships <span class="ep-bucket-cnt">${edgeCount}</span></div><div class="ep-doc-list">${edgeOut.map(e=>relRow(e,false)).join('')}${edgeIn.map(e=>relRow(e,true)).join('')}</div></div>`:'';
-  const compiledBlock=ent.description
-    ? `<details class="ep-collapse"><summary class="ep-collapse-sum">Compiled truth</summary><div class="ep-compiled-body doc-bd-md" id="ep-compiled-body">${_mdToHtml(ent.description||'')}</div><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></details>`
-    : (canCompile?`<div class="ep-compile-empty"><button class="btn-sm" id="ep-compile-btn">${compileBtnLabel}</button><span class="ep-compile-hint">Synthesize a summary from the ${ent.doc_count} related doc${ent.doc_count===1?'':'s'}</span></div>`:'');
-  const connHTML=edgeCount?`<span><strong>${edgeCount}</strong> connection${edgeCount===1?'':'s'}</span>`:'';
-  ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats">${connHTML}<span><strong>${ent.doc_count||0}</strong> source${ent.doc_count===1?'':'s'}</span></div></div>${relHTML}${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
+// Entities have no separate page. An entity's view lives inside its
+// expanded Wiki row: typed Relationships (clickable — jump+expand the
+// target row in place) + the compiled truth. Same model as gbrain /
+// Karpathy: a flat unit + links, navigated by following the link.
 
-  async function doCompile(btnId){
-    const btn=document.getElementById(btnId);if(!btn)return;
-    btn.disabled=true;const orig=btn.textContent;btn.textContent='Compiling...';
+const _ENT_VERB={founded:'founded',works_at:'works at',advises:'advises',invested_in:'invested in',attended:'attended',close_to:'close to',related:'related to'};
+
+function entityExpandHTML(corpusId,en){
+  const edges=en.edges||{outbound:[],inbound:[]};
+  const out=edges.outbound||[],inb=edges.inbound||[];
+  const rel=(e,inbound)=>{
+    const verb=_ENT_VERB[e.type]||e.type;
+    // The source cue only adds info for generic 'related' edges; the verb
+    // already says it otherwise. Full cue stays on hover via title.
+    const ctx=(e.type==='related'&&e.label)?' · '+esc(e.label):'';
+    return `<a class="ent-rel" data-jump-entity="${esc(e.entity_id)}" href="#/corpus/${corpusId}/entity/${e.entity_id}"${e.label?` title="from: ${esc(e.label)}"`:''}><span class="ent-rel-verb">${inbound?'← ':''}${esc(verb)}</span><span class="ent-rel-name">${esc(e.name)}</span><span class="ent-rel-kind">${esc(e.kind)}${ctx}</span></a>`;
+  };
+  const n=out.length+inb.length;
+  const relBlock=n?`<div class="ent-rel-sec"><div class="ent-rel-lbl">Relationships <span class="ent-rel-cnt">${n}</span></div><div class="ent-rel-list">${out.map(e=>rel(e,false)).join('')}${inb.map(e=>rel(e,true)).join('')}</div></div>`:'';
+  const truth=en.description
+    ? `<div class="ent-truth">${_mdToHtml(en.description)}</div>`
+    : '<p class="doc-bd-empty">No compiled truth yet.</p>';
+  const recompile=(en.doc_count>0)?`<button class="btn-sm-ghost ent-recompile">${en.description?'Recompile':'Compile truth'}</button>`:'';
+  return relBlock+truth+recompile;
+}
+
+async function _expandEntityItem(item,corpusId){
+  if(item.classList.contains('expanded'))return;
+  item.classList.add('expanded');
+  const eid=item.dataset.entityId;
+  const b=document.createElement('div');b.className='doc-bd doc-bd-md';
+  let en=null;
+  try{
+    const r=await fetch(`${API}/corpora/${corpusId}/entities/${eid}`);
+    en=await r.json();
+    b.innerHTML=entityExpandHTML(corpusId,en);
+  }catch(e){b.innerHTML='<p class="doc-bd-empty">Failed to load.</p>'}
+  item.appendChild(b);
+  b.querySelectorAll('.ent-rel').forEach(a=>a.addEventListener('click',ev=>{
+    ev.preventDefault();ev.stopPropagation();
+    _jumpToEntity(corpusId,a.dataset.jumpEntity);
+  }));
+  const rc=b.querySelector('.ent-recompile');
+  if(rc)rc.addEventListener('click',async ev=>{
+    ev.preventDefault();ev.stopPropagation();
+    if(gateProFeature&&gateProFeature('Compiling entity truth is a Pro feature'))return;
+    rc.disabled=true;const o=rc.textContent;rc.textContent='Compiling…';
     try{
-      const r=await fetch(`${API}/corpora/${corpusId}/entities/${entityId}/compile`,{method:'POST'});
-      if(!r.ok){
-        const d=await r.json().catch(()=>({}));
-        if(!handleQuotaError(r,d))toast('Compile failed: '+errMsg(d,'error'),'error');
-        btn.disabled=false;btn.textContent=orig;return;
-      }
-      renderEntity(corpusId,entityId);
-    }catch(e){toast('Compile failed: '+e.message,'error');btn.disabled=false;btn.textContent=orig}
-  }
-  const cBtn=document.getElementById('ep-compile-btn');if(cBtn)cBtn.onclick=()=>doCompile('ep-compile-btn');
-  const rBtn=document.getElementById('ep-recompile-btn');if(rBtn)rBtn.onclick=()=>doCompile('ep-recompile-btn');
+      const r=await fetch(`${API}/corpora/${corpusId}/entities/${eid}/compile`,{method:'POST'});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){if(!handleQuotaError(r,d))toast('Compile failed: '+errMsg(d,'error'),'error');rc.disabled=false;rc.textContent=o;return}
+      const ob=item.querySelector('.doc-bd');if(ob)ob.remove();
+      item.classList.remove('expanded');
+      await _expandEntityItem(item,corpusId);
+    }catch(e){toast('Compile failed: '+e.message,'error');rc.disabled=false;rc.textContent=o}
+  });
+}
+
+async function _jumpToEntity(corpusId,targetId){
+  if(!targetId)return;
+  const sel='.doc-item--entity[data-entity-id="'+(window.CSS&&CSS.escape?CSS.escape(targetId):targetId)+'"]';
+  const row=document.querySelector(sel);
+  if(!row){location.hash='#/corpus/'+corpusId+'/entity/'+targetId;return}
+  // Collapse other expanded entity rows so the jump target is the focus.
+  document.querySelectorAll('.doc-item--entity.expanded').forEach(it=>{
+    if(it!==row){const b=it.querySelector('.doc-bd');if(b)b.remove();it.classList.remove('expanded')}
+  });
+  await _expandEntityItem(row,corpusId);
+  row.scrollIntoView({behavior:'smooth',block:'center'});
+  _flash(row);
+}
+
+function _flash(el){
+  el.classList.remove('doc-item--flash');
+  void el.offsetWidth;            // restart the animation if re-triggered
+  el.classList.add('doc-item--flash');
+  setTimeout(()=>el.classList.remove('doc-item--flash'),1300);
 }
 
 // Source kind options shown on Sources rows. Mirrors the upload panels at

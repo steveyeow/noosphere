@@ -446,11 +446,6 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .ep-compiled-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .ep-compiled-lbl{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ep-compiled-body{font-size:14px;color:var(--tx);line-height:1.7;font-family:'Libre Baskerville',Georgia,serif}
-.ep-collapse{margin:0 0 28px;padding:14px 22px;border-radius:12px;background:color-mix(in srgb,var(--bgH) 40%,transparent);border:1px solid var(--brd)}
-.ep-collapse>summary{cursor:pointer;font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;list-style:none}
-.ep-collapse>summary::-webkit-details-marker{display:none}
-.ep-collapse[open]>summary{margin-bottom:12px}
-.ep-collapse .ep-compiled-body{margin-bottom:12px}
 .ep-compile-empty{display:flex;align-items:center;gap:12px;margin-bottom:24px;padding:14px 16px;border-radius:10px;background:var(--bg2);border:1px dashed var(--brd)}
 .ep-compile-hint{font-size:12px;color:var(--tx3)}
 .ep-bucket{margin-bottom:28px}
@@ -898,8 +893,23 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 /* ── Document items ── */
 .doc-item{padding:10px 14px;border-radius:10px;background:var(--bg2);border:1px solid var(--brd);margin-bottom:6px;cursor:pointer;transition:background .12s}.doc-item:hover{background:var(--bgH)}
 .doc-item--entity{display:block;color:inherit;text-decoration:none}
-.ent-fullpage-link{display:inline-block;margin-top:10px;font-size:12px;color:var(--tx3);text-decoration:none}.ent-fullpage-link:hover{color:var(--tx1)}
 .doc-bd-empty{font-size:13px;color:var(--tx3);margin:0}
+/* Relationships inside an expanded entity row — clearly clickable jump
+   targets (same card language as .doc-item so the affordance is obvious). */
+.ent-rel-sec{margin:0 0 18px}
+.ent-rel-lbl{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:8px}
+.ent-rel-cnt{font-family:var(--mono);font-weight:400}
+.ent-rel-list{display:flex;flex-direction:column;gap:5px}
+.ent-rel{display:flex;align-items:baseline;gap:10px;padding:8px 12px;border-radius:8px;background:var(--bg2);border:1px solid var(--brd);text-decoration:none;color:inherit;cursor:pointer;transition:background .12s,border-color .12s}
+.ent-rel:hover{background:var(--bgH);border-color:var(--tx3)}
+.ent-rel-verb{font-size:11px;color:var(--tx3);min-width:78px;flex-shrink:0}
+.ent-rel-name{font-size:13px;font-weight:600;color:var(--tx);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ent-rel:hover .ent-rel-name{text-decoration:underline}
+.ent-rel-kind{font-size:11px;color:var(--tx3);flex-shrink:0}
+.ent-truth{font-size:14px;color:var(--tx);line-height:1.7;font-family:'Libre Baskerville',Georgia,serif}
+.ent-recompile{margin-top:14px}
+.doc-item--flash{animation:entFlash 1.3s ease-out}
+@keyframes entFlash{0%{box-shadow:0 0 0 2px var(--tx3)}100%{box-shadow:0 0 0 0 transparent}}
 .doc-hd{display:flex;align-items:center;justify-content:space-between}.doc-tt{font-size:14px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .doc-hd-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .doc-mt{font-size:11px;color:var(--tx3)}
