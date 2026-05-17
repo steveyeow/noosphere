@@ -115,6 +115,9 @@ def test_entity_kinds_and_compiled_truth(corpus, brain):
     assert JANE_TRUTH in jane["description"]
     assert JANE_TIMELINE_ONLY not in jane["description"]
     assert "Jane D" in jane["aliases"] and "JD" in jane["aliases"]
+    # gbrain on-disk link syntax is stripped to clean prose in the description
+    assert "](" not in jane["description"] and "[[" not in jane["description"]
+    assert "Acme" in jane["description"]  # link text preserved, syntax gone
 
 
 def test_concept_doc_type(corpus, brain):

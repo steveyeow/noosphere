@@ -4525,11 +4525,20 @@ async function renderCorpus(id,sessionId){
   // it's still reachable under the entity's "Mentioned in".
   const entNameSet=new Set(ents.map(e=>(e.canonical_name||'').toLowerCase()).filter(Boolean));
   const rawDocs=docs.filter(d=>d.doc_type!=='concept'&&d.doc_type!=='manifest'&&!entNameSet.has((d.title||'').toLowerCase()));
-  const _ENT_LABELS={person:'People',organization:'Companies',concept:'Concepts',work:'Works',place:'Places'};
-  const _entByKind={};for(const e of ents){(_entByKind[e.kind]=_entByKind[e.kind]||[]).push(e)}
-  const entGroupsHTML=['person','organization','concept','work','place'].filter(k=>_entByKind[k]).map(k=>{
-    const items=_entByKind[k].slice().sort((a,b)=>(b.mention_count||0)-(a.mention_count||0));
-    return `<div class="cv-ent-group"><div class="cv-ent-kind">${_ENT_LABELS[k]||esc(k)}</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${id}/entity/${e.id}" title="${(e.mention_count||0)} mention${(e.mention_count||0)===1?'':'s'}">${esc(e.canonical_name)}<span class="cv-ent-cnt">${e.mention_count||0}</span></a>`).join('')}</div></div>`;
+  // Entity rows use the SAME row primitive as doc rows (.doc-item) for one
+  // consistent Wiki rhythm — just an <a> to the entity page instead of an
+  // expandable doc. Kind is carried in the meta line (like a doc's
+  // source-kind), so no separate per-kind sub-headers are needed.
+  const _ENT_LABELS={person:'Person',organization:'Company',concept:'Concept',work:'Work',place:'Place'};
+  const _entRank={person:0,organization:1,concept:2,work:3,place:4};
+  const entRows=ents.slice().sort((a,b)=>{
+    const ra=_entRank[a.kind]??9,rb=_entRank[b.kind]??9;
+    return ra!==rb?ra-rb:(b.mention_count||0)-(a.mention_count||0);
+  });
+  const entGroupsHTML=entRows.map(e=>{
+    const n=e.mention_count||0;
+    const meta=`${_ENT_LABELS[e.kind]||esc(e.kind)}${n?` · ${n} mention${n===1?'':'s'}`:''}`;
+    return `<a class="doc-item doc-item--entity" href="#/corpus/${id}/entity/${e.id}"><div class="doc-hd"><span class="doc-tt">${esc(e.canonical_name)}</span><span class="doc-hd-right"><span class="doc-mt">${meta}</span><span class="doc-ar">▸</span></span></div></a>`;
   }).join('');
   const docItemHTML=(d)=>{
     const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');
@@ -4745,7 +4754,7 @@ async function renderCorpus(id,sessionId){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{
-    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||item.classList.contains('editing'))return;
+    if(item.classList.contains('doc-item--entity')||e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||item.classList.contains('editing'))return;
     if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
     item.classList.add('expanded');
     try{
@@ -5136,7 +5145,7 @@ async function renderEntity(corpusId,entityId){
   const canCompile=ent.doc_count>0;
   const compileBtnLabel=ent.description?'Recompile':'Compile truth';
   const compiledBlock=ent.description
-    ? `<div class="ep-compiled"><div class="ep-compiled-hd"><span class="ep-compiled-lbl">Compiled truth</span><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></div><div class="ep-compiled-body" id="ep-compiled-body">${esc(ent.description).replace(/\n/g,'<br/>')}</div></div>`
+    ? `<div class="ep-compiled"><div class="ep-compiled-hd"><span class="ep-compiled-lbl">Compiled truth</span><button class="btn-sm-ghost" id="ep-recompile-btn">Recompile</button></div><div class="ep-compiled-body doc-bd-md" id="ep-compiled-body">${_mdToHtml(ent.description||'')}</div></div>`
     : (canCompile?`<div class="ep-compile-empty"><button class="btn-sm" id="ep-compile-btn">${compileBtnLabel}</button><span class="ep-compile-hint">Synthesize a summary from the ${ent.doc_count} related doc${ent.doc_count===1?'':'s'}</span></div>`:'');
   ct.innerHTML=`<div class="ep-wrap"><a class="cv-back" href="#/corpus/${corpusId}">&larr; ${esc(c?.name||'Corpus')}</a><div class="ep-header"><div class="ep-kind">${esc(ent.kind)}</div><h1 class="ep-name">${esc(ent.canonical_name)}</h1>${aliases.length?`<div class="ep-aliases">also known as ${aliases.map(a=>`<span class="ep-alias">${esc(a)}</span>`).join(', ')}</div>`:''}<div class="ep-stats"><span><strong>${ent.doc_count||0}</strong> document${ent.doc_count===1?'':'s'}</span>${ent.authored_by?.length?`<span>${ent.authored_by.length} authored</span>`:''}${ent.participated?.length?`<span>${ent.participated.length} participated</span>`:''}${ent.mentioned_in?.length?`<span>${ent.mentioned_in.length} mentioned</span>`:''}</div></div>${compiledBlock}${buckets.length?bucketHTML:'<div class="empty">No documents reference this entity yet.</div>'}</div>`;
 

@@ -326,6 +326,19 @@ def _gbrain_strip_h1(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _gbrain_clean_links(text: str) -> str:
+    """Strip gbrain on-disk link syntax to plain text for compiled-truth prose.
+
+    `[Name](../people/x.md)` -> `Name`, `[[Name]]` -> `Name`. Those links are
+    gbrain's filesystem cross-references — noise in a reader-facing summary,
+    and broken as web links. The entity graph is tracked separately via the
+    document link-resolution pass, so nothing is lost structurally.
+    """
+    text = re.sub(r"\[\[([^\[\]|]+?)(?:\|[^\[\]]+)?\]\]", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    return text
+
+
 def _gbrain_aliases(fm: dict[str, Any]) -> list[str]:
     a = fm.get("aliases") or fm.get("alias")
     if isinstance(a, str):
@@ -436,7 +449,7 @@ def import_gbrain_repo(
                 eid = upsert_entity(
                     corpus_id, kind, title,
                     aliases=aliases,
-                    description=_gbrain_strip_h1(truth),
+                    description=_gbrain_clean_links(_gbrain_strip_h1(truth)),
                     metadata={"source": "gbrain", "gbrain_slug": slug,
                               "original_path": str(rel)},
                 )
