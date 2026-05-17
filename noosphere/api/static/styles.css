@@ -475,6 +475,11 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .doc-sk.sk-user_capture{background:color-mix(in srgb,#60a5fa 18%,transparent);color:#2c5ca8}
 .doc-sk.sk-external_public{background:var(--bgH);color:var(--tx3)}
 .doc-sk.sk-external_subscription{background:color-mix(in srgb,#f87171 15%,transparent);color:#a14343}
+.doc-sk.doc-sk-ent{background:var(--bgH);color:var(--tx3)}
+.cv-wfilter{display:flex;flex-wrap:wrap;gap:6px;padding:10px 0 2px}
+.cv-wf{font-size:11px;color:var(--tx3);background:var(--bg2);border:1px solid var(--brd);cursor:pointer;padding:3px 11px;border-radius:999px;font-family:inherit;transition:color .12s,background .12s,border-color .12s}
+.cv-wf:hover{color:var(--tx2)}
+.cv-wf--on{color:var(--tx);background:var(--bgH);border-color:var(--tx3)}
 /* Dark mode: the original dark-on-tinted-dark text (#2a7a3e green, #2c5ca8
    blue, #a14343 red) renders near-invisible against var(--bg2). Lift the
    text to the bright end of each hue so the pill still semantically signals
