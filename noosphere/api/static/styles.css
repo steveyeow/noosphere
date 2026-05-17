@@ -476,7 +476,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .doc-sk.sk-external_public{background:var(--bgH);color:var(--tx3)}
 .doc-sk.sk-external_subscription{background:color-mix(in srgb,#f87171 15%,transparent);color:#a14343}
 .doc-sk.doc-sk-ent{background:var(--bgH);color:var(--tx3)}
-.cv-wfilter{display:flex;flex-wrap:wrap;gap:6px;padding:10px 0 2px}
+.cv-wfilter{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
 .cv-wf{font-size:11px;color:var(--tx3);background:var(--bg2);border:1px solid var(--brd);cursor:pointer;padding:3px 11px;border-radius:999px;font-family:inherit;transition:color .12s,background .12s,border-color .12s}
 .cv-wf:hover{color:var(--tx2)}
 .cv-wf--on{color:var(--tx);background:var(--bgH);border-color:var(--tx3)}
