@@ -3602,6 +3602,14 @@ const _SOURCE_CONNECTORS=[
      {group:'live',id:'plugin',name:'Obsidian plugin',status:'beta',action:'show_plugin_docs',
       desc:'One-click sync from inside Obsidian — ribbon icon, watch mode, settings UI. Self-hosted today; build from the repo\'s plugin/ folder.'},
    ]},
+  {kind:'gbrain',name:'GBrain',desc:'Your local gbrain repo — people & companies become entities, concepts become Wiki.',mono:'gb',bg:'#10a37f',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
+   methods:[
+     {group:'archive',id:'cli',name:'CLI import (recommended)',status:'ready',action:'copy_cli',
+      cli:'noosphere connect-gbrain ~/your-brain --name "My Brain"',
+      desc:'One command — creates a corpus and imports your gbrain repo at full fidelity. people/ + companies/ become entity pages (compiled truth = the entity description), concepts/ become Wiki pages, cross-page links resolve to typed relationships. Re-run noosphere import-gbrain to refresh.'},
+     {group:'archive',id:'zip',name:'Upload repo (ZIP)',status:'ready',action:'upload_archive',archiveKind:'gbrain',
+      desc:'No CLI? Zip your gbrain repo folder and upload — same full-fidelity mapping. Repo and Noosphere diverge after this; re-upload to refresh.'},
+   ]},
   {kind:'notion',name:'Notion',desc:'Your Notion workspace — one-shot export today, live sync coming.',mono:'N',bg:'#000000',fg:'#ffffff',status:'avail',pro:false,cta:'Open',
    methods:[
      {group:'archive',id:'zip',name:'Upload export (ZIP)',status:'ready',action:'upload_archive',archiveKind:'notion',
@@ -4271,7 +4279,8 @@ const _CHINT_FLAG='noosphere_chint_dismissed';
 const _CONNECTOR_PRIORITY={
   // kind        personal, team
   obsidian:    [1, 8],
-  notion:      [2, 5],
+  gbrain:      [2, 10],
+  notion:      [3, 5],
   twitter:     [3, 12],
   readwise:    [4, 13],
   evernote:    [5, 14],

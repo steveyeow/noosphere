@@ -38,18 +38,31 @@ noosphere import-gbrain ~/brain --corpus <corpus_id>
 noosphere serve --public-url https://your-host
 ```
 
-## Use it as a gbrain skill
+## Use it as a gbrain skill (one command)
 
-So a brain can publish itself (and re-publish whenever it grows):
+So the brain can publish itself — and re-publish whenever it grows. Run
+this **from your gbrain repo root** (needs `jq`):
 
-1. Copy the `publish-to-noosphere/` folder into your gbrain repo's `skills/`
-   directory.
-2. Add the object in `manifest-entry.json` to the `skills` array in your
-   gbrain `skills/manifest.json` (or run `gbrain skillpack install` if you
-   package it as a skillpack).
-3. Ask your agent to run the **publish-to-noosphere** skill. It finds the
-   brain root, imports it into Noosphere, writes a `.noosphere.json` marker
-   for incremental re-publishing, and reports what mapped.
+```bash
+NS=https://raw.githubusercontent.com/steveyeow/noosphere/main/integrations/gbrain
+mkdir -p skills/publish-to-noosphere \
+ && curl -fsSL $NS/publish-to-noosphere/SKILL.md -o skills/publish-to-noosphere/SKILL.md \
+ && jq --argjson e "$(curl -fsSL $NS/manifest-entry.json)" \
+      '.skills += [$e]' skills/manifest.json > skills/manifest.json.tmp \
+ && mv skills/manifest.json.tmp skills/manifest.json
+```
+
+Then ask your agent: **run the publish-to-noosphere skill**. It finds the
+brain root, imports it into Noosphere, writes a `.noosphere.json` marker
+for incremental re-publishing, and reports what mapped.
+
+No `jq`? Copy `publish-to-noosphere/SKILL.md` into `skills/` and paste the
+object from [`manifest-entry.json`](manifest-entry.json) into the `skills`
+array of your `skills/manifest.json`.
+
+To get it shipped to every gbrain user by default, see
+[`SUBMISSION.md`](SUBMISSION.md) — a ready-to-file proposal for the
+upstream `garrytan/gbrain` skill catalog.
 
 ## Hosted Noosphere
 

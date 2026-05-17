@@ -73,9 +73,21 @@ def _writeback_to_vault(corpus_id: str, vault_dir: str | Path) -> dict:
     return {"written": written, "skipped_conflict": skipped_conflict}
 
 
-@click.group()
+@click.group(epilog="""
+\b
+Quickstart:
+  noosphere connect-gbrain ~/brain --name "My Brain"   import a GBrain repo
+  noosphere connect-obsidian ~/vault                    import an Obsidian vault
+  noosphere serve --public-url https://your-host        serve it on the network
+\b
+Docs: https://github.com/steveyeow/noosphere
+""")
 def cli():
-    """Noosphere — Turn any knowledge base into an agent-readable corpus."""
+    """Noosphere — Turn any knowledge base into an agent-readable corpus.
+
+    Coming from GBrain or Obsidian? `connect-gbrain` / `connect-obsidian`
+    create a corpus and import in one step. See Quickstart below.
+    """
     pass
 
 

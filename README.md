@@ -445,6 +445,31 @@ There are four ways to bring a vault in, all producing the same corpus + writeba
 
 The first three create a new corpus AND run the initial sync in one step. ZIP upload requires you to create the corpus first via the web UI.
 
+### Coming from GBrain? Import your repo (Tan-style)
+
+Already running [Garry Tan's GBrain](https://github.com/garrytan/gbrain) — a markdown repo of `people/`, `companies/`, `concepts/` pages with compiled-truth-on-top, timeline-below? Bring it onto the network in one command. The repo stays your system of record; Noosphere becomes the agent-readable, access-controlled, monetizable layer on top.
+
+```bash
+noosphere connect-gbrain ~/your-brain --name "My Brain" --access-level public
+# later, after the brain grows:
+noosphere import-gbrain ~/your-brain --corpus <id>
+```
+
+Full-fidelity mapping (zero LLM — derived from page structure, exactly like GBrain wires itself):
+
+| GBrain | Noosphere |
+|---|---|
+| `people/` · `companies/` page | entity (person · organization); compiled truth → the entity's description |
+| compiled truth ↑ / timeline ↓ split | entity description vs. searchable page document |
+| `concepts/` page | Wiki concept page |
+| `meetings/` `ideas/` `deals/` … | source documents |
+| `[Name](../people/x.md)` · `[[x]]` cross-links | **typed** relationship edges (`founded`, `works_at`, `close_to`, …) with backlinks |
+| `index.md` `log.md` `RESOLVER.md` `.raw/` `archive/` | skipped |
+
+Everything imports as `source_kind=user_original`. No CLI? **Composer `+` → Add a source → GBrain → Upload repo (ZIP)** does the same mapping.
+
+Or let the brain publish itself: install the [`publish-to-noosphere`](integrations/gbrain/) skill into your gbrain `skills/` and ask your agent to run it — it imports and writes a `.noosphere.json` marker for incremental re-publishing.
+
 ### How network registration works
 
 When `noosphere serve` starts, it pushes a snapshot of all non-private corpora to the discovery registry at `NOOSPHERE_REGISTRY` (defaults to `noosphere.wiki`). The registry stores only metadata — names, descriptions, tags, access levels, the node's endpoint URL. Content stays on your server.
