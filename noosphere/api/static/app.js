@@ -5112,24 +5112,6 @@ function showAddSubscriptionModal(c,onSaved){
   };
 }
 
-function showEntitiesModal(corpusId,entities){
-  const byKind={};
-  for(const e of entities){if(e.mention_count>0)(byKind[e.kind]=byKind[e.kind]||[]).push(e)}
-  const order=['person','concept','work','place'];
-  const sections=order.filter(k=>byKind[k]).map(k=>{
-    const items=byKind[k].sort((a,b)=>b.mention_count-a.mention_count);
-    return `<div class="cv-ent-group"><div class="cv-ent-kind">${k}s</div><div class="cv-ent-row">${items.map(e=>`<a class="cv-ent-chip" href="#/corpus/${corpusId}/entity/${e.id}"><span>${esc(e.canonical_name)}</span><span class="cv-ent-cnt">${e.mention_count}</span></a>`).join('')}</div></div>`;
-  }).join('');
-  const wrap=document.createElement('div');wrap.className='acm-overlay';
-  wrap.innerHTML=`<div class="acm-panel" style="max-width:560px"><div class="acm-title">Entities in this corpus</div><div class="acm-sub">People, concepts, and works extracted from your documents</div><div style="max-height:60vh;overflow-y:auto">${sections||'<div class="empty">None with mentions yet.</div>'}</div><div class="acm-actions"><button class="btn-sm-ghost" id="acm-close">Close</button></div></div>`;
-  document.body.appendChild(wrap);
-  const close=()=>wrap.remove();
-  wrap.querySelector('#acm-close').onclick=close;
-  wrap.addEventListener('click',e=>{if(e.target===wrap)close()});
-  // clicking a chip navigates away via href — close modal as side effect
-  wrap.querySelectorAll('.cv-ent-chip').forEach(a=>a.addEventListener('click',close));
-}
-
 async function renderEntity(corpusId,entityId){
   const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   hideRP();
@@ -5660,7 +5642,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv" disabled>Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="What this KB can do on its own.">Autonomy</div><div class="rp-stages">${autonomyHTML}</div><div class="rp-sub rp-sub--block"><div class="rp-sub-hd"><span class="rp-sub-lbl">Subscriptions <span class="rp-sub-cnt" id="rp-subs-count">(0)</span></span><button class="btn-xs" id="rp-subs-add" title="Subscribe to a peer KB">+ Add</button></div><div class="rp-subs-list" id="rp-subs-list"><span class="rp-sub-empty">Loading…</span></div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Entities</span><div class="rp-entities-row" id="rp-entities-row"><span class="rp-sub-empty">Loading…</span></div></div></div>`;
+    <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div></div>`;
   drawMiniNetwork(c);
 
   // Dirty-state tracking for the Save button. Without this the button
@@ -5796,40 +5778,6 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   }
   document.getElementById('rp-subs-add').onclick=(e)=>{e.preventDefault();showAddSubscriptionModal(c,loadSubs)};
   loadSubs();
-
-  /* Entities: count + extract / browse */
-  (async()=>{
-    const row=document.getElementById('rp-entities-row');if(!row)return;
-    try{
-      const r=await fetch(`${API}/corpora/${c.id}/entities`);
-      const d=await r.json();const ents=(d.entities||[]);
-      const total=ents.length;
-      const shown=ents.filter(e=>e.mention_count>0).length;
-      if(total===0){
-        // Button variant so the action reads as clickable — a plain text
-        // link blended into the label and failed the "is this an action?" test.
-        row.innerHTML=`<span class="rp-sub-empty">none yet</span> <button class="btn-xs" id="rp-extract-btn">Extract with AI</button>`;
-      }else{
-        row.innerHTML=`<span style="font-size:12px;color:var(--tx2)"><strong>${shown}</strong> extracted</span> <a href="#" class="rp-subtle-link" id="rp-browse-ent">browse</a> · <button class="btn-xs" id="rp-extract-btn">Re-extract</button>`;
-      }
-      const extractBtn=document.getElementById('rp-extract-btn');
-      if(extractBtn)extractBtn.onclick=async(ev)=>{
-        ev.preventDefault();
-        if(gateProFeature('Entity extraction is a Pro feature'))return;
-        const prevLabel=extractBtn.textContent;extractBtn.textContent='Extracting…';
-        try{
-          const rr=await fetch(`${API}/corpora/${c.id}/extract-entities`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:50})});
-          const body=await rr.json().catch(()=>({}));
-          if(handleQuotaError(rr,body)){extractBtn.textContent=prevLabel;return}
-          if(!rr.ok)throw new Error(body.detail||'Failed');
-          toast(`Enriched ${body.enriched||0} doc${body.enriched===1?'':'s'}${body.remaining?', '+body.remaining+' remaining':''}`,'success');
-          renderCorpusSafe(c.id);
-        }catch(e){toast('Extract failed: '+e.message,'error');extractBtn.textContent=prevLabel}
-      };
-      const browseBtn=document.getElementById('rp-browse-ent');
-      if(browseBtn)browseBtn.onclick=(ev)=>{ev.preventDefault();showEntitiesModal(c.id,ents)};
-    }catch(e){row.innerHTML='<span style="font-size:12px;color:var(--tx3)">Failed to load</span>'}
-  })();
 
   /* Mini-graph interactions:
      - Expand link → always open the local-graph modal
