@@ -4538,7 +4538,7 @@ async function renderCorpus(id,sessionId){
   const entGroupsHTML=entRows.map(e=>{
     const n=e.mention_count||0;
     const meta=`${_ENT_LABELS[e.kind]||esc(e.kind)}${n?` · ${n} mention${n===1?'':'s'}`:''}`;
-    return `<a class="doc-item doc-item--entity" href="#/corpus/${id}/entity/${e.id}"><div class="doc-hd"><span class="doc-tt">${esc(e.canonical_name)}</span><span class="doc-hd-right"><span class="doc-mt">${meta}</span><span class="doc-ar">▸</span></span></div></a>`;
+    return `<div class="doc-item doc-item--entity" data-entity-id="${e.id}"><div class="doc-hd"><span class="doc-tt">${esc(e.canonical_name)}</span><span class="doc-hd-right"><span class="doc-mt">${meta}</span><span class="doc-ar">▸</span></span></div></div>`;
   }).join('');
   const docItemHTML=(d)=>{
     const wc=d.word_count||0;const wlab=wc.toLocaleString()+' word'+(wc===1?'':'s');
@@ -4754,15 +4754,24 @@ async function renderCorpus(id,sessionId){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{
-    if(item.classList.contains('doc-item--entity')||e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||item.classList.contains('editing'))return;
+    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||e.target.closest('.ent-fullpage-link')||item.classList.contains('editing'))return;
     if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
     item.classList.add('expanded');
+    const isEnt=item.classList.contains('doc-item--entity');
     try{
-      const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
-      const d=await r.json();
       const b=document.createElement('div');b.className='doc-bd doc-bd-md';
-      b.innerHTML=_mdToHtml(d.content||'');
-      _bindWikilinks(b,id);
+      if(isEnt){
+        const eid=item.dataset.entityId;
+        const r=await fetch(`${API}/corpora/${id}/entities/${eid}`);
+        const en=await r.json();
+        b.innerHTML=(en.description?_mdToHtml(en.description):'<p class="doc-bd-empty">No compiled truth yet.</p>')
+          +`<a class="ent-fullpage-link" href="#/corpus/${id}/entity/${eid}">Open full page &rarr;</a>`;
+      }else{
+        const r=await fetch(`${API}/corpora/${id}/documents/${item.dataset.id}`);
+        const d=await r.json();
+        b.innerHTML=_mdToHtml(d.content||'');
+        _bindWikilinks(b,id);
+      }
       item.appendChild(b);
     }catch(e){}
   })});
