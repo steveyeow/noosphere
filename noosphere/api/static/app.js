@@ -5793,7 +5793,7 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     }
     const discEl=document.getElementById('rp-discovery');
     if(discEl)discEl.textContent=v==='private'?'Private — not registered':'Will register in Noosphere registry after Save';
-    if(v==='paid')loadPricingUI(c);
+    if(v==='paid'){loadPricingUI(c);loadRevenueUI(c.id)}
     _refreshSaveState();
   };
   _saveBtn.onclick=async()=>{
