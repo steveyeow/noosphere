@@ -1433,13 +1433,14 @@ input[type="checkbox"]{accent-color:var(--tx);width:13px;height:13px;cursor:poin
 /* ── Wikilinks — [[target]] style, rendered by _inline() + _bindWikilinks ── */
 a.wikilink{color:var(--tx2);border-bottom:1px dashed var(--bd);text-decoration:none;cursor:pointer;padding:0 1px;transition:color .12s,border-color .12s}
 a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
-.doc-bd-md{padding:14px 16px;background:var(--bg1);border-radius:6px;margin-top:8px;font-size:13px;line-height:1.55;color:var(--tx)}
-.doc-bd-md h1,.doc-bd-md h2,.doc-bd-md h3,.doc-bd-md h4{font-weight:600;margin:14px 0 6px}
+.doc-bd-md{margin-top:10px;padding:14px 0 2px;box-shadow:inset 0 1px 0 var(--brd);font-size:14px;line-height:1.65;color:var(--tx);white-space:normal}
+.doc-bd-md>*:first-child{margin-top:0}
+.doc-bd-md h1,.doc-bd-md h2,.doc-bd-md h3,.doc-bd-md h4{font-weight:600;line-height:1.3;margin:18px 0 7px}
 .doc-bd-md h1{font-size:16px}.doc-bd-md h2{font-size:15px}.doc-bd-md h3{font-size:14px}.doc-bd-md h4{font-size:13px}
-.doc-bd-md p{margin:6px 0}
-.doc-bd-md ul{margin:6px 0 6px 18px;padding:0}.doc-bd-md li{margin:2px 0}
-.doc-bd-md code{background:var(--bg2);padding:1px 4px;border-radius:3px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
-.doc-bd-md pre{background:var(--bg2);padding:10px 12px;border-radius:5px;overflow-x:auto;font-size:12px}
+.doc-bd-md p{margin:0 0 10px}
+.doc-bd-md ul{margin:0 0 10px 20px;padding:0}.doc-bd-md li{margin:3px 0;line-height:1.55}
+.doc-bd-md code{background:var(--accSoft);padding:1px 5px;border-radius:var(--r-xs);font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.doc-bd-md pre{background:var(--bgH);padding:11px 13px;border-radius:var(--r-sm);overflow-x:auto;font-size:12px}
 .doc-bd-md pre code{background:transparent;padding:0}
 
 /* ── Generic modal form (used by Connect local vault, CLI instructions, plugin docs) ── */

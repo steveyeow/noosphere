@@ -37,7 +37,7 @@ component rule when a stroke is structural.
 | `--bg3` | `#fafafa` | `#242426` | Content area — one step above base |
 | `--bg2` | `#fff` | `#2c2c2e` | Raised surface — cards, rows, panels, modals |
 | `--bgH` | `#eeeef0` | `#3a3a3c` | Hover fill; filled-input rest; segmented track |
-| `--bg1` | `#eeeef0` | `#3a3a3c` | Recessed inset (code blocks) |
+| `--bg1` | `#eeeef0` | `#3a3a3c` | Menu hover / selected-row inset tint |
 | `--accSoft` | `rgba(29,29,31,.055)` | `rgba(245,245,247,.07)` | Filled control rest (buttons, chips) |
 
 Separation between two adjacent regions = a tint step on this ladder, plus
