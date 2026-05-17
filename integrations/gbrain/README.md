@@ -28,7 +28,10 @@ Everything imports as `source_kind=user_original`.
 ## Use it directly (CLI)
 
 ```
-pipx install noosphere
+# Set up Noosphere (not on PyPI yet — run from source; pip install -e .
+# pulls deps from pyproject and creates the `noosphere` command).
+git clone https://github.com/steveyeow/noosphere.git
+cd noosphere && pip install -e .
 
 # First time: create a corpus, import, and (if not private) publish.
 noosphere connect-gbrain ~/brain --name "My Brain" --access-level public

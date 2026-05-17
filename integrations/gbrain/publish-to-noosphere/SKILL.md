@@ -37,8 +37,12 @@ brain.
 
 4. **Publish.**
 
-   Prefer the local CLI (gbrain users are CLI-native). Ensure it is
-   installed: `pipx install noosphere` (or `pip install noosphere`).
+   Prefer the local CLI (gbrain users are CLI-native). Noosphere is not
+   on PyPI yet — ensure the `noosphere` command exists by running from
+   source: `git clone https://github.com/steveyeow/noosphere.git && cd
+   noosphere && pip install -e .` (installs deps + the CLI entry point).
+   If `noosphere` still isn't on PATH, use `python -m noosphere.cli`
+   instead of `noosphere` in the commands below.
 
    4a. **First publish** (no marker):
 

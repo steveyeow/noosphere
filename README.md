@@ -451,6 +451,10 @@ The first three create a new corpus AND run the initial sync in one step. ZIP up
 Already running [Garry Tan's GBrain](https://github.com/garrytan/gbrain) — a markdown repo of `people/`, `companies/`, `concepts/` pages with compiled-truth-on-top, timeline-below? Bring it onto the network in one command. **Your repo stays the source of truth. Noosphere makes that brain discoverable and queryable by any agent, lets it learn from other brains on the network (updates land only with your approval), and keeps it private, open, or paid.**
 
 ```bash
+# One-time setup (Noosphere isn't on PyPI yet — run from source):
+git clone https://github.com/steveyeow/noosphere.git
+cd noosphere && pip install -e .
+
 noosphere connect-gbrain ~/your-brain --name "My Brain" --access-level public
 # later, after the brain grows:
 noosphere import-gbrain ~/your-brain --corpus <id>
