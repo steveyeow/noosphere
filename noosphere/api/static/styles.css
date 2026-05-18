@@ -974,6 +974,7 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .btn-xs:hover{background:var(--tx);color:var(--bg)}
 .btn-xs:disabled{opacity:.4;cursor:default}
 .btn-add{display:flex;align-items:center;gap:4px;padding:5px 11px;border-radius:var(--r-pill);border:none;background:var(--accSoft);color:var(--tx2);font-size:11px;font-weight:500;cursor:pointer;transition:background .14s,color .12s}.btn-add:hover{background:var(--bgH);color:var(--tx)}
+.cv-st .btn-add + .btn-add{margin-left:6px}
 .empty{text-align:center;padding:30px 16px;color:var(--tx3);font-size:13px}
 
 /* ── Corpus card menu ── */
