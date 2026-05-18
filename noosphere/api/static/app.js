@@ -248,10 +248,20 @@ async function initAuth(){
         const{data}=await _supabase.auth.getSession();
         if(data.session){_authSession=data.session;_authUser=data.session.user}
       }
+      // supabase-js v2 re-fires SIGNED_IN on every tab/window focus and on
+      // token refresh — not just on a real login. Re-routing on each of those
+      // flashes the whole page back to "Loading..." whenever you click into
+      // the window (e.g. to type). Only treat SIGNED_IN as a navigation
+      // trigger on a genuine unauthenticated→authenticated (or account-switch)
+      // transition; the initial render is already handled by route() at boot.
+      let _lastAuthUid=_authUser?.id||null;
       _supabase.auth.onAuthStateChange((event,session)=>{
         _authSession=session;_authUser=session?.user||null;
         renderAuthUI();
-        if(event==='SIGNED_IN'){
+        const uid=_authUser?.id||null;
+        if(event==='SIGNED_OUT'){_lastAuthUid=null;return}
+        if(event==='SIGNED_IN'&&uid&&uid!==_lastAuthUid){
+          _lastAuthUid=uid;
           // Clean URL if needed and navigate. A stashed invite (cloud
           // sign-in to accept) takes priority over the default landing.
           const _pi=_pendingInviteHash();
@@ -259,7 +269,7 @@ async function initAuth(){
             history.replaceState(null,'',window.location.pathname+(_pi||'#/main'));
           }else if(_pi){location.hash=_pi}
           route();
-        }
+        }else{_lastAuthUid=uid}
       });
     }
   }catch(e){console.warn('Auth init:',e)}
