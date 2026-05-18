@@ -3015,9 +3015,10 @@ function _timeAgo(iso){
 }
 
 // Owner-view badge: describes the corpus's access posture from the creator's
-// perspective. "Public" is the default and renders nothing (no signal to add).
-// Paid shows concrete pricing ($X.XX/query) when configured, falling back to
-// "Monetized" when access_level='paid' but pricing_json is missing/invalid.
+// perspective. Every state gets a badge (incl. Public) so the access posture
+// is always visible and consistent with the corpus detail page. Paid shows
+// concrete pricing ($X.XX/query) when configured, falling back to "Monetized"
+// when access_level='paid' but pricing_json is missing/invalid.
 function _mcBadge(c){
   const al=c.access_level||'public';
   if(al==='private')return'<span class="mc-badge mc-badge-private">Private</span>';
@@ -3033,7 +3034,7 @@ function _mcBadge(c){
     }
     return'<span class="mc-badge mc-badge-paid">Monetized</span>';
   }
-  return'';
+  return'<span class="mc-badge mc-badge-public">Public</span>';
 }
 
 function renderMCList(host){
