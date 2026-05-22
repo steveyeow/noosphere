@@ -3063,8 +3063,8 @@ async def api_interview_queue(request: Request, limit: int = 6):
 
     Powers the proactive "Noos has N questions for you" surface. Owner-only,
     and capped so a home-page load doesn't run the gap ranker over an
-    unbounded set of corpora. Only entity gaps count as "questions" — the
-    bootstrap/stale-only cases aren't worth a proactive nudge.
+    unbounded set of corpora. Only entity/concept gaps count as "questions" —
+    the bootstrap/stale-only cases aren't worth a proactive nudge.
     """
     if not _is_owner_request(request):
         return {"queue": []}
@@ -3077,7 +3077,7 @@ async def api_interview_queue(request: Request, limit: int = 6):
             gaps = corpus_gaps(c["id"])
         except Exception:
             continue
-        real = [g for g in gaps if g.get("kind") == "entity"]
+        real = [g for g in gaps if g.get("kind") in ("entity", "concept")]
         if real:
             out.append({
                 "corpus_id": c["id"],

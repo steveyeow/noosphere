@@ -1161,8 +1161,9 @@ def corpus_gaps(corpus_id: str, *, limit: int = 6) -> list[dict[str, Any]]:
     The richest signal is an entity that's *referenced but unexplained*: it
     shows up across the user's sources yet has no compiled truth, so the
     knowledge of who/what it is lives only in the user's head. Secondary
-    signals: stub entities with a thin description, and (as filler) documents
-    that have gone stale. Each gap is a question seed:
+    signals: stub entities with a thin description, concept pages with a thin
+    synthesis, and (as filler) documents that have gone stale. Each gap is a
+    question seed:
     ``{kind, ref_id, label, reason, score}`` ordered by score descending.
     """
     from noosphere.core.entities import list_entities
@@ -1206,7 +1207,27 @@ def corpus_gaps(corpus_id: str, *, limit: int = 6) -> list[dict[str, Any]]:
                 "score": 40 + mc, "entity_kind": ekind,
             })
 
-    # 2. Filler: stale documents worth revisiting (only if we're short on gaps).
+    # 2. Concept pages with a thin synthesis — worth expanding through interview.
+    try:
+        concept_rows = conn.execute(
+            "SELECT id, title, content FROM documents "
+            "WHERE corpus_id=? AND doc_type='concept'",
+            (corpus_id,),
+        ).fetchall()
+    except Exception as e:
+        logger.warning("corpus_gaps: concept query failed for %s: %s", corpus_id, e)
+        concept_rows = []
+    for r in concept_rows:
+        title = (r["title"] or "").strip()
+        body = (r["content"] or "").strip()
+        if title and len(body) < 500:
+            gaps.append({
+                "kind": "concept", "ref_id": r["id"], "label": title,
+                "reason": "your synthesis on this is still thin — worth expanding",
+                "score": 55,
+            })
+
+    # 3. Filler: stale documents worth revisiting (only if we're short on gaps).
     if len(gaps) < limit:
         try:
             health = corpus_knowledge_health(corpus_id)
@@ -1220,7 +1241,7 @@ def corpus_gaps(corpus_id: str, *, limit: int = 6) -> list[dict[str, Any]]:
         except Exception as e:
             logger.warning("corpus_gaps: health pass failed for %s: %s", corpus_id, e)
 
-    # 3. Bootstrap: an entity-less, fresh corpus still gets one useful opener.
+    # 4. Bootstrap: an entity-less, fresh corpus still gets one useful opener.
     if not gaps:
         gaps.append({
             "kind": "topic", "ref_id": None, "label": corpus["name"],
