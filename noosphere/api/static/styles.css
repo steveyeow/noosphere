@@ -1729,3 +1729,19 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .share-actions .btn-sm:hover{opacity:.88}
 .share-actions .btn-sm-ghost{background:transparent;border:1px solid var(--brd);color:var(--tx2)}
 .share-actions .btn-sm-ghost:hover{color:var(--tx);border-color:var(--tx2)}
+
+/* ── Interview: in-chat gap picker + proactive nudge ── */
+.iv-gaps{display:flex;flex-direction:column;gap:6px;margin:4px 0 4px 28px;max-width:560px}
+.iv-gap-opt{display:flex;flex-direction:column;gap:2px;text-align:left;padding:8px 12px;border:1px solid var(--brd);border-radius:9px;background:var(--bg2);cursor:pointer;transition:background .12s,border-color .12s}
+.iv-gap-opt:hover{background:var(--bgH);border-color:var(--tx3)}
+.iv-gap-opt.picked{border-color:var(--tx2)}
+.iv-gap-opt:disabled{cursor:default;opacity:.5}
+.iv-gap-opt-label{font-size:13px;font-weight:500;color:var(--tx)}
+.iv-gap-opt-reason{font-size:11px;color:var(--tx3);line-height:1.4}
+.home-iv-nudge{max-width:640px;margin:0 auto;width:100%}
+.iv-nudge{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--brd);border-radius:12px;background:var(--bg2);margin:0 0 16px}
+.iv-nudge-txt{font-size:13px;color:var(--tx2)}
+.iv-nudge-txt strong{color:var(--tx);font-weight:600}
+.iv-nudge-btn{flex-shrink:0;padding:5px 14px;border-radius:16px;border:none;background:var(--btnBg);color:var(--btnC);font-size:12px;font-weight:500;cursor:pointer;transition:opacity .12s}
+.iv-nudge-btn:hover{opacity:.88}
+.home--active .home-iv-nudge{display:none}

@@ -86,6 +86,7 @@ const COMPOSER_MODES=[
   {id:'create',name:'Create',desc:'Start a new knowledge base from this chat'},
   {id:'enrich',name:'Enrich',desc:'Grow an existing knowledge base through conversation'},
   {id:'compile',name:'Compile',desc:'Synthesize a wiki or entity page from your sources'},
+  {id:'interview',name:'Interview',desc:'Answer questions to fill thin spots in a knowledge base'},
 ];
 const isDark=()=>document.documentElement.classList.contains('dark')||(!document.documentElement.classList.contains('light')&&window.matchMedia('(prefers-color-scheme: dark)').matches);
 const PAL=['#e76f51','#2a9d8f','#264653','#e9c46a','#f4a261','#588157','#457b9d','#9b2226','#6d6875','#b56576','#355070','#6c757d','#e07a5f','#3d405b','#81b29a'];
@@ -1594,6 +1595,55 @@ function drawLPGraph(){
 const TERM_STATUS_C={READY:'#10b981',INDEXED:'#3b82f6',CREATED:'#f59e0b'};
 let _termCtx={};
 
+// ── Interview (gap-filling) — runs in the main chat like Enrich. Module-level
+// so the corpus handoff, the home mode picker, and the proactive nudge can each
+// start one. DOM is fetched by id (term-output / term-input / home-send).
+async function _ivTurn(message){
+  const output=document.getElementById('term-output');
+  const input=document.getElementById('term-input');
+  const sendBtn=document.getElementById('home-send');
+  if(!output)return;
+  if(message){addLine(output,'prompt',message)}
+  const loadId='iv-ld-'+Date.now();
+  addLine(output,'thinking','Thinking…',loadId);
+  if(input)input.disabled=true;if(sendBtn)sendBtn.disabled=true;
+  try{
+    const r=await fetch(`${API}/corpora/${_homeScope}/interview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gap:_ivGap,message:message||null,history:_ivHist})});
+    document.getElementById(loadId)?.remove();
+    if(!r.ok){const e=await r.json().catch(()=>({}));const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;addLine(output,'resp','Error: '+m)}
+    else{
+      const d=await r.json();
+      if(message)_ivHist.push({role:'user',content:message});
+      _ivHist.push({role:'assistant',content:d.response});
+      addLine(output,'ivq',d.response);
+      if(d.auto_capture&&d.auto_capture.saved){addLine(output,'card',null,null,{type:'card',label:'Added to your wiki',status:'SAVED',detail:(d.auto_capture.title||(_ivGap&&_ivGap.label)||'')})}
+    }
+  }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+(err.message||'request failed'))}
+  if(input){input.disabled=false;input.focus()}if(sendBtn)sendBtn.disabled=false;
+}
+// Open a gap-interview: rank thin spots and let the user pick one in-chat (or
+// type their own topic); the agent then asks the first question about it.
+async function _startInterview(cid){
+  const output=document.getElementById('term-output');
+  if(!output)return;
+  _homeScope=cid;_ivGap=null;_ivHist=[];
+  document.getElementById('home')?.classList.add('home--active');
+  addLine(output,'thinking','Finding thin spots…','iv-find');
+  let gaps=[];
+  try{const r=await fetch(`${API}/corpora/${cid}/gaps`);if(r.ok)gaps=(await r.json()).gaps||[]}catch(e){}
+  document.getElementById('iv-find')?.remove();
+  if(!gaps.length){addLine(output,'resp','Nothing looks thin in this knowledge base yet — add sources or run Extract first.');return}
+  addLine(output,'ivq','A few areas look thin. Which should we dig into? (or just tell me a topic.)');
+  const wrap=document.createElement('div');wrap.className='iv-gaps';
+  gaps.forEach(g=>{
+    const row=document.createElement('button');row.type='button';row.className='iv-gap-opt';
+    row.innerHTML=`<span class="iv-gap-opt-label">${esc(g.label||'this corpus')}</span><span class="iv-gap-opt-reason">${esc(g.reason||'')}</span>`;
+    row.onclick=()=>{wrap.querySelectorAll('.iv-gap-opt').forEach(b=>b.disabled=true);row.classList.add('picked');_ivGap=g;_ivTurn(null)};
+    wrap.appendChild(row);
+  });
+  output.appendChild(wrap);
+  const sc=document.getElementById('term-scroll');if(sc)sc.scrollTop=sc.scrollHeight;
+}
 function renderHome(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.classList.add('content--home');
   const _h=new Date().getHours();
@@ -1634,6 +1684,7 @@ function renderHome(){
         </div>
       </div>
     </div>
+    <div class="home-iv-nudge" id="home-iv-nudge"></div>
     <div class="home-tworow" id="home-tworow">
       <div class="home-col">
         <div class="home-col-hd">Recent corpora</div>
@@ -1868,6 +1919,26 @@ function renderHome(){
     updateChip();_refreshComposerPlaceholder();
     setTimeout(()=>_startInterview(_ivc),0);
   }
+  // Proactive (L2, in-app form): if the agent has gap-questions queued across
+  // your corpora, surface a quiet nudge — but only on a fresh home (no active
+  // conversation, not mid-interview).
+  if(_composerMode!=='interview'){
+    (async()=>{
+      try{
+        const out=document.getElementById('term-output');
+        if(out&&out.children.length)return;
+        const r=await fetch(`${API}/interview-queue`);
+        if(!r.ok)return;
+        const q=(await r.json()).queue||[];
+        const el=document.getElementById('home-iv-nudge');
+        if(!el||!q.length)return;
+        const total=q.reduce((n,x)=>n+(x.gap_count||0),0);
+        const top=q[0];
+        el.innerHTML=`<div class="iv-nudge"><span class="iv-nudge-txt">Noos has ${total} question${total>1?'s':''} for you — starting with <strong>${esc(top.corpus_name||'a knowledge base')}</strong></span><button class="iv-nudge-btn" id="iv-nudge-go" type="button">Start</button></div>`;
+        document.getElementById('iv-nudge-go').onclick=()=>{el.innerHTML='';_composerMode='interview';_homeScope=top.corpus_id;updateChip();_refreshComposerPlaceholder();_startInterview(top.corpus_id)};
+      }catch(e){}
+    })();
+  }
   // One-shot: corpus page's attach popover handed off to us. Corpus is already
   // pre-selected via _pendingHomeScope; now collapse home to chat mode and
   // render the matching panel (upload/url/archive/rss) into the chat stream
@@ -2063,41 +2134,6 @@ function renderHome(){
     exitToAsk();
     await loadC();
   }
-  // One interview turn against /interview. message=null => opening question
-  // (the agent speaks first); otherwise it's the user's answer, which the
-  // backend captures back as a note. _ivHist excludes the in-flight answer.
-  async function _ivTurn(message){
-    if(message){addLine(output,'prompt',message)}
-    const loadId='iv-ld-'+Date.now();
-    addLine(output,'thinking','Thinking…',loadId);
-    input.disabled=true;sendBtn.disabled=true;
-    try{
-      const r=await fetch(`${API}/corpora/${_homeScope}/interview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gap:_ivGap,message:message||null,history:_ivHist})});
-      document.getElementById(loadId)?.remove();
-      if(!r.ok){const e=await r.json().catch(()=>({}));const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;addLine(output,'resp','Error: '+m)}
-      else{
-        const d=await r.json();
-        if(message)_ivHist.push({role:'user',content:message});
-        _ivHist.push({role:'assistant',content:d.response});
-        addLine(output,'ivq',d.response);
-        if(d.auto_capture&&d.auto_capture.saved){addLine(output,'card',null,null,{type:'card',label:'Added to your wiki',status:'SAVED',detail:(d.auto_capture.title||(_ivGap&&_ivGap.label)||'')})}
-      }
-    }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+(err.message||'request failed'))}
-    input.disabled=false;sendBtn.disabled=false;input.focus();
-  }
-  // Open a gap-interview: rank thin spots, pick the top one, agent asks first.
-  async function _startInterview(cid){
-    collapseToChat();
-    addLine(output,'thinking','Finding thin spots…','iv-find');
-    let gaps=[];
-    try{const r=await fetch(`${API}/corpora/${cid}/gaps`);if(r.ok)gaps=(await r.json()).gaps||[]}catch(e){}
-    document.getElementById('iv-find')?.remove();
-    if(!gaps.length){addLine(output,'resp','Nothing looks thin in this knowledge base yet — add sources or run Extract first.');return}
-    _ivGap=gaps[0];
-    const labels=gaps.slice(0,3).map(g=>g.label).join(' · ');
-    addLine(output,'hint',null,null,{text:'Thin spots: '+labels+' — starting with '+_ivGap.label});
-    await _ivTurn(null);
-  }
   async function sendInput(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
@@ -2119,11 +2155,17 @@ function renderHome(){
       return;
     }
     // Interview mode: Send submits the user's answer and the agent asks the
-    // next question. Runs entirely against /interview, never /terminal.
+    // next question. If no gap is chosen yet, the typed text becomes the topic.
+    // Runs entirely against /interview, never /terminal.
     if(_composerMode==='interview'){
-      if(!_ivGap){toast('Open an interview from a corpus first');return}
-      const ans=val;input.value='';autosize();
-      await _ivTurn(ans);
+      const v=val;input.value='';autosize();
+      if(_ivGap){await _ivTurn(v)}
+      else{
+        document.querySelectorAll('.iv-gap-opt').forEach(b=>b.disabled=true);
+        addLine(output,'prompt',v);
+        _ivGap={kind:'topic',label:v,reason:'you brought this up'};_ivHist=[];
+        await _ivTurn(null);
+      }
       return;
     }
     // Client-side slash handlers that short-circuit /terminal
@@ -4323,8 +4365,16 @@ function showSourcesPopover(anchor,ctx){
 
   pop.querySelectorAll('.srcs-pop-mode').forEach(btn=>{
     btn.onclick=()=>{
-      _composerMode=btn.dataset.mode;
+      const mode=btn.dataset.mode;
       _closeSrcsPopover();
+      if(mode==='interview'){
+        // Interview fills gaps in a specific KB — needs one scoped.
+        if(!_homeScope){toast('Pick a knowledge base first — Interview fills gaps in a specific one');return}
+        _composerMode='interview';_refreshComposerPlaceholder();
+        _startInterview(_homeScope);
+        return;
+      }
+      _composerMode=mode;
       _refreshComposerPlaceholder();
     };
   });

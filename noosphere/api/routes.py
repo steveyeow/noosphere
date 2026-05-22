@@ -3057,6 +3057,38 @@ async def api_corpus_interview(corpus_id: str, req: InterviewRequest, request: R
     return result
 
 
+@router.get("/interview-queue")
+async def api_interview_queue(request: Request, limit: int = 6):
+    """Across the owner's corpora, which have thin spots worth an interview.
+
+    Powers the proactive "Noos has N questions for you" surface. Owner-only,
+    and capped so a home-page load doesn't run the gap ranker over an
+    unbounded set of corpora. Only entity gaps count as "questions" — the
+    bootstrap/stale-only cases aren't worth a proactive nudge.
+    """
+    if not _is_owner_request(request):
+        return {"queue": []}
+    from noosphere.core.corpus import list_corpora
+    from noosphere.core.knowledge_growth import corpus_gaps
+
+    out: list[dict] = []
+    for c in list_corpora(include_private=True)[: max(1, limit)]:
+        try:
+            gaps = corpus_gaps(c["id"])
+        except Exception:
+            continue
+        real = [g for g in gaps if g.get("kind") == "entity"]
+        if real:
+            out.append({
+                "corpus_id": c["id"],
+                "corpus_name": c.get("name", ""),
+                "gap_count": len(real),
+                "top_label": real[0].get("label", ""),
+            })
+    out.sort(key=lambda x: x["gap_count"], reverse=True)
+    return {"queue": out}
+
+
 @router.get("/chat-sessions")
 async def api_list_chat_sessions(request: Request, limit: int = 20):
     """List recent chat sessions, scoped to the active workspace.
