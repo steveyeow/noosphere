@@ -6429,6 +6429,9 @@ async function renderAccount(){
   }).join('');
   const corporaRes=res.corpora||{};
   const queriesRes=res.queries_this_month||{};
+  // Pro is effectively unlimited on both, so show a bare count; Free shows used/limit (the reachable cap is what drives the upgrade).
+  const corporaVal=tier==='pro'?`${corporaRes.used||0}`:`${corporaRes.used||0}<span class="acct-res-lim"> / ${corporaRes.limit<0||corporaRes.limit==='unlimited'||corporaRes.limit>=999999?'∞':corporaRes.limit||'—'}</span>`;
+  const queriesVal=tier==='pro'?`${queriesRes.used||0}`:`${queriesRes.used||0}<span class="acct-res-lim"> / ${queriesRes.limit<0||queriesRes.limit>=999999?'∞':queriesRes.limit||'—'}</span>`;
 
   const initial=(email||'U')[0].toUpperCase();
   const avatar=_authUser?.user_metadata?.avatar_url;
@@ -6456,8 +6459,8 @@ async function renderAccount(){
       <div class="acct-section">
         <h2 class="acct-section-title">Resources</h2>
         <div class="acct-res-grid">
-          <div class="acct-res-item"><span class="acct-res-val">${corporaRes.used||0}<span class="acct-res-lim"> / ${corporaRes.limit==='unlimited'||corporaRes.limit>=999999?'∞':corporaRes.limit||'—'}</span></span><span class="acct-res-label">Corpora</span></div>
-          <div class="acct-res-item"><span class="acct-res-val">${queriesRes.used||0}<span class="acct-res-lim"> / ${queriesRes.limit>=999999?'∞':queriesRes.limit||'—'}</span></span><span class="acct-res-label">Queries this month</span></div>
+          <div class="acct-res-item"><span class="acct-res-val">${corporaVal}</span><span class="acct-res-label">Corpora</span></div>
+          <div class="acct-res-item"><span class="acct-res-val">${queriesVal}</span><span class="acct-res-label">Queries this month</span></div>
         </div>
       </div>
     </div>
