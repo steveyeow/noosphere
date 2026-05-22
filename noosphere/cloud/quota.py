@@ -30,6 +30,10 @@ QUOTA_LIMITS = {
                                  # (front-end gates the auto-refresh checkbox).
         "chat": 20,              # chat messages per day
         "ask": 20,               # KB-as-agent synthesized answers — same LLM cost as chat
+        "interview": 3,          # gap-filling interview SESSIONS/day — gated on the opening
+                                 # turn, not per message, so an in-progress interview is
+                                 # never cut off. Free tries the loop; the proactive
+                                 # "questions for you" nudge is Pro-only (see routes.py).
         "preview_ask": 100,      # free evaluation query; generous to support discovery
         "extract_entities": 0,   # entity extraction is Pro-only (LLM-heavy, N calls per doc)
         "index": 3,              # ingest operations (chunk + embed); each covers many chunks
@@ -42,6 +46,7 @@ QUOTA_LIMITS = {
         "compile": 50,
         "chat": 500,
         "ask": 500,
+        "interview": 50,
         "preview_ask": 2000,
         "extract_entities": 20,
         "index": 100,

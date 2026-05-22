@@ -3014,7 +3014,12 @@ async def api_corpus_interview(corpus_id: str, req: InterviewRequest, request: R
     import httpx
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
-    _check_quota(request, "chat")
+    # Per-session quota: gate only the opening turn (empty history) so an
+    # in-progress interview is never cut off mid-conversation. The daily cap
+    # therefore counts interview SESSIONS, not individual messages.
+    is_session_start = not req.history
+    if is_session_start:
+        _check_quota(request, "interview")
     from noosphere.core.chat import interview_with_corpus
 
     answer = (req.message or "").strip()
@@ -3053,7 +3058,8 @@ async def api_corpus_interview(corpus_id: str, req: InterviewRequest, request: R
         except Exception:
             pass
 
-    _track_usage(request, "chat")
+    if is_session_start:
+        _track_usage(request, "interview")
     return result
 
 
@@ -3067,6 +3073,12 @@ async def api_interview_queue(request: Request, limit: int = 6):
     the bootstrap/stale-only cases aren't worth a proactive nudge.
     """
     if not _is_owner_request(request):
+        return {"queue": []}
+    # The proactive nudge is a Pro perk — it parallels the Pro auto-compile
+    # "living corpus" loop (Noos surfacing work unprompted). Free users still
+    # start interviews on demand; they just aren't nudged. Self-hosted has no
+    # tier, so the operator always sees it.
+    if _is_cloud() and getattr(request.state, "tier", "free") != "pro":
         return {"queue": []}
     from noosphere.core.corpus import list_corpora
     from noosphere.core.knowledge_growth import corpus_gaps

@@ -1610,7 +1610,7 @@ async function _ivTurn(message){
   try{
     const r=await fetch(`${API}/corpora/${_homeScope}/interview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gap:_ivGap,message:message||null,history:_ivHist})});
     document.getElementById(loadId)?.remove();
-    if(!r.ok){const e=await r.json().catch(()=>({}));const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;addLine(output,'resp','Error: '+m)}
+    if(!r.ok){const e=await r.json().catch(()=>({}));if(!handleQuotaError(r,e)){const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;addLine(output,'resp','Error: '+m)}}
     else{
       const d=await r.json();
       if(message)_ivHist.push({role:'user',content:message});
@@ -1922,7 +1922,10 @@ function renderHome(){
   // Proactive (L2, in-app form): if the agent has gap-questions queued across
   // your corpora, surface a quiet nudge — but only on a fresh home (no active
   // conversation, not mid-interview).
-  if(_composerMode!=='interview'){
+  // Proactive nudge is Pro-only (backend enforces it too); skip the round-trip
+  // for Free/anon. Self-hosted (no cloud) always shows it.
+  const _ivNudgePro=!_cloudMode||(_authUser&&(_authUser.user_metadata?.tier||'free')==='pro');
+  if(_composerMode!=='interview' && _ivNudgePro){
     (async()=>{
       try{
         const out=document.getElementById('term-output');
