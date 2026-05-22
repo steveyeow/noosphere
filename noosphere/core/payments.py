@@ -66,10 +66,22 @@ def create_checkout_session(
     cancel_url: str = "",
     payer_email: str = "",
     agent_id: str = "",
+    connect_account: str = "",
+    application_fee_amount: int = 0,
+    application_fee_percent: float = 0,
 ) -> dict:
     """Create a Stripe Checkout session for a paid corpus.
 
     Returns dict with session_id, checkout_url, and payment record id.
+
+    Connect routing (cloud only): pass ``connect_account`` to settle the
+    charge to a creator's connected account via a destination charge, with
+    the platform keeping its cut as an application fee — ``application_fee_amount``
+    (flat cents, one-time payments) or ``application_fee_percent`` (subscriptions).
+    Self-hosted callers leave ``connect_account`` empty, so the charge settles
+    to the configured Stripe account exactly as before. Recording and access
+    (the ``payments`` row + webhook completion) are identical either way, since
+    destination-charge events fire on the platform account.
     """
     _ensure_stripe()
 
@@ -131,6 +143,21 @@ def create_checkout_session(
             },
             "quantity": 1,
         }]
+
+    # Connect routing (cloud): split revenue to the creator's connected account
+    # via a destination charge; the platform keeps its commission as an
+    # application fee. No-op when connect_account is empty (self-hosted).
+    if connect_account:
+        if pricing_type == "subscription":
+            sub_data = {"transfer_data": {"destination": connect_account}}
+            if application_fee_percent > 0:
+                sub_data["application_fee_percent"] = application_fee_percent
+            session_params["subscription_data"] = sub_data
+        else:
+            pi_data = {"transfer_data": {"destination": connect_account}}
+            if application_fee_amount > 0:
+                pi_data["application_fee_amount"] = application_fee_amount
+            session_params["payment_intent_data"] = pi_data
 
     session = stripe.checkout.Session.create(**session_params)
 

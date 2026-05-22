@@ -3870,12 +3870,47 @@ class PricingRequest(BaseModel):
 
 @router.post("/corpora/{corpus_id}/checkout")
 async def api_checkout(corpus_id: str, req: CheckoutRequest, request: Request):
-    """Create a Stripe Checkout session for a paid corpus."""
+    """Create a Stripe Checkout session for a paid corpus.
+
+    On cloud, the charge is routed to the corpus owner's Stripe Connect
+    account (destination charge) with the platform keeping a commission as an
+    application fee. The sale is refused unless that account can actually
+    receive transfers, so we never collect money we can't split. Self-hosted
+    keeps the legacy behavior: the charge settles to the operator's own keys.
+    """
     corpus = _resolve_corpus(corpus_id)
     if corpus.get("access_level") != "paid":
         raise HTTPException(status_code=400, detail="This corpus is not set to paid access")
 
-    from noosphere.core.payments import create_checkout_session, PaymentError
+    from noosphere.core.payments import create_checkout_session, PaymentError, get_pricing
+
+    connect_account = ""
+    application_fee_amount = 0
+    application_fee_percent = 0.0
+    if _is_cloud():
+        from noosphere.cloud.db import get_user
+        from noosphere.cloud.stripe_connect import (
+            connect_account_can_receive,
+            PLATFORM_COMMISSION_PERCENT,
+        )
+
+        owner_id = corpus.get("owner_id", "") or ""
+        owner = get_user(owner_id) if owner_id else None
+        acct = (owner or {}).get("stripe_connect_account_id", "") or ""
+        if not acct or not connect_account_can_receive(acct):
+            raise HTTPException(
+                status_code=409,
+                detail="The creator hasn't finished payout setup, so this corpus can't be purchased yet.",
+            )
+        connect_account = acct
+        pricing = get_pricing(corpus) or {}
+        if (pricing.get("type") or "per_query") == "subscription":
+            application_fee_percent = float(PLATFORM_COMMISSION_PERCENT)
+        else:
+            application_fee_amount = int(
+                pricing.get("amount_cents", 0) * PLATFORM_COMMISSION_PERCENT / 100
+            )
+
     try:
         return create_checkout_session(
             corpus,
@@ -3883,6 +3918,9 @@ async def api_checkout(corpus_id: str, req: CheckoutRequest, request: Request):
             cancel_url=req.cancel_url,
             payer_email=req.payer_email,
             agent_id=req.agent_id,
+            connect_account=connect_account,
+            application_fee_amount=application_fee_amount,
+            application_fee_percent=application_fee_percent,
         )
     except PaymentError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)

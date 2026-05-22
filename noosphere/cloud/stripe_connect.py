@@ -164,6 +164,27 @@ async def get_subscription_status(request: Request):
 # ── Stripe Connect (paid corpus revenue sharing) ──
 
 
+def connect_account_can_receive(account_id: str) -> bool:
+    """Whether a connected account has finished onboarding enough to receive
+    destination-charge transfers.
+
+    Checks the live ``transfers`` capability — the one a destination charge
+    needs — rather than just the presence of an account ID (which exists the
+    moment ``Account.create`` runs, before onboarding completes). Returns
+    False on any error so a flaky Stripe call blocks the sale rather than
+    silently routing money into a void.
+    """
+    if not account_id or not STRIPE_SECRET_KEY:
+        return False
+    try:
+        acct = stripe.Account.retrieve(account_id)
+        caps = _sg(acct, "capabilities") or {}
+        return _sg(caps, "transfers") == "active"
+    except stripe.StripeError as e:
+        log.warning("Connect status check failed for %s: %s", account_id, e)
+        return False
+
+
 @router.post("/connect/onboard")
 async def connect_onboard(request: Request):
     """Start Stripe Connect onboarding for a creator.
@@ -194,8 +215,12 @@ async def connect_onboard(request: Request):
                 type="express",
                 email=email,
                 metadata={"user_id": user_id},
+                # Destination-charge model: the platform is merchant of record,
+                # the creator's account only receives transfers. Requesting
+                # card_payments would force creators through fuller verification
+                # for a capability we never use. (Pro subscriptions are charged
+                # on the platform account and are unaffected by this.)
                 capabilities={
-                    "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
             )
@@ -260,77 +285,12 @@ async def set_crypto_payout(request: Request):
     return {"address": address}
 
 
-@router.post("/connect/checkout")
-async def connect_checkout(request: Request):
-    """Create a checkout session for a paid corpus with Stripe Connect.
-
-    The payment goes to the creator's Connect account minus platform commission.
-    This replaces core/payments.py checkout for cloud-hosted corpora.
-    """
-    user_id = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    body = await request.json()
-    corpus_id = body.get("corpus_id", "")
-    if not corpus_id:
-        raise HTTPException(status_code=400, detail="corpus_id required")
-
-    from noosphere.core.corpus import get_corpus
-    from noosphere.core.payments import get_pricing
-
-    corpus = get_corpus(corpus_id)
-    if not corpus:
-        raise HTTPException(status_code=404, detail="Corpus not found")
-    if corpus.get("access_level") != "paid":
-        raise HTTPException(status_code=400, detail="Corpus is not set to paid")
-
-    pricing = get_pricing(corpus)
-    if not pricing:
-        raise HTTPException(status_code=400, detail="No pricing configured")
-
-    # Find the creator's Connect account
-    owner_id = corpus.get("owner_id", "")
-    if not owner_id:
-        raise HTTPException(status_code=400, detail="Corpus has no owner")
-
-    owner = get_user(owner_id)
-    connect_account_id = owner.get("stripe_connect_account_id", "") if owner else ""
-    if not connect_account_id:
-        raise HTTPException(status_code=400, detail="Creator has not completed Stripe onboarding")
-
-    amount_cents = pricing.get("amount_cents", 0)
-    platform_fee = int(amount_cents * PLATFORM_COMMISSION_PERCENT / 100)
-
-    try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            line_items=[{
-                "price_data": {
-                    "currency": pricing.get("currency", "usd"),
-                    "unit_amount": amount_cents,
-                    "product_data": {
-                        "name": f"Access: {corpus.get('name', 'Knowledge Base')}",
-                    },
-                },
-                "quantity": 1,
-            }],
-            payment_intent_data={
-                "application_fee_amount": platform_fee,
-                "transfer_data": {"destination": connect_account_id},
-            },
-            success_url=f"{APP_URL}/?payment=success&corpus={corpus_id}",
-            cancel_url=f"{APP_URL}/?payment=canceled",
-            metadata={
-                "corpus_id": corpus_id,
-                "buyer_id": user_id,
-                "owner_id": owner_id,
-            },
-        )
-        return {"url": session.url, "session_id": session.id}
-    except stripe.StripeError as e:
-        log.error("Connect checkout error: %s", e)
-        raise HTTPException(status_code=500, detail="Payment initialization failed")
+# Paid-corpus purchase checkout lives in core.payments.create_checkout_session
+# (POST /api/v1/corpora/{id}/checkout). On cloud, that route injects the owner's
+# Connect account + platform fee, making it a destination charge — and it records
+# the payment + grants access through the existing /api/v1/stripe/webhook handler.
+# A separate cloud checkout endpoint used to live here, but it moved money without
+# recording it, so buyers never got access. Consolidated onto the core path.
 
 
 # ── User profile & usage ──
