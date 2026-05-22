@@ -185,6 +185,30 @@ def connect_account_can_receive(account_id: str) -> bool:
         return False
 
 
+def _persist_connect_ready(account_id: str, ready: bool) -> None:
+    """Best-effort cache of payout readiness on the user row.
+
+    Never raises — the live capability check stays the source of truth; this
+    just keeps a flag warm (set from the status endpoint and the
+    ``account.updated`` webhook) so other surfaces don't need a Stripe call.
+    """
+    if not account_id:
+        return
+    try:
+        from noosphere.core.db import get_conn
+        from datetime import datetime, timezone
+
+        conn = get_conn()
+        conn.execute(
+            "UPDATE users SET stripe_connect_ready=?, updated_at=? "
+            "WHERE stripe_connect_account_id=?",
+            (1 if ready else 0, datetime.now(timezone.utc).isoformat(), account_id),
+        )
+        conn.commit()
+    except Exception:
+        log.debug("Could not persist connect readiness for %s", account_id, exc_info=True)
+
+
 @router.post("/connect/onboard")
 async def connect_onboard(request: Request):
     """Start Stripe Connect onboarding for a creator.
@@ -243,6 +267,48 @@ async def connect_onboard(request: Request):
     except stripe.StripeError as e:
         log.error("Connect onboarding error: %s – %s", type(e).__name__, e.user_message or e)
         raise HTTPException(status_code=500, detail=str(e.user_message or "Onboarding failed"))
+
+
+@router.get("/connect/status")
+async def connect_status(request: Request):
+    """Payout readiness for the current user.
+
+    Drives the button state: no account → "Set up payouts"; account but not
+    yet able to receive → "Finish payout setup"; ready → "Payouts active".
+    Checks the live ``transfers`` capability (and caches it).
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = get_user(user_id)
+    account_id = (user or {}).get("stripe_connect_account_id", "") or ""
+    if not account_id:
+        return {"has_account": False, "ready": False}
+
+    ready = connect_account_can_receive(account_id)
+    _persist_connect_ready(account_id, ready)
+    return {"has_account": True, "ready": ready}
+
+
+@router.post("/connect/login-link")
+async def connect_login_link(request: Request):
+    """One-time link into the creator's Express Dashboard to manage payouts."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = get_user(user_id)
+    account_id = (user or {}).get("stripe_connect_account_id", "") or ""
+    if not account_id:
+        raise HTTPException(status_code=400, detail="No payout account yet")
+
+    try:
+        link = stripe.Account.create_login_link(account_id)
+        return {"url": link.url}
+    except stripe.StripeError as e:
+        log.error("Connect login link error: %s", e)
+        raise HTTPException(status_code=500, detail="Could not open payouts dashboard")
 
 
 @router.post("/connect/crypto-payout")
@@ -429,6 +495,17 @@ async def stripe_webhook(request: Request):
                     subscription_ended_at=ended_at,
                 )
                 log.info("Subscription cancelled: user=%s", user["id"])
+
+        elif event_type == "account.updated":
+            # A creator's connected account changed — refresh our cached payout
+            # readiness so the "Payouts active" state flips without a live call.
+            # (Requires the webhook endpoint to listen to Connect events.)
+            acct_id = _sg(data, "id")
+            caps = _sg(data, "capabilities") or {}
+            ready = _sg(caps, "transfers") == "active"
+            if acct_id:
+                _persist_connect_ready(acct_id, ready)
+                log.info("Connect account %s updated: transfers ready=%s", acct_id, ready)
     except Exception:
         log.exception("Webhook handler failed: event_id=%s type=%s", event_id, event_type)
         raise

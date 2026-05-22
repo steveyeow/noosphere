@@ -6290,6 +6290,45 @@ function _wireTierCardButtons(root){
   });
 }
 
+/* Stripe Connect onboarding return. The hosted flow redirects to
+   APP_URL/?connect=complete (finished) or ?connect=refresh (the account link
+   expired before completion). Acknowledge it and strip the param so a reload
+   doesn't replay the toast. */
+function _handleConnectReturn(){
+  const p=new URLSearchParams(window.location.search);
+  const c=p.get('connect');
+  if(!c)return;
+  p.delete('connect');
+  const qs=p.toString();
+  history.replaceState(null,'',window.location.pathname+(qs?'?'+qs:'')+(window.location.hash||''));
+  if(c==='complete')toast('Payouts connected — Stripe may take a moment to finish verifying.','success');
+  else if(c==='refresh')toast('Payout setup didn’t finish. Open Account to pick up where you left off.','info');
+}
+
+/* Shared payout-button actions, used by both the Account and Pricing pages.
+   onboard → Stripe-hosted onboarding (reuses an existing account if present);
+   dashboard → one-time login link into the Express Dashboard. */
+async function _startConnectOnboard(btn){
+  const prev=btn.textContent;btn.disabled=true;btn.textContent='Loading…';
+  try{
+    const r=await fetch(`${API}/cloud/connect/onboard`,{method:'POST'});
+    const d=await r.json();
+    if(d.url){window.location.href=d.url;return}
+    toast(d.detail||'Failed to start Stripe onboarding','error');
+    btn.disabled=false;btn.textContent=prev;
+  }catch(e){toast('Failed to reach Stripe Connect','error');btn.disabled=false;btn.textContent=prev}
+}
+async function _openConnectDashboard(btn){
+  const prev=btn.textContent;btn.disabled=true;btn.textContent='Loading…';
+  try{
+    const r=await fetch(`${API}/cloud/connect/login-link`,{method:'POST'});
+    const d=await r.json();
+    if(d.url){window.location.href=d.url;return}
+    toast(d.detail||'Could not open payouts dashboard','error');
+    btn.disabled=false;btn.textContent=prev;
+  }catch(e){toast('Could not open payouts dashboard','error');btn.disabled=false;btn.textContent=prev}
+}
+
 function renderPricing(){
   hideRP();const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   const isAuth=!!_authUser;
@@ -6315,16 +6354,17 @@ function renderPricing(){
   </div>`;
   _wireTierCardButtons(ct);
   document.getElementById('pg-signout-btn')?.addEventListener('click',signOut);
-  document.getElementById('pg-connect-btn')?.addEventListener('click',async function(){
-    this.disabled=true;const prev=this.textContent;this.textContent='Loading…';
-    try{
-      const r=await fetch(`${API}/cloud/connect/onboard`,{method:'POST'});
-      const d=await r.json();
-      if(d.url){window.location.href=d.url;return}
-      toast(d.detail||'Failed to start Stripe onboarding','error');
-      this.disabled=false;this.textContent=prev;
-    }catch(e){toast('Failed to reach Stripe Connect','error');this.disabled=false;this.textContent=prev}
-  });
+  const pgConnectBtn=document.getElementById('pg-connect-btn');
+  if(pgConnectBtn){
+    pgConnectBtn.addEventListener('click',function(){
+      pgConnectBtn.dataset.ready==='1'?_openConnectDashboard(pgConnectBtn):_startConnectOnboard(pgConnectBtn);
+    });
+    // Reflect real payout status on the entry CTA.
+    fetch(`${API}/cloud/connect/status`).then(r=>r.json()).then(s=>{
+      if(s.ready){pgConnectBtn.dataset.ready='1';pgConnectBtn.textContent='Manage payouts'}
+      else if(s.has_account){pgConnectBtn.textContent='Finish payout setup'}
+    }).catch(()=>{});
+  }
 }
 
 /* Paywall modal — opens when a Free user hits a Pro-gated feature, either
@@ -6366,6 +6406,16 @@ async function renderAccount(){
     user=await mr.json();usage=await ur.json();
   }catch(e){}
   const tier=user.tier||'free';
+  let payout={has_account:false,ready:false};
+  if(tier==='pro'){try{payout=await(await fetch(`${API}/cloud/connect/status`)).json()}catch(e){}}
+  const payoutsHTML = tier!=='pro' ? '' :
+    `<div class="acct-section"><h2 class="acct-section-title">Payouts</h2>`+(
+      payout.ready
+        ? `<p class="acct-sub">Payouts active — you earn 90% on paid corpora.</p><button class="acct-connect" id="acct-payouts-manage">Manage payouts</button>`
+        : payout.has_account
+          ? `<p class="acct-sub">Almost there — finish your Stripe setup to start receiving payouts.</p><button class="acct-connect" id="acct-connect-btn">Finish payout setup</button>`
+          : `<p class="acct-sub">Earn from paid corpora. Consumers pay, you get 90%.</p><button class="acct-connect" id="acct-connect-btn">Set up payouts</button>`
+    )+`</div>`;
   const email=user.email||_authUser?.email||'';
   const daily=usage.daily_usage||{};
   const res=usage.resources||{};
@@ -6415,7 +6465,7 @@ async function renderAccount(){
       <h2 class="acct-section-title">Today's usage</h2>
       ${usageRows||'<div class="acct-empty">No activity yet today</div>'}
     </div>
-    ${tier==='pro'?`<div class="acct-section"><h2 class="acct-section-title">Payouts</h2><p class="acct-sub">Earn from paid corpora. Consumers pay, you get 90%.</p><button class="acct-connect" id="acct-connect-btn">Set up payouts</button></div>`:''}
+    ${payoutsHTML}
     <div class="acct-footer">
       <button class="acct-signout" id="acct-signout-btn">Sign out</button>
     </div>
@@ -6430,15 +6480,8 @@ async function renderAccount(){
       else{toast(d.detail||'Failed');this.disabled=false;this.textContent='Manage subscription'}
     }catch(e){toast('Failed');this.disabled=false;this.textContent='Manage subscription'}
   });
-  document.getElementById('acct-connect-btn')?.addEventListener('click',async function(){
-    this.disabled=true;this.textContent='Loading...';
-    try{
-      const r=await fetch(`${API}/cloud/connect/onboard`,{method:'POST'});
-      const d=await r.json();
-      if(d.url)window.location.href=d.url;
-      else{toast(d.detail||'Failed');this.disabled=false;this.textContent='Set up payouts'}
-    }catch(e){toast('Failed');this.disabled=false;this.textContent='Set up payouts'}
-  });
+  document.getElementById('acct-connect-btn')?.addEventListener('click',function(){_startConnectOnboard(this)});
+  document.getElementById('acct-payouts-manage')?.addEventListener('click',function(){_openConnectDashboard(this)});
   document.getElementById('acct-signout-btn')?.addEventListener('click',signOut);
 }
 
@@ -6455,6 +6498,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // connector strip back next time they reload.
   if(localStorage.getItem(_CHINT_FLAG)==='1')localStorage.removeItem(_CHINT_FLAG);
   await initAuth();renderAuthUI();
+  _handleConnectReturn();
   renderWorkspaceSwitcher();
   window.addEventListener('hashchange',route);route()});
 

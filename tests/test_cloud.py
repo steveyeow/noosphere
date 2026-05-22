@@ -324,3 +324,75 @@ def test_auth_middleware_valid_hs256_token():
         assert captured_state["tier"] == "free"
 
     asyncio.run(run())
+
+
+# ── Stripe Connect: payout readiness ──
+
+
+def test_connect_status_no_account():
+    """A user without a connected account reports no payout setup."""
+    import asyncio
+    from noosphere.cloud.stripe_connect import connect_status
+
+    get_or_create_user("payout-none", "pn@example.com")
+    result = asyncio.run(connect_status(FakeRequest(user_id="payout-none")))
+    assert result == {"has_account": False, "ready": False}
+
+
+def test_connect_status_ready_persists_flag():
+    """When the live transfers capability is active, status is ready and the
+    cached flag is persisted on the user row."""
+    import asyncio
+    from noosphere.cloud.stripe_connect import connect_status
+
+    get_or_create_user("payout-rdy", "pr@example.com")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET stripe_connect_account_id=? WHERE id=?",
+        ("acct_ready", "payout-rdy"),
+    )
+    conn.commit()
+
+    with patch(
+        "noosphere.cloud.stripe_connect.connect_account_can_receive",
+        return_value=True,
+    ):
+        result = asyncio.run(connect_status(FakeRequest(user_id="payout-rdy")))
+
+    assert result == {"has_account": True, "ready": True}
+    assert get_user("payout-rdy")["stripe_connect_ready"] == 1
+
+
+def test_webhook_account_updated_marks_ready():
+    """An account.updated event with transfers active flips the cached flag,
+    so 'Payouts active' lights up without a live Stripe call."""
+    import asyncio
+    from noosphere.cloud.stripe_connect import stripe_webhook
+
+    get_or_create_user("payout-wh", "pw@example.com")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE users SET stripe_connect_account_id=? WHERE id=?",
+        ("acct_wh", "payout-wh"),
+    )
+    conn.commit()
+
+    event = {
+        "type": "account.updated",
+        "id": "evt_acct_1",
+        "data": {"object": {"id": "acct_wh", "capabilities": {"transfers": "active"}}},
+    }
+
+    class _WebhookReq:
+        headers = {"stripe-signature": "sig"}
+
+        async def body(self):
+            return b"{}"
+
+    with patch("noosphere.cloud.stripe_connect.STRIPE_WEBHOOK_SECRET", "whsec_x"), \
+         patch("noosphere.cloud.stripe_connect.stripe") as mock_stripe:
+        mock_stripe.Webhook.construct_event.return_value = event
+        resp = asyncio.run(stripe_webhook(_WebhookReq()))
+
+    assert resp.status_code == 200
+    assert get_user("payout-wh")["stripe_connect_ready"] == 1
