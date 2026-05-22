@@ -1155,6 +1155,83 @@ def corpus_knowledge_health(corpus_id: str) -> dict[str, Any]:
     }
 
 
+def corpus_gaps(corpus_id: str, *, limit: int = 6) -> list[dict[str, Any]]:
+    """Rank a corpus's thin spots — the seeds the Interview feature asks about.
+
+    The richest signal is an entity that's *referenced but unexplained*: it
+    shows up across the user's sources yet has no compiled truth, so the
+    knowledge of who/what it is lives only in the user's head. Secondary
+    signals: stub entities with a thin description, and (as filler) documents
+    that have gone stale. Each gap is a question seed:
+    ``{kind, ref_id, label, reason, score}`` ordered by score descending.
+    """
+    from noosphere.core.entities import list_entities
+
+    conn = get_conn()
+    corpus = conn.execute("SELECT * FROM corpora WHERE id=?", (corpus_id,)).fetchone()
+    if not corpus:
+        raise ValueError("corpus not found")
+
+    gaps: list[dict[str, Any]] = []
+
+    # 1. Entities — the clearest "interview me about X" gaps.
+    try:
+        ents = list_entities(corpus_id)
+    except Exception as e:
+        logger.warning("corpus_gaps: list_entities failed for %s: %s", corpus_id, e)
+        ents = []
+    for e in ents:
+        name = (e.get("canonical_name") or e.get("name") or "").strip()
+        if not name:
+            continue
+        desc = (e.get("description") or "").strip()
+        mc = int(e.get("mention_count") or 0)
+        ekind = e.get("kind") or "thing"
+        if not desc and mc >= 3:
+            gaps.append({
+                "kind": "entity", "ref_id": e.get("id"), "label": name,
+                "reason": f"mentioned {mc}× across your sources, but has no profile yet",
+                "score": 100 + mc, "entity_kind": ekind,
+            })
+        elif not desc and mc >= 1:
+            gaps.append({
+                "kind": "entity", "ref_id": e.get("id"), "label": name,
+                "reason": f"referenced {mc}× but never written up",
+                "score": 60 + mc, "entity_kind": ekind,
+            })
+        elif desc and len(desc) < 160 and mc >= 1:
+            gaps.append({
+                "kind": "entity", "ref_id": e.get("id"), "label": name,
+                "reason": "only a thin note so far — worth fleshing out",
+                "score": 40 + mc, "entity_kind": ekind,
+            })
+
+    # 2. Filler: stale documents worth revisiting (only if we're short on gaps).
+    if len(gaps) < limit:
+        try:
+            health = corpus_knowledge_health(corpus_id)
+            for d in health.get("documents_older_than_threshold", [])[:limit]:
+                gaps.append({
+                    "kind": "stale", "ref_id": d.get("id"),
+                    "label": d.get("title") or "an old note",
+                    "reason": "saved a while ago — has anything changed since?",
+                    "score": 20,
+                })
+        except Exception as e:
+            logger.warning("corpus_gaps: health pass failed for %s: %s", corpus_id, e)
+
+    # 3. Bootstrap: an entity-less, fresh corpus still gets one useful opener.
+    if not gaps:
+        gaps.append({
+            "kind": "topic", "ref_id": None, "label": corpus["name"],
+            "reason": "nothing extracted yet — tell me what this is really about",
+            "score": 10,
+        })
+
+    gaps.sort(key=lambda g: g["score"], reverse=True)
+    return gaps[:limit]
+
+
 def run_corpus_maintain(corpus_id: str, *, force_reindex: bool = False) -> dict[str, Any]:
     """Re-run indexing (repairs chunk/FTS drift); optional full force."""
     return index_corpus(corpus_id, force=force_reindex)

@@ -261,6 +261,12 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
 
 
+class InterviewRequest(BaseModel):
+    gap: dict = {}
+    message: Optional[str] = None  # None/empty => produce the opening question
+    history: list[dict] = []
+
+
 class TerminalRequest(BaseModel):
     input: str
     context: dict = {}
@@ -2982,6 +2988,72 @@ async def api_corpus_chat(corpus_id: str, req: ChatRequest, request: Request):
 
     _track_usage(request, "chat")
     result["session_id"] = session_id
+    return result
+
+
+@router.get("/corpora/{corpus_id}/gaps")
+async def api_corpus_gaps(corpus_id: str, request: Request):
+    """Ranked thin spots in the corpus — the seeds the Interview asks about."""
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    from noosphere.core.knowledge_growth import corpus_gaps
+    try:
+        return {"gaps": corpus_gaps(corpus["id"])}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/corpora/{corpus_id}/interview")
+async def api_corpus_interview(corpus_id: str, req: InterviewRequest, request: Request):
+    """One turn of a gap-filling interview.
+
+    The assistant asks; the user's answer carries knowledge the corpus lacks,
+    so we capture that answer back as a raw note (the next Compile folds it
+    into the gap's page). Owner-only — never write a corpus from a visitor.
+    """
+    import httpx
+    corpus = _resolve_corpus(corpus_id)
+    _require_owner(request, corpus)
+    _check_quota(request, "chat")
+    from noosphere.core.chat import interview_with_corpus
+
+    answer = (req.message or "").strip()
+    try:
+        result = interview_with_corpus(
+            corpus["id"], req.gap, message=answer or None, history=req.history,
+        )
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=f"LLM error — {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=_humanize_upstream_err(e, "Embedding"))
+
+    # Capture a substantive answer as a raw note. Trivial replies ("yes", "idk")
+    # aren't worth a document. The question being answered is the last assistant
+    # turn, stored as provenance.
+    if len(answer) >= 25:
+        try:
+            from noosphere.core.knowledge_growth import save_capture
+            prior_q = ""
+            for m in reversed(req.history or []):
+                if m.get("role") == "assistant":
+                    prior_q = (m.get("content") or "")[:2000]
+                    break
+            doc = save_capture(
+                corpus["id"],
+                content=answer,
+                title=(req.gap or {}).get("label") or "",
+                question=prior_q,
+                capture_kind="interview",
+            )
+            result["auto_capture"] = {
+                "saved": True,
+                "document_id": doc.get("id"),
+                "title": doc.get("title"),
+            }
+        except Exception:
+            pass
+
+    _track_usage(request, "chat")
     return result
 
 

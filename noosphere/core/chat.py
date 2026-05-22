@@ -66,6 +66,73 @@ def chat_with_corpus(
     }
 
 
+INTERVIEW_SYSTEM_PROMPT = """You are an inquisitive archivist interviewing the user to capture knowledge that lives only in their head.
+
+You are NOT answering questions — you are ASKING them, to draw out what the user knows but has never written down.
+
+Rules:
+- Ask exactly ONE question at a time. Keep it short, specific, and easy to answer.
+- Stay on the gap you're given. Draw out the user's first-hand knowledge, judgment, concrete detail, examples, and the "why" behind them.
+- Build on the user's previous answers — go a level deeper rather than changing subject.
+- Do not re-ask what the corpus already records. Do not lecture or summarize. No preamble — just the next good question.
+- Warm and curious, never an interrogation.
+- If the user signals they're done or has nothing more, thank them in one short line and stop asking.
+- Use the same language as the user."""
+
+
+def interview_with_corpus(
+    corpus_id: str,
+    gap: dict,
+    *,
+    message: str | None = None,
+    history: list[dict] | None = None,
+    top_k: int = 4,
+) -> dict:
+    """Run one turn of a gap-filling interview (inverted posture: the assistant
+    asks the user to surface knowledge the corpus doesn't have yet).
+
+    ``message=None`` → produce the opening question about the gap.
+    ``message=<answer>`` → the user's latest answer; produce the next question.
+    ``history`` is the prior turns (alternating assistant/user), excluding the
+    current answer.
+    """
+    gap = gap or {}
+    label = (gap.get("label") or "").strip()
+    reason = (gap.get("reason") or "").strip()
+    gkind = gap.get("kind") or "topic"
+
+    # Light grounding: surface what the corpus already knows about this gap so
+    # the interviewer asks for what's missing, not what's already on record.
+    known = ""
+    if label:
+        try:
+            retrieval = search_corpus(corpus_id, label, top_k=top_k, caller="owner")
+            snips = [ch.get("text", "")[:400] for ch in retrieval.get("results", [])[:top_k]]
+            known = "\n\n".join(s for s in snips if s)
+        except Exception:
+            known = ""
+
+    seed = (
+        f"You are interviewing the user to fill one gap in their knowledge base.\n"
+        f"Gap ({gkind}): {label or '(this knowledge base)'}\n"
+        f"Why it's a gap: {reason or 'it is thin or missing'}\n\n"
+        f"What the corpus already records about it (do NOT re-ask these):\n"
+        f"{known or '(nothing yet)'}"
+    )
+
+    messages = [{"role": "system", "content": INTERVIEW_SYSTEM_PROMPT}]
+    if message is None:
+        messages.append({"role": "user", "content": seed + "\n\nAsk your first question now."})
+    else:
+        messages.append({"role": "user", "content": seed})
+        if history:
+            messages.extend(history[-8:])
+        messages.append({"role": "user", "content": message})
+
+    response_text = _call_llm(messages)
+    return {"response": response_text, "gap": gap}
+
+
 def chat_with_noosphere(
     message: str,
     *,

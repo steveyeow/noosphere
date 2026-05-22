@@ -64,6 +64,12 @@ let _pendingHomeAutoSend=false;
 // this and renders the matching panel into the home chat-output stream — so
 // the user lands directly in chat mode with the picked panel ready to fill.
 let _pendingHomeAttachAction=null;
+// One-shot handoff: corpus page Interview button/mode → main chat. renderHome()
+// consumes this, flips the composer to interview mode, and the agent opens with
+// the first question (agent speaks first). _ivGap/_ivHist hold the active
+// interview's gap + running transcript for the duration of the session.
+let _pendingInterviewCorpus=null;
+let _ivGap=null,_ivHist=[];
 // One-shot: navigating to #/main?session=<sid> from a sidebar chat row or
 // the Chats page. renderHome reads this, fetches the session, replays its
 // messages into term-output, scopes the chip to its corpus, and arms
@@ -1714,6 +1720,9 @@ function renderHome(){
   // if a corpus page's "Chat with X" CTA pre-selected one before navigating here.
   _homeScope=_pendingHomeScope||null;
   _pendingHomeScope=null;
+  // A finished interview shouldn't leave the composer stuck in interview mode
+  // on the next normal home visit — reset unless a new interview is starting.
+  if(_composerMode==='interview'&&!_pendingInterviewCorpus){_composerMode='enrich';_ivGap=null;_ivHist=[]}
   _refreshComposerPlaceholder();
   renderChint('home-chint',{corpusId:null});
   const composer=document.getElementById('home-composer');
@@ -1849,6 +1858,15 @@ function renderHome(){
     autosize();
     if(shouldSend){setTimeout(()=>{sendBtn?.click()},0)}
     else{input.focus()}
+  }
+  // One-shot: corpus page's Interview entry handed off to us. Flip into
+  // interview mode scoped to that corpus, then let the agent open the
+  // conversation (it speaks first — see _startInterview).
+  if(_pendingInterviewCorpus){
+    const _ivc=_pendingInterviewCorpus;_pendingInterviewCorpus=null;
+    _composerMode='interview';_homeScope=_ivc;_ivGap=null;_ivHist=[];
+    updateChip();_refreshComposerPlaceholder();
+    setTimeout(()=>_startInterview(_ivc),0);
   }
   // One-shot: corpus page's attach popover handed off to us. Corpus is already
   // pre-selected via _pendingHomeScope; now collapse home to chat mode and
@@ -2045,6 +2063,41 @@ function renderHome(){
     exitToAsk();
     await loadC();
   }
+  // One interview turn against /interview. message=null => opening question
+  // (the agent speaks first); otherwise it's the user's answer, which the
+  // backend captures back as a note. _ivHist excludes the in-flight answer.
+  async function _ivTurn(message){
+    if(message){addLine(output,'prompt',message)}
+    const loadId='iv-ld-'+Date.now();
+    addLine(output,'thinking','Thinking…',loadId);
+    input.disabled=true;sendBtn.disabled=true;
+    try{
+      const r=await fetch(`${API}/corpora/${_homeScope}/interview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gap:_ivGap,message:message||null,history:_ivHist})});
+      document.getElementById(loadId)?.remove();
+      if(!r.ok){const e=await r.json().catch(()=>({}));const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;addLine(output,'resp','Error: '+m)}
+      else{
+        const d=await r.json();
+        if(message)_ivHist.push({role:'user',content:message});
+        _ivHist.push({role:'assistant',content:d.response});
+        addLine(output,'ivq',d.response);
+        if(d.auto_capture&&d.auto_capture.saved){addLine(output,'card',null,null,{type:'card',label:'Added to your wiki',status:'SAVED',detail:(d.auto_capture.title||(_ivGap&&_ivGap.label)||'')})}
+      }
+    }catch(err){document.getElementById(loadId)?.remove();addLine(output,'resp','Error: '+(err.message||'request failed'))}
+    input.disabled=false;sendBtn.disabled=false;input.focus();
+  }
+  // Open a gap-interview: rank thin spots, pick the top one, agent asks first.
+  async function _startInterview(cid){
+    collapseToChat();
+    addLine(output,'thinking','Finding thin spots…','iv-find');
+    let gaps=[];
+    try{const r=await fetch(`${API}/corpora/${cid}/gaps`);if(r.ok)gaps=(await r.json()).gaps||[]}catch(e){}
+    document.getElementById('iv-find')?.remove();
+    if(!gaps.length){addLine(output,'resp','Nothing looks thin in this knowledge base yet — add sources or run Extract first.');return}
+    _ivGap=gaps[0];
+    const labels=gaps.slice(0,3).map(g=>g.label).join(' · ');
+    addLine(output,'hint',null,null,{text:'Thin spots: '+labels+' — starting with '+_ivGap.label});
+    await _ivTurn(null);
+  }
   async function sendInput(){
     if(_sending)return;
     const val=input.value.trim();if(!val)return;
@@ -2063,6 +2116,14 @@ function renderHome(){
       }
       const topic=val;input.value='';autosize();
       location.hash='#/compile?fresh=1&corpus='+encodeURIComponent(_homeScope)+'&topic='+encodeURIComponent(topic);
+      return;
+    }
+    // Interview mode: Send submits the user's answer and the agent asks the
+    // next question. Runs entirely against /interview, never /terminal.
+    if(_composerMode==='interview'){
+      if(!_ivGap){toast('Open an interview from a corpus first');return}
+      const ans=val;input.value='';autosize();
+      await _ivTurn(ans);
       return;
     }
     // Client-side slash handlers that short-circuit /terminal
@@ -2642,6 +2703,7 @@ function addLine(container,type,text,id,line){
   else if(type==='card'){el.className='term-card';el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><span class="term-card-lbl">${esc(ln.label||'')}</span><span class="term-status" style="color:${TERM_STATUS_C[ln.status]||'var(--tx3)'}">${esc(ln.status||'')}</span></div><div class="term-card-det">${esc(ln.detail||'')}</div>${ln.val?`<div class="term-card-val">${esc(ln.val)}</div>`:''}`;
     if(ln.corpus_id){el.style.cursor='pointer';el.onclick=()=>{location.hash='#/corpus/'+ln.corpus_id}}}
   else if(type==='search_result'){el.className='sr-card';el.innerHTML=`<div class="sr-top"><span class="sr-score">${((ln.score||0)*100).toFixed(0)}%</span><span class="sr-title">${esc(ln.title||'')}</span>${ln.source?`<span class="sr-source">${esc(ln.source)}</span>`:''}</div><div class="sr-text">${esc(ln.text||'')}</div>`}
+  else if(type==='ivq'){el.className='term-line term-resp term-ivq';el.innerHTML=noosHd()+'<div class="term-resp-body"></div>';el.querySelector('.term-resp-body').textContent=text||ln.text||''}
   else return;
   container.appendChild(el);
   const sc=document.getElementById('term-scroll');
@@ -4211,6 +4273,8 @@ function _refreshComposerPlaceholder(){
       }
     }else if(_composerMode==='create'){
       input.placeholder='What\'s on your mind? — "harness engineering", "founder playbook"';
+    }else if(_composerMode==='interview'){
+      input.placeholder='Answer above — or say "next" to move on, "done" to stop';
     }else{
       // Enrich — talk to / grow a specific KB. Lead with the chat verb (the
       // primary affordance), then surface the three "add material" doors —
@@ -4226,7 +4290,7 @@ function _refreshComposerPlaceholder(){
   const lbl=document.getElementById('home-mode-label');
   if(lbl){
     const m=COMPOSER_MODES.find(x=>x.id===_composerMode)||COMPOSER_MODES[1];
-    lbl.textContent=m.name+' mode';
+    lbl.textContent=(_composerMode==='interview'?'Interview':m.name)+' mode';
   }
 }
 
@@ -4609,7 +4673,7 @@ async function renderCorpus(id,sessionId,opts){
   // synthesis of sources.
   const wikiCount=wikiDocs.length+ents.length;
   const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
+  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   // Description editor — surgical (no renderCorpus). Snapshot the read-only
   // markup, swap in the input, and restore (with the new value on save) so
@@ -4648,6 +4712,7 @@ async function renderCorpus(id,sessionId,opts){
   const rawAddBtn=document.getElementById('cv-raw-add');
   const compileBtn=document.getElementById('cv-compile-btn');
   const extractBtn=document.getElementById('cv-extract-btn');
+  const interviewBtn=document.getElementById('cv-interview-btn');
   if(extractBtn)extractBtn.onclick=async()=>{
     if(typeof gateProFeature==='function'&&gateProFeature('Entity extraction is a Pro feature'))return;
     const o=extractBtn.textContent;extractBtn.disabled=true;extractBtn.textContent='Extracting…';
@@ -4695,6 +4760,7 @@ async function renderCorpus(id,sessionId,opts){
     const opts=[
       {id:'enrich',name:'Enrich',desc:'Grow this knowledge base through conversation'},
       {id:'compile',name:'Compile',desc:'Synthesize a wiki page from this corpus'},
+      {id:'interview',name:'Interview',desc:'Answer questions to fill thin spots'},
     ];
     const pop=document.createElement('div');
     pop.id='cv-mode-pop';pop.className='srcs-flyout';
@@ -4705,7 +4771,7 @@ async function renderCorpus(id,sessionId,opts){
     let top=r.top-ph-6;if(top<8)top=r.bottom+6;
     pop.style.left=left+'px';pop.style.top=top+'px';
     pop.querySelectorAll('.srcs-flyout-row').forEach(btn=>{
-      btn.onclick=()=>{_cvSetMode(btn.dataset.mode);pop.remove();cvComposerInput?.focus()};
+      btn.onclick=()=>{if(btn.dataset.mode==='interview'){pop.remove();_pendingInterviewCorpus=id;location.hash='#/main';return}_cvSetMode(btn.dataset.mode);pop.remove();cvComposerInput?.focus()};
     });
     setTimeout(()=>{
       const outside=e=>{if(!pop.contains(e.target)&&e.target!==anchor){pop.remove();document.removeEventListener('click',outside,true)}};
@@ -4735,6 +4801,7 @@ async function renderCorpus(id,sessionId,opts){
   // (or Enter) then routes to /compile with the typed topic — same as the home
   // composer's compile flow.
   if(compileBtn)compileBtn.onclick=()=>{_cvSetMode('compile');cvComposerInput?.focus()};
+  if(interviewBtn)interviewBtn.onclick=()=>{_pendingInterviewCorpus=id;location.hash='#/main'};
 
   // Textarea autosize — matches the home composer behavior so the corpus dock
   // grows as you type a longer prompt.
