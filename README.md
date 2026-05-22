@@ -111,7 +111,7 @@ Four ways to grow a knowledge base, mixed freely in the same corpus:
 - **Write / Note** — direct markdown, chat capture (`user_original` · `user_capture`)
 - **Import** — upload files, or pull your own content from elsewhere: Obsidian vault, Notion ZIP, Twitter archive, your own blog URLs (all `user_original`)
 - **Connect** — RSS feeds, external URLs, live connectors; recurring inflow that stays current (`external_public`)
-- **Compile / Distill** — LLM-driven secondary work: `compile` fuses retrieved passages into concept notes; `distill` (planned) extracts your judgment via structured conversation (`user_capture`)
+- **Compile / Interview** — LLM-driven secondary work: `compile` fuses retrieved passages into concept notes; **Interview** finds thin spots and asks you to fill them, saving answers as `user_capture` (cloud: Free 3 sessions/day, Pro 50 + proactive nudges). Org-aware `distill` interview templates for teams are planned (T-5).
 
 Provenance is tracked per document via `source_kind`. Manifests auto-maintain from corpus content so the KB's identity card stays current without manual upkeep.
 
