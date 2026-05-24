@@ -899,7 +899,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
       <div class="lp-h">
         <h1 class="lp-h1">Build your living knowledge wiki, publish to the agent internet.</h1>
         <p class="lp-sub">Turn your thoughts, skills, reading notes, and open questions into a living wiki — agent-readable, connected to and learning from a global agent network. Keep it private, share it free, or charge per query.</p>
-        <button class="lp-go" id="lp-go">Get Started →</button>
+        <button class="lp-go" id="lp-go">Build your living wiki →</button>
       </div>
       <div class="lp-term" id="lp-term">
         <div class="lp-term-bar"><span class="lp-term-dot red"></span><span class="lp-term-dot ylw"></span><span class="lp-term-dot grn"></span><span class="lp-term-title">noosphere</span></div>
