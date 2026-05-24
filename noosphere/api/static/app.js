@@ -4575,13 +4575,27 @@ function openShareDialog(corpus,doc){
   // Default tweet text: a sensible starting point the user will almost
   // always edit. Keep under ~260 chars so the URL has room (Twitter
   // reserves 23 chars for t.co shortening + 1 for the separating space).
+  //
+  // Anti-redundancy rule: the OG card already shows the corpus name (for
+  // corpus shares) and the doc title (for doc shares) in big serif. The
+  // tweet text should add CONTEXT, not echo what the reader is about to
+  // see. So we never lead with the title — the body excerpt carries the
+  // tweet, the card carries the heading.
   let defaultText;
   if(!doc){
-    defaultText=(corpus.description||'').trim()||corpus.name||'';
+    // Corpus: only the description (the user's own framing). When absent,
+    // leave the tweet box empty — the user types their own take. Echoing
+    // corpus.name here would triple-print the same word (tweet + card
+    // heading + card footer cname).
+    defaultText=(corpus.description||'').trim();
   }else{
     const ttl=(doc.title||'').replace(/^Concept:\s+/,'').trim();
+    // 200-char title-echo cap matches og_router.py:_drop_title_echo —
+    // earlier 80-char cap let long titles leak verbatim into the body
+    // beneath the card title, causing the tweet to print the title
+    // twice ("Title — Title …").
     let content=(doc.content||'')
-      .replace(/^\s*#{1,6}\s+[^\n]{1,80}\n+/,'')
+      .replace(/^\s*#{1,6}\s+[^\n]{1,200}\n+/,'')
       .replace(/\*\*([^*]+)\*\*/g,'$1')
       .replace(/`([^`]+)`/g,'$1')
       .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
@@ -4591,11 +4605,17 @@ function openShareDialog(corpus,doc){
       if(m)content=m[1].trim();
     }
     const body=content.replace(/\s+/g,' ').trim();
-    if(ttl){
-      const room=240-ttl.length-3;
-      defaultText=`${ttl} — ${body.slice(0,room)}${body.length>room?'…':''}`;
-    }else{
+    if(body){
+      // Body present: quote it. Card heading already shows the title;
+      // no need to lead with `${title} — ` and double-print.
       defaultText=`"${body.slice(0,240)}${body.length>240?'…':''}"`;
+    }else if(ttl){
+      // Body empty but title present: title is all we have. Falls
+      // through to the corpus-style "let the card carry it" — the
+      // user can add their own framing.
+      defaultText=ttl;
+    }else{
+      defaultText='';
     }
   }
   const MAX=256;

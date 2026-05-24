@@ -104,12 +104,15 @@ def _drop_title_echo(content: str) -> str:
       3. System-generated manifest docs that lead with ``# <corpus name>``
 
     All three would otherwise leak into the excerpt as noise. We only strip if
-    the heading is short (<= 80 chars) so we don't accidentally swallow a
-    legitimate prose paragraph that happens to start with ``#``.
+    the heading is short (<= 200 chars) so we don't accidentally swallow a
+    legitimate prose paragraph that happens to start with ``#``. The 200-char
+    cap covers Karpathy-style full-sentence titles — earlier 80-char cap
+    failed for any title >80 chars, leaving the title echoed verbatim in the
+    OG card body right beneath the title slot.
     """
     if not content:
         return content
-    m = re.match(r"^\s*#{1,6}\s+([^\n]{1,80})\n+", content)
+    m = re.match(r"^\s*#{1,6}\s+([^\n]{1,200})\n+", content)
     return content[m.end():] if m else content
 
 
@@ -366,10 +369,8 @@ body {
 
 .foot-type {
   font-family: 'Inter', sans-serif;
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-weight: 400;
+  font-size: 12px;
   color: #86868b;
 }
 
@@ -571,9 +572,20 @@ def _render_content_card(corpus: dict, doc: dict) -> str:
     has_meaningful_title = bool(raw_title) and not auto_title_pat.match(raw_title)
 
     if has_meaningful_title:
+        # Long titles (e.g. Karpathy-style full-sentence wiki entry titles)
+        # used to rely on CSS ellipsis, which cuts mid-character and makes
+        # the headline look broken. Trim at a sentence/word boundary in
+        # Python so the truncation lands cleanly. The 70 cap (vs the
+        # 320 used for body excerpts) is tuned to the title slot's
+        # ~2-line capacity at 1200px width; it also widens the
+        # look_back window in _smart_excerpt enough that a sentence
+        # ender within the first 40-50 chars gets found instead of
+        # missed (an 80 cap left look_back=40, which excluded period
+        # at index 39 for a typical long title).
+        display_title = _smart_excerpt(raw_title, max_chars=70)
         excerpt = _smart_excerpt(content, max_chars=320)
         body = f"""
-    <div class="title">{html.escape(raw_title)}</div>
+    <div class="title">{html.escape(display_title)}</div>
     <div class="excerpt">{html.escape(excerpt)}</div>
 """
     else:
