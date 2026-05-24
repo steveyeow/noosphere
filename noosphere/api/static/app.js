@@ -4600,6 +4600,19 @@ function openShareDialog(corpus,doc){
       .replace(/`([^`]+)`/g,'$1')
       .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
       .trim();
+    // Plain-text title echo: authors often paste the title as the first
+    // sentence of the body (no leading `#`). Strip it so the tweet quote
+    // doesn't start with the same words the card heading already shows.
+    // Mirrors og_router.py:_drop_title_echo's title-aware pass. 10-char
+    // floor avoids false positives on short titles.
+    const _tNorm=ttl.replace(/[.!?;:]+$/,'').trim();
+    if(_tNorm&&_tNorm.length>=10){
+      const head=content.replace(/^\s+/,'');
+      if(head.toLowerCase().startsWith(_tNorm.toLowerCase())){
+        const rest=head.slice(_tNorm.length).replace(/^[.!?;:\s]+/,'');
+        if(rest)content=rest;
+      }
+    }
     if(doc.doc_type==='concept'){
       const m=content.match(/#{2,3}\s+Summary\s*\n+([\s\S]*?)(?=\n+#{2,3}\s+\w|$)/);
       if(m)content=m[1].trim();

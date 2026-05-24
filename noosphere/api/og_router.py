@@ -95,25 +95,43 @@ def _strip_markdown(text: str) -> str:
     return t
 
 
-def _drop_title_echo(content: str) -> str:
-    """Strip a single short leading markdown heading.
+def _drop_title_echo(content: str, title: str | None = None) -> str:
+    """Strip a leading title echo, whether structured or plain prose.
 
-    Covers three cases at once:
-      1. User-saved notes that lead with ``# <title>`` echoing the title field
-      2. Compiled concept docs that lead with ``## Compiled Truth: <title>``
-      3. System-generated manifest docs that lead with ``# <corpus name>``
+    Two passes, both bounded so we never swallow legitimate prose:
 
-    All three would otherwise leak into the excerpt as noise. We only strip if
-    the heading is short (<= 200 chars) so we don't accidentally swallow a
-    legitimate prose paragraph that happens to start with ``#``. The 200-char
-    cap covers Karpathy-style full-sentence titles — earlier 80-char cap
-    failed for any title >80 chars, leaving the title echoed verbatim in the
-    OG card body right beneath the title slot.
+      1. Markdown heading: strips a single leading ``#{1,6} ...`` line up to
+         200 chars. Covers user notes leading with ``# <title>``, compiled
+         concepts leading with ``## Compiled Truth: <title>``, and manifest
+         docs leading with ``# <corpus name>``.
+
+      2. Plain-text title echo (only when ``title`` is provided): if the
+         remaining content opens with the title verbatim (case-insensitive),
+         drop that prefix plus any trailing sentence punctuation. Catches the
+         common author pattern where the title is repeated as the first
+         sentence of plain prose — without this, the OG card body and the
+         tweet default both lead with the title text shown right above them.
+
+    The plain-text pass requires the title to be at least 10 chars to avoid
+    false positives (a short ``"Hi"`` title that happens to prefix a
+    paragraph), and only strips when there's still content remaining after
+    the cut so we don't empty the excerpt.
     """
     if not content:
         return content
     m = re.match(r"^\s*#{1,6}\s+([^\n]{1,200})\n+", content)
-    return content[m.end():] if m else content
+    if m:
+        content = content[m.end():]
+    if title:
+        t = title.strip().rstrip(".!?;:")
+        if t and len(t) >= 10:
+            head = content.lstrip()
+            if head.lower().startswith(t.lower()):
+                rest = head[len(t):]
+                rest = re.sub(r"^[.!?;:\s]+", "", rest)
+                if rest:
+                    content = rest
+    return content
 
 
 def _extract_concept_summary(content: str) -> str:
@@ -295,7 +313,11 @@ body {
   color: #1d1d1f;
   margin-bottom: 24px;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  /* 2 lines (was 1) so multi-word corpus names like
+     "build AI native consumer app" don't get CSS-truncated to
+     "build AI native..." at 80px. Matches the .title clamp on
+     content cards. */
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -555,9 +577,10 @@ def _render_content_card(corpus: dict, doc: dict) -> str:
     if _is_wiki(doc):
         raw_content = _extract_concept_summary(raw_content)
 
-    # Strip any short leading markdown heading — covers title-echoes and the
-    # corpus-name heading at the start of manifest docs.
-    content = _drop_title_echo(raw_content)
+    # Strip title echo — both the markdown-heading form (``# <title>``) and
+    # the plain-text form (author repeats the title as the first sentence of
+    # the body). Pass the title so the plain-text pass can match.
+    content = _drop_title_echo(raw_content, title=raw_title)
     content = _strip_markdown(content)
     content = content.strip()
 
