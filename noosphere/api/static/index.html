@@ -16,9 +16,20 @@
 }
     </script>
     <script>(function(){var t=localStorage.getItem('noosphere-theme');if(t)document.documentElement.classList.add(t)})();</script>
-    <link rel="stylesheet" href="/static/styles.css?v=172" />
+    <link rel="stylesheet" href="/static/styles.css?v=176" />
   </head>
   <body>
+    <noscript>
+      <div style="max-width:640px;margin:80px auto;padding:24px;font-family:'Libre Baskerville',Georgia,serif;line-height:1.6;color:#222">
+        <h1 style="font-weight:400;margin:0 0 24px">Noosphere</h1>
+        <p>The app surface renders with JavaScript. For machine-readable access without it:</p>
+        <ul style="padding-left:20px;margin:12px 0">
+          <li><a href="/llms.txt">/llms.txt</a> — site-level index of every public corpus on this instance</li>
+          <li>Per-corpus: <code>/c/&lt;slug&gt;/llms.txt</code> (index) and <code>/c/&lt;slug&gt;/llms-full.txt</code> (full text)</li>
+        </ul>
+        <p style="margin-top:24px"><a href="https://github.com/SteveRZ/Noosphere">github.com/SteveRZ/Noosphere</a></p>
+      </div>
+    </noscript>
     <div id="app">
       <div id="page-landing" class="page"></div>
       <div id="page-main" class="page hidden">
@@ -40,6 +51,6 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="/static/app.js?v=228"></script>
+    <script src="/static/app.js?v=233"></script>
   </body>
 </html>

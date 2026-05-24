@@ -748,11 +748,12 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
         og_image_path = f"/og/c/{slug_q}.png"
     else:
         canonical_path = f"/c/{slug_q}/d/{doc['id']}"
-        # The SPA has no dedicated single-doc view — docs render as items in
-        # the corpus view. Route the share URL to the corpus so the recipient
-        # at least lands on the right scope with that doc visible in the list.
-        # Doc-level deep-linking is a separate SPA enhancement.
-        hash_route = f"#/corpus/{corpus_id}"
+        # Single-doc share: route to the corpus view with /d/{doc_id} on the
+        # hash. The SPA's #/corpus/{cid}/d/{did} branch passes expandDoc to
+        # renderCorpus, which scrolls the matching row into view and expands
+        # it inline — there's still no standalone single-doc page, but the
+        # recipient lands on the actual content rather than the corpus root.
+        hash_route = f"#/corpus/{corpus_id}/d/{doc['id']}"
         og_image_path = f"/og/c/{slug_q}/d/{doc['id']}.png"
 
     canonical_url = f"{base_url}{canonical_path}"
@@ -781,6 +782,36 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
     # scrapers handle inconsistently.
     template = re.sub(r"<title>[^<]*</title>\s*", "", template, count=1)
     template = re.sub(r'<meta name="description"[^/]*/>\s*', "", template, count=1)
+
+    # Corpus-specific <noscript> fallback. Replaces the static site-level
+    # noscript so JS-disabled visitors and non-JS-executing crawlers see the
+    # corpus's identity + a pointer to the machine-readable surface for this
+    # specific corpus, rather than the generic "/llms.txt index" message.
+    corpus_name = (corpus.get("name") or "Untitled").strip()
+    corpus_desc = (corpus.get("description") or "").strip()
+    desc_html = (
+        f'<p style="margin:12px 0">{html.escape(corpus_desc)}</p>'
+        if corpus_desc else ""
+    )
+    noscript_html = f"""    <noscript>
+      <div style="max-width:640px;margin:80px auto;padding:24px;font-family:'Libre Baskerville',Georgia,serif;line-height:1.6;color:#222">
+        <h1 style="font-weight:400;margin:0 0 16px">{html.escape(corpus_name)}</h1>
+        {desc_html}
+        <p style="margin-top:24px">Machine-readable surface for this corpus:</p>
+        <ul style="padding-left:20px;margin:12px 0">
+          <li><a href="/c/{slug_q}/llms.txt">/c/{slug_q}/llms.txt</a> — index</li>
+          <li><a href="/c/{slug_q}/llms-full.txt">/c/{slug_q}/llms-full.txt</a> — full text</li>
+        </ul>
+        <p style="margin-top:24px;color:#666;font-size:13px">On <a href="/" style="color:#222">Noosphere</a>.</p>
+      </div>
+    </noscript>
+"""
+    template = re.sub(
+        r"<noscript>[\s\S]*?</noscript>\s*",
+        noscript_html,
+        template,
+        count=1,
+    )
 
     return template.replace("</head>", inject + "  </head>", 1)
 
@@ -895,7 +926,17 @@ async def _render_html_to_png(html_content: str) -> bytes:
 
 
 def _cache_key_corpus(corpus: dict) -> str:
-    raw = f"corpus:{corpus['id']}:{corpus.get('updated_at') or ''}"
+    # ``document_count`` is rendered in the card meta line ("47 documents · Public").
+    # It can change without ``updated_at`` moving — the ingest pipeline writes
+    # documents and bumps ``document_count`` independently of the corpus row's
+    # mtime — so keying on updated_at alone would serve stale share cards
+    # forever after the first cache write. Including the count rotates the key
+    # on every new ingest.
+    raw = (
+        f"corpus:{corpus['id']}:"
+        f"{corpus.get('updated_at') or ''}:"
+        f"{corpus.get('document_count') or 0}"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 

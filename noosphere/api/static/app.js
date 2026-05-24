@@ -605,10 +605,25 @@ async function route(){const h=location.hash||'#/';stopAll();
     document.getElementById('page-main').classList.add('hidden');
     await renderInviteAccept(h.substring('#/invite/'.length));return;
   }
-  // Cloud mode: redirect to login if not authenticated and trying to access app
-  if(_cloudMode&&!_authUser&&h!=='#/explore'&&!h.startsWith('#/explore')){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
+  // Cloud mode: redirect to login if not authenticated and trying to access app.
+  // Public read-only paths bypass the gate — Explore (the discovery surface)
+  // and any /#/corpus/* URL (the canonical share target from Twitter/HN/etc.).
+  // Without the corpus bypass, every shared `/c/{slug}` link funnels visitors
+  // to a login screen instead of the content they came to see.
+  const _publicPath=h==='#/explore'||h.startsWith('#/explore')||h.startsWith('#/corpus/');
+  if(_cloudMode&&!_authUser&&!_publicPath){document.getElementById('page-landing').classList.remove('hidden');document.getElementById('page-main').classList.add('hidden');renderLogin();return}
   document.getElementById('page-landing').classList.add('hidden');document.getElementById('page-main').classList.remove('hidden');
-  await Promise.all([loadC(),loadMe(),loadChatSessions()]);setSBActive(h);renderSBChats();
+  // Body class lets CSS hide write affordances (per-doc edit/delete, Wiki
+  // Extract/Compile/Interview, Sources +Add, chat composer, Settings tab,
+  // sidebar New-chat/Chats/Corpora links) when an unauthenticated visitor is
+  // looking at a public corpus. The corpus itself still renders; the page
+  // becomes a read-only public surface.
+  document.body.classList.toggle('unauth-view',_cloudMode&&!_authUser);
+  // Skip auth-required loaders for unauth visitors — they 401 against
+  // /corpora /me /chat-sessions and would otherwise overwrite the
+  // module-level state arrays with error payloads.
+  if(!_cloudMode||_authUser){await Promise.all([loadC(),loadMe(),loadChatSessions()])}
+  setSBActive(h);renderSBChats();
   if(h==='#/main'||h.startsWith('#/main?')){
     // ?session=<sid> → resume that chat in the home composer. Set the pending
     // slot here (not in renderHome) so #/main with no query still resets it.
@@ -655,6 +670,12 @@ async function route(){const h=location.hash||'#/';stopAll();
       // Entity has no separate page — deep-link into the corpus surface
       // with that entity's Wiki row pre-expanded (keeps the URL citable).
       await renderCorpus(corpusId,null,{expandEntity:segs[2]});
+    }else if(segs[1]==='d'&&segs[2]){
+      // Doc-level deep link from a shared /c/{slug}/d/{doc_id} URL — the
+      // og_router rewrites that path to this hash on its way through
+      // _render_share_html. Match the entity-deep-link UX: expand the row
+      // inline + scroll into view + flash.
+      await renderCorpus(corpusId,null,{expandDoc:segs[2]});
     }else if(segs[1]==='insights'){
       await renderCorpusInsights(corpusId);
     }else if(segs[1]==='settings'){
@@ -3306,7 +3327,16 @@ async function doExploreBrowse(){
     const r=await fetch(`${API}/corpora/network`);
     const data=await r.json();
     const all=Array.isArray(data)?data:(data.nodes||data.corpora||[]);
-    if(!all.length){el.innerHTML='<div style="color:var(--muted)">No knowledge bases yet. Be the first — click <strong>+ New</strong>.</div>';return}
+    if(!all.length){
+      // Auth-aware empty state. Unauth visitors (cloud mode) have no
+      // "+ New" affordance — the sidebar New button is hidden by
+      // .unauth-view, and clicking it would bounce them to login
+      // anyway. Point them at sign-in directly instead.
+      const cta=(_cloudMode&&!_authUser)
+        ? 'No knowledge bases yet. <a href="#/login" style="color:var(--tx)">Sign in to publish the first one →</a>'
+        : 'No knowledge bases yet. Be the first — click <strong>+ New</strong>.';
+      el.innerHTML=`<div style="color:var(--muted)">${cta}</div>`;return;
+    }
     el.innerHTML=all.map(c=>_exploreCard({
       corpus_id:c.id,corpus_name:c.name,description:c.description||'',
       author:c.author||c.author_name||'',tags:c.tags||[],document_count:c.document_count||0,
@@ -4726,7 +4756,16 @@ async function renderCorpus(id,sessionId,opts){
   // synthesis of sources.
   const wikiCount=wikiDocs.length+ents.length;
   const wikiSubLabel=wikiCount?`${wikiCount} · synthesis`:'synthesis';
-  ct.innerHTML=`<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="#/corpora">&larr; Corpora</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
+  // Unauthenticated visitors (cloud mode) see this corpus as a read-only
+  // public surface — write affordances are CSS-hidden via body.unauth-view
+  // (see styles.css), and we prepend a banner explaining the gate + the
+  // back-link points to /#/explore instead of /#/corpora (which they can't
+  // reach without an account).
+  const _isUnauth=_cloudMode&&!_authUser;
+  const _backHref=_isUnauth?'#/explore':'#/corpora';
+  const _backLabel=_isUnauth?'Explore':'Corpora';
+  const _unauthBanner=_isUnauth?`<div class="cv-unauth-banner"><span>Read-only view. <a href="#/login">Sign in</a> to chat, subscribe, or build your own.</span><a class="cv-unauth-cta" href="#/login">Sign in →</a></div>`:'';
+  ct.innerHTML=`${_unauthBanner}<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="${_backHref}">&larr; ${_backLabel}</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   // Description editor — surgical (no renderCorpus). Snapshot the read-only
   // markup, swap in the input, and restore (with the new value on save) so
@@ -4952,6 +4991,15 @@ async function renderCorpus(id,sessionId,opts){
     const sel='.doc-item--entity[data-entity-id="'+(window.CSS&&CSS.escape?CSS.escape(opts.expandEntity):opts.expandEntity)+'"]';
     const row=ct.querySelector(sel);
     if(row){await _expandEntityItem(row,id);row.scrollIntoView({behavior:'smooth',block:'center'});_flash(row);}
+  }
+  if(opts&&opts.expandDoc){
+    // Match the entity branch: select by data-id, expand inline, scroll,
+    // flash. doc-item--entity has its own data-entity-id; regular doc
+    // rows use data-id (set in docItemHTML). Excluding --entity prevents
+    // the very rare case where an entity row also has a stray data-id.
+    const sel='.doc-item:not(.doc-item--entity)[data-id="'+(window.CSS&&CSS.escape?CSS.escape(opts.expandDoc):opts.expandDoc)+'"]';
+    const row=ct.querySelector(sel);
+    if(row){await _expandDocItem(row,id);row.scrollIntoView({behavior:'smooth',block:'center'});_flash(row);}
   }
 }
 

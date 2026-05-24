@@ -40,6 +40,40 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 .lp-h1{font-family:'Libre Baskerville',Georgia,serif;font-size:34px;line-height:1.25;font-weight:700;margin-bottom:16px;text-wrap:balance}
 .lp-sub{font-size:15px;line-height:1.6;color:var(--tx2);margin-bottom:24px;text-wrap:pretty}
 .lp-go{display:inline-flex;align-items:center;gap:6px;padding:11px 26px;border-radius:var(--r-pill);border:none;background:var(--btnBg);color:var(--btnC);font-size:15px;font-weight:500;cursor:pointer;transition:opacity .15s,transform .1s}.lp-go:hover{opacity:.85;transform:translateY(-1px)}
+
+/* ── Public corpus read-only view (cloud unauth visitor) ──
+   When the body carries .unauth-view, hide every write affordance — per-doc
+   edit/delete (keep share), Wiki Extract/Compile/Interview, Sources +Add,
+   description edit pencil, Settings tab, chat composer, and sidebar
+   New-chat/Chats/Corpora nav. The corpus surface itself stays intact and
+   readable. The cv-unauth-banner sits at the top of the content area with
+   the Sign-in CTA. */
+body.unauth-view .doc-edit-btn,
+body.unauth-view .doc-del-btn,
+body.unauth-view .cv-desc-edit-btn,
+body.unauth-view #cv-extract-btn,
+body.unauth-view #cv-compile-btn,
+body.unauth-view #cv-interview-btn,
+body.unauth-view #cv-raw-add,
+body.unauth-view .cv-chat-dock,
+body.unauth-view .cv-tab[href$="/settings"],
+body.unauth-view #sb-new,
+body.unauth-view #nav-chats,
+body.unauth-view #nav-corpora,
+/* Right-panel write actions — Access dropdown + Save, Add-subscription,
+   per-subscription buttons, Generate-token, Revenue (owner-only). The
+   access state is still communicated to readers via the badge in the
+   corpus header, and the static sub-rows (Discovery / Licensing /
+   Pricing) stay visible. */
+body.unauth-view .rp-row,
+body.unauth-view #rp-subs-add,
+body.unauth-view #rp-tokens,
+body.unauth-view #rp-revenue,
+body.unauth-view .rp-sub-act{display:none !important}
+.cv-unauth-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 18px;background:var(--bg2);border-bottom:1px solid var(--brd);font-size:13px;color:var(--tx2);line-height:1.5}
+.cv-unauth-banner a{color:var(--tx);text-decoration:underline}
+.cv-unauth-cta{text-decoration:none !important;padding:5px 12px;border:1px solid var(--brd);border-radius:6px;font-weight:500;white-space:nowrap;background:var(--bg);transition:background .15s}
+.cv-unauth-cta:hover{background:var(--bg2)}
 /* Glass-morphism terminal card — replicates Feynman's chat card so the
    network behind shows through as soft blurred color blobs. */
 .lp-term{flex:0 1 540px;min-width:340px;background:var(--gl);backdrop-filter:var(--glBlur);-webkit-backdrop-filter:var(--glBlur);border-radius:var(--r-xl);box-shadow:var(--shPop);overflow:hidden}
