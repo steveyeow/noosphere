@@ -619,6 +619,11 @@ async function route(){const h=location.hash||'#/';stopAll();
   // looking at a public corpus. The corpus itself still renders; the page
   // becomes a read-only public surface.
   document.body.classList.toggle('unauth-view',_cloudMode&&!_authUser);
+  // cv-readonly hides per-corpus write affordances for a logged-IN viewer who
+  // doesn't own the corpus (public-corpus browsing). Cleared on every nav;
+  // renderCorpus re-applies it from the corpus's server-authoritative
+  // `can_write` flag. (unauth-view already covers logged-OUT visitors.)
+  document.body.classList.remove('cv-readonly');
   // Skip auth-required loaders for unauth visitors — they 401 against
   // /corpora /me /chat-sessions and would otherwise overwrite the
   // module-level state arrays with error payloads.
@@ -4795,7 +4800,11 @@ async function renderCorpus(id,sessionId,opts){
   // back-link points to /#/explore instead of /#/corpora (which they can't
   // reach without an account).
   const _isUnauth=_cloudMode&&!_authUser;
-  const _backHref=_isUnauth?'#/explore':'#/corpora';
+  // Logged-IN but non-owner viewing a public corpus → read-only. The server
+  // sets `can_write` (owner / org-editor / local operator); the body class
+  // CSS-hides edit/delete/Extract/Compile/Interview/+Add/desc-edit/Settings.
+  // The backend enforces the same regardless, so this is purely UX.
+  document.body.classList.toggle('cv-readonly',!c.can_write);
   const _backLabel=_isUnauth?'Explore':'Corpora';
   const _unauthBanner=_isUnauth?`<div class="cv-unauth-banner"><span>Read-only view. <a href="#/login">Sign in</a> to chat, subscribe, or build your own.</span><a class="cv-unauth-cta" href="#/login">Sign in →</a></div>`:'';
   ct.innerHTML=`${_unauthBanner}<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="${_backHref}">&larr; ${_backLabel}</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
@@ -5169,6 +5178,10 @@ async function renderCorpusSettings(id){
   const ct=document.getElementById('content');ct.classList.remove('content--corpus');
   let c=null;try{const r=await fetch(`${API}/corpora/${id}`);if(r.ok)c=await r.json()}catch(e){}
   if(!c){ct.innerHTML='<div class="empty" style="padding:48px;text-align:center">Corpus not found</div>';return}
+  // Settings is owner-only config (connect endpoints, access, maintenance).
+  // A non-owner who deep-links here (the tab is CSS-hidden for them) bounces
+  // back to the read-only Overview — backend write routes 403 regardless.
+  if(!c.can_write){location.hash=`#/corpus/${id}`;return}
   const al=c.access_level||'public';
   const badgeLabel=al==='token'?'Token-gated':al.charAt(0).toUpperCase()+al.slice(1);
   const tg=Array.isArray(c.tags)?c.tags:[];

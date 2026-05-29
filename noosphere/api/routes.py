@@ -190,8 +190,12 @@ def _check_corpus_access(corpus: dict, request: Request) -> str | None:
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 
-def _require_owner(request: Request, corpus: dict | None = None):
-    """Require write access on a corpus or the instance.
+def _can_write_corpus(request: Request, corpus: dict | None = None) -> bool:
+    """Return True if the request is authorized to write `corpus`.
+
+    Same policy as `_require_owner`, expressed as a boolean so callers (and
+    the corpus payload's `can_write` flag) can branch without catching an
+    exception.
 
     Personal corpus:
       - Cloud: caller's user_id must match owner_id.
@@ -203,21 +207,36 @@ def _require_owner(request: Request, corpus: dict | None = None):
     user_id = _get_user_id(request)
 
     if corpus and corpus.get("org_id"):
-        if not user_id or not orgs_mod.can_write_corpus(corpus, user_id):
-            raise HTTPException(status_code=403, detail="Write access restricted to org editors")
-        return
+        return bool(user_id and orgs_mod.can_write_corpus(corpus, user_id))
 
     if _is_cloud():
         if not user_id:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            return False
         if corpus and corpus.get("owner_id") and corpus["owner_id"] != user_id:
-            raise HTTPException(status_code=403, detail="You do not own this corpus")
-        return
+            return False
+        return True
 
     if corpus and corpus.get("owner_id") and user_id and corpus["owner_id"] == user_id:
+        return True
+    return _is_owner_request(request)
+
+
+def _require_owner(request: Request, corpus: dict | None = None):
+    """Require write access on a corpus or the instance — raises otherwise.
+
+    Thin wrapper over `_can_write_corpus`; the two never drift. The error
+    distinguishes "not authenticated" (401) from "authenticated but not
+    allowed" (403) so cloud clients know whether to prompt a sign-in.
+    """
+    if _can_write_corpus(request, corpus):
         return
-    if not _is_owner_request(request):
-        raise HTTPException(status_code=403, detail="Write access restricted to corpus owner")
+    if _is_cloud() and not _get_user_id(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if corpus and corpus.get("org_id"):
+        raise HTTPException(status_code=403, detail="Write access restricted to org editors")
+    if corpus and corpus.get("owner_id"):
+        raise HTTPException(status_code=403, detail="You do not own this corpus")
+    raise HTTPException(status_code=403, detail="Write access restricted to corpus owner")
 
 
 class SearchRequest(BaseModel):
@@ -552,6 +571,21 @@ def _resolve_corpus(corpus_id: str) -> dict:
     if not corpus:
         raise HTTPException(status_code=404, detail="Corpus not found")
     return corpus
+
+
+def _resolve_doc_in_corpus(corpus: dict, doc_id: str) -> dict:
+    """Fetch a document and verify it belongs to `corpus`.
+
+    Doc-scoped routes authorize against the corpus in the URL, but the
+    document store looks rows up by id alone. Without this check a user who
+    owns *any* corpus could read/edit/delete *any* document by pointing its
+    id at a corpus they control (cross-corpus IDOR). 404 — not 403 — so we
+    don't leak which doc ids exist in other corpora.
+    """
+    doc = get_document(doc_id)
+    if not doc or doc.get("corpus_id") != corpus["id"]:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
 
 
 @router.get("/health")
@@ -1231,6 +1265,10 @@ async def api_get_corpus(corpus_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
     corpus["source_composition"] = source_composition(corpus["id"])
+    # Authoritative write flag — the client gates every edit affordance on
+    # this rather than re-deriving ownership, so a non-owner viewing a public
+    # corpus gets a read-only page (the backend enforces it regardless).
+    corpus["can_write"] = _can_write_corpus(request, corpus)
     return corpus
 
 
@@ -1447,10 +1485,7 @@ async def api_list_documents(corpus_id: str, request: Request):
 async def api_get_document(corpus_id: str, doc_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
-    doc = get_document(doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return doc
+    return _resolve_doc_in_corpus(corpus, doc_id)
 
 
 _VALID_SOURCE_KINDS = ("user_original", "external_public", "external_subscription")
@@ -1460,6 +1495,7 @@ _VALID_SOURCE_KINDS = ("user_original", "external_public", "external_subscriptio
 async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _resolve_doc_in_corpus(corpus, doc_id)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -1475,6 +1511,7 @@ async def api_update_document(corpus_id: str, doc_id: str, req: UpdateDocumentRe
 async def api_delete_document(corpus_id: str, doc_id: str, request: Request):
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _resolve_doc_in_corpus(corpus, doc_id)
     if not delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted"}
@@ -2081,6 +2118,7 @@ async def api_extract_document_entities(corpus_id: str, doc_id: str, request: Re
     """Run entity extraction on a single document."""
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _resolve_doc_in_corpus(corpus, doc_id)
     _check_quota(request, "extract_entities")
     from noosphere.core.entities import enrich_document
     result = enrich_document(doc_id)
@@ -2136,6 +2174,7 @@ async def api_recompile_concept(
     """
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _resolve_doc_in_corpus(corpus, doc_id)
     _check_quota(request, "compile")
     from noosphere.core.knowledge_growth import recompile_concept_if_dirty
 
@@ -2155,6 +2194,7 @@ async def api_refine_concept(
     """Apply a natural-language edit to a concept doc's compiled truth."""
     corpus = _resolve_corpus(corpus_id)
     _require_owner(request, corpus)
+    _resolve_doc_in_corpus(corpus, doc_id)
     _check_quota(request, "compile")
     from noosphere.core.knowledge_growth import refine_concept_note
 
@@ -2197,6 +2237,7 @@ async def api_concept_versions(corpus_id: str, doc_id: str, request: Request):
     """List all snapshot versions of a concept doc (oldest first)."""
     corpus = _resolve_corpus(corpus_id)
     _check_corpus_access(corpus, request)
+    _resolve_doc_in_corpus(corpus, doc_id)
     from noosphere.core.knowledge_growth import get_concept_versions
 
     return {"document_id": doc_id, "versions": get_concept_versions(doc_id)}

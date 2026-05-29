@@ -74,6 +74,24 @@ body.unauth-view .rp-sub-act{display:none !important}
 .cv-unauth-banner a{color:var(--tx);text-decoration:underline}
 .cv-unauth-cta{text-decoration:none !important;padding:5px 12px;border:1px solid var(--brd);border-radius:6px;font-weight:500;white-space:nowrap;background:var(--bg);transition:background .15s}
 .cv-unauth-cta:hover{background:var(--bg2)}
+/* ── Public corpus read-only view (cloud authed NON-owner) ──
+   A logged-in visitor browsing a corpus they don't own. Same write-affordance
+   hiding as .unauth-view, but the chat dock and sidebar nav stay — chatting a
+   public corpus is a read op, and they have their own app to navigate. The
+   backend rejects writes regardless; this just removes the misleading UI. */
+body.cv-readonly .doc-edit-btn,
+body.cv-readonly .doc-del-btn,
+body.cv-readonly .cv-desc-edit-btn,
+body.cv-readonly #cv-extract-btn,
+body.cv-readonly #cv-compile-btn,
+body.cv-readonly #cv-interview-btn,
+body.cv-readonly #cv-raw-add,
+body.cv-readonly .cv-tab[href$="/settings"],
+body.cv-readonly .rp-row,
+body.cv-readonly #rp-subs-add,
+body.cv-readonly #rp-tokens,
+body.cv-readonly #rp-revenue,
+body.cv-readonly .rp-sub-act{display:none !important}
 /* Glass-morphism terminal card — replicates Feynman's chat card so the
    network behind shows through as soft blurred color blobs. */
 .lp-term{flex:0 1 540px;min-width:340px;background:var(--gl);backdrop-filter:var(--glBlur);-webkit-backdrop-filter:var(--glBlur);border-radius:var(--r-xl);box-shadow:var(--shPop);overflow:hidden}
