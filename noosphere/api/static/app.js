@@ -4700,6 +4700,13 @@ function openShareDialog(corpus,doc){
   };
 }
 
+// "Open reading view" affordance on every doc row — a maximize glyph that
+// pops the floating reader (openDocReader). Always visible (not hover-gated
+// like .doc-actions) because reading is the row's primary action; kept small
+// and neutral so it stays minimal.
+const READ_BTN_SVG=`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+const _readBtn=did=>`<button class="doc-read-btn" data-read-id="${did}" title="Open reading view" aria-label="Open reading view">${READ_BTN_SVG}</button>`;
+
 async function renderCorpus(id,sessionId,opts){
   stopAll();_chatH=[];const ct=document.getElementById('content');ct.classList.remove('content--corpus');ct.innerHTML='<div class="empty">Loading...</div>';
   let c;try{const r=await fetch(`${API}/corpora/${id}`);if(!r.ok){const e=await r.json().catch(()=>({}));const msg=r.status===404?'Corpus not found':r.status===401?'Access denied — this corpus requires authentication':r.status===402?e.detail||'Payment required to access this corpus':r.status===403?e.detail||'Access denied':e.detail||'Corpus not found';ct.innerHTML=`<a class="cv-back" href="#/corpora">&larr; Corpora</a><div class="empty" style="margin-top:40px">${msg}</div>`;hideRP();return}c=await r.json()}catch(e){ct.innerHTML='<div class="empty">Not found</div>';hideRP();return}
@@ -4769,12 +4776,12 @@ async function renderCorpus(id,sessionId,opts){
     // and no edit/delete buttons (the doc is auto-regenerated from corpus
     // fields; user-side edits would be thrown away on the next refresh).
     if(d.doc_type==='manifest'){
-      return `<div class="doc-item" data-id="${d.id}" data-cat="manifest"><div class="doc-hd"><span class="doc-tt">${esc(d.title||'Manifest')}</span><span class="doc-hd-right"><span class="doc-mt">${wlab} · <span class="doc-sk sk-system">system generated</span></span><span class="doc-ar">▸</span></span></div></div>`;
+      return `<div class="doc-item" data-id="${d.id}" data-cat="manifest"><div class="doc-hd"><span class="doc-tt">${esc(d.title||'Manifest')}</span><span class="doc-hd-right"><span class="doc-mt">${wlab} · <span class="doc-sk sk-system">system generated</span></span>${_readBtn(d.id)}<span class="doc-ar">▸</span></span></div></div>`;
     }
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
     // Show the contributor pill only in team workspaces — meaningless solo.
     const contribHTML=(_workspace.kind==='org'&&d.contributor_user_id)?(' · '+renderContributorPill(d.contributor_user_id)):'';
-    return `<div class="doc-item" data-id="${d.id}" data-cat="${esc(d.doc_type||'doc')}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-share-btn" data-id="${d.id}" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span><span class="doc-ar">▸</span></span></div></div>`;
+    return `<div class="doc-item" data-id="${d.id}" data-cat="${esc(d.doc_type||'doc')}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-share-btn" data-id="${d.id}" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span>${_readBtn(d.id)}<span class="doc-ar">▸</span></span></div></div>`;
   };
   // Wiki empty-state: phrase matters depending on whether the manifest is
   // already there. Even before the user compiles a single concept note, the
@@ -4973,6 +4980,10 @@ async function renderCorpus(id,sessionId,opts){
     const doc=docs.find(d=>d.id===did);
     if(doc)openShareDialog(c,doc);
   }});
+  ct.querySelectorAll('.doc-read-btn').forEach(btn=>{btn.onclick=e=>{
+    e.stopPropagation();
+    openDocReader(id,btn.dataset.readId);
+  }});
   ct.querySelectorAll('.doc-del-btn').forEach(btn=>{btn.onclick=async e=>{
     e.stopPropagation();const did=btn.dataset.id;const doc=docs.find(d=>d.id===did);
     if(!confirm(`Delete "${doc?.title||did}"? This cannot be undone.`))return;
@@ -5005,8 +5016,8 @@ async function renderCorpus(id,sessionId,opts){
     try{const r=await fetch(`${API}/corpora/${id}/documents/${did}`);const doc=await r.json();showDocInlineEdit(id,item,doc)}catch(e){toast('Failed to load document')}
   }});
   ct.querySelectorAll('.doc-item').forEach(item=>{item.addEventListener('click',async e=>{
-    if(e.target.closest('.doc-actions')||e.target.closest('a.wikilink')||e.target.closest('.ent-rel')||e.target.closest('.ent-recompile')||item.classList.contains('editing'))return;
-    if(item.classList.contains('expanded')){const b=item.querySelector('.doc-bd');if(b)b.remove();item.classList.remove('expanded');return}
+    if(e.target.closest('.doc-actions')||e.target.closest('.doc-read-btn')||e.target.closest('.doc-bd-more')||e.target.closest('a.wikilink')||e.target.closest('.ent-rel')||e.target.closest('.ent-recompile')||item.classList.contains('editing'))return;
+    if(item.classList.contains('expanded')){_collapseDocRow(item);return}
     if(item.classList.contains('doc-item--entity')){await _expandEntityItem(item,id);return}
     await _expandDocItem(item,id);
   })});
@@ -5450,8 +5461,10 @@ function showAddSubscriptionModal(c,onSaved){
 const _ENT_VERB={founded:'founded',works_at:'works at',advises:'advises',invested_in:'invested in',attended:'attended',close_to:'close to',related:'related to'};
 
 // Unified content view: 'html' (rendered markdown) or 'md' (raw source).
-// Toggled from the corpus tab strip; persisted across sessions.
-let _docView=(()=>{try{return localStorage.getItem('noos-docview')==='md'?'md':'html'}catch(_){return'html'}})();
+// Toggled from the corpus tab strip; persisted across sessions. Default is
+// Markdown — the audience skews technical and reads source comfortably, and
+// the rendered pass adds little for prose-heavy docs.
+let _docView=(()=>{try{return localStorage.getItem('noos-docview')==='html'?'html':'md'}catch(_){return'md'}})();
 function _proseHTML(src){
   return _docView==='md'
     ? `<pre class="doc-bd-raw">${esc(src||'')}</pre>`
@@ -5532,6 +5545,14 @@ function _flash(el){
   setTimeout(()=>el.classList.remove('doc-item--flash'),1300);
 }
 
+// Collapse a doc row: drop the inline body AND the "Read full" affordance
+// (the latter is a sibling of .doc-bd, so it must be cleared explicitly).
+function _collapseDocRow(item){
+  const b=item.querySelector('.doc-bd');if(b)b.remove();
+  const m=item.querySelector('.doc-bd-more');if(m)m.remove();
+  item.classList.remove('expanded');
+}
+
 async function _expandDocItem(item,corpusId){
   if(item.classList.contains('expanded'))return;
   item.classList.add('expanded');
@@ -5543,7 +5564,76 @@ async function _expandDocItem(item,corpusId){
     b.innerHTML=_proseHTML(d.content);
     if(_docView!=='md')_bindWikilinks(b,corpusId);
     item.appendChild(b);
+    // Long docs: clip the inline preview with a soft fade + a "Read full"
+    // link into the floating reader, so the row list stays scannable. Short
+    // docs read in full inline (no clip, no extra affordance).
+    if(b.scrollHeight>360){
+      b.classList.add('doc-bd--clip');
+      const more=document.createElement('button');
+      more.type='button';more.className='doc-bd-more';more.textContent='Read full →';
+      more.onclick=ev=>{ev.stopPropagation();openDocReader(corpusId,item.dataset.id)};
+      item.appendChild(more);
+    }
   }catch(e){}
+}
+
+// Floating reading view — a roomy modal for reading a full document without
+// leaving the corpus page (the row list + right panel stay, revealed on
+// close). The inline row expand is a quick preview; this is the focused read.
+// Honors the active view mode (Markdown by default) with a toggle in the
+// header. Close via ×, Esc, backdrop click, or route change.
+async function openDocReader(corpusId,docId){
+  const existing=document.getElementById('read-overlay');if(existing)existing.remove();
+  const ov=document.createElement('div');ov.id='read-overlay';ov.className='read-overlay';
+  ov.innerHTML=`<div class="read-panel" role="dialog" aria-modal="true" aria-label="Document">
+    <div class="read-hd">
+      <div class="read-hd-text"><span class="read-title" id="read-title">Loading…</span><span class="read-meta" id="read-meta"></span></div>
+      <div class="read-hd-right">
+        <span class="read-viewtoggle" id="read-viewtoggle"><button class="read-vt" data-v="html">Rendered</button><button class="read-vt" data-v="md">Markdown</button></span>
+        <button class="read-cc" id="read-cc" title="Close" aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div class="read-body" id="read-body"><div class="read-loading">Loading…</div></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>{ov.remove();document.removeEventListener('keydown',escH);window.removeEventListener('hashchange',close)};
+  const escH=e=>{if(e.key==='Escape')close()};
+  document.addEventListener('keydown',escH);
+  window.addEventListener('hashchange',close);
+  ov.querySelector('#read-cc').onclick=close;
+  ov.addEventListener('click',e=>{if(e.target===ov)close()});
+  let d=null;
+  try{const r=await fetch(`${API}/corpora/${corpusId}/documents/${docId}`);if(r.ok)d=await r.json()}catch(e){}
+  if(!d){ov.querySelector('#read-body').innerHTML='<div class="read-loading">Failed to load.</div>';return}
+  ov.querySelector('#read-title').textContent=d.title||'Untitled';
+  const wc=d.word_count||0;
+  let skHTML='';
+  if(d.doc_type==='manifest')skHTML='<span class="doc-sk sk-system">system generated</span>';
+  else if(d.source_kind)skHTML=`<span class="doc-sk sk-${esc(d.source_kind)}">${esc(d.source_kind.replace('_',' '))}</span>`;
+  const parts=[];
+  if(wc)parts.push(wc.toLocaleString()+' word'+(wc===1?'':'s'));
+  if(d.date)parts.push(esc(d.date));
+  if(skHTML)parts.push(skHTML);
+  ov.querySelector('#read-meta').innerHTML=parts.join(' · ');
+  const bodyEl=ov.querySelector('#read-body');
+  const renderBody=()=>{
+    if(_docView==='md'){
+      bodyEl.innerHTML=`<pre class="read-raw">${esc(d.content||'')}</pre>`;
+    }else{
+      bodyEl.innerHTML=`<div class="read-prose doc-bd-md">${_mdToHtml(d.content||'')}</div>`;
+      _bindWikilinks(bodyEl,corpusId);
+    }
+    bodyEl.scrollTop=0;
+  };
+  const syncToggle=()=>ov.querySelectorAll('.read-vt').forEach(b=>b.classList.toggle('read-vt--on',b.dataset.v===_docView));
+  ov.querySelectorAll('.read-vt').forEach(btn=>btn.onclick=()=>{
+    const v=btn.dataset.v;if(v===_docView)return;
+    _docView=v;try{localStorage.setItem('noos-docview',v)}catch(_){}
+    syncToggle();renderBody();
+    // Keep the corpus page's own toggle in sync so the two never disagree.
+    document.querySelectorAll('#cv-viewtoggle .cv-vt').forEach(b=>b.classList.toggle('cv-vt--on',b.dataset.v===v));
+  });
+  syncToggle();renderBody();
 }
 
 // Re-render any open rows after a view-mode toggle so the switch is
@@ -5551,10 +5641,14 @@ async function _expandDocItem(item,corpusId){
 async function _reopenExpanded(corpusId){
   const open=[...document.querySelectorAll('#content .doc-item.expanded')];
   for(const it of open){
-    const b=it.querySelector('.doc-bd');if(b)b.remove();
-    it.classList.remove('expanded');
-    if(it.classList.contains('doc-item--entity'))await _expandEntityItem(it,corpusId);
-    else await _expandDocItem(it,corpusId);
+    if(it.classList.contains('doc-item--entity')){
+      const b=it.querySelector('.doc-bd');if(b)b.remove();
+      it.classList.remove('expanded');
+      await _expandEntityItem(it,corpusId);
+    }else{
+      _collapseDocRow(it);
+      await _expandDocItem(it,corpusId);
+    }
   }
 }
 
