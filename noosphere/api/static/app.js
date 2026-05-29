@@ -2400,6 +2400,7 @@ function _writeSuggestions(){
 // Minimal line-icon SVGs (no decorative emoji — Feynman aesthetic)
 const ICON_CHAT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
 const ICON_PEN=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`;
+const ICON_EXPAND=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>`;
 async function renderHomeTworow(enterWrite){
   // Suggested — workspace-aware list, render immediately
   const sugEl=document.getElementById('home-col-suggested');
@@ -5565,51 +5566,104 @@ const SOURCE_KIND_OPTIONS=[
   {value:'external_subscription',label:'Subscription / paid external'},
 ];
 
+// Compute the editor's field defaults. Author/date are auto-derived so the user
+// isn't re-typing what we already know: for their own content the author is them
+// and the date falls back to the day the doc was added. Imported docs keep
+// whatever was detected at ingest (<meta> author, frontmatter date).
+function _docEditDefaults(doc){
+  let meta={};
+  try{meta=typeof doc.metadata_json==='string'?JSON.parse(doc.metadata_json||'{}'):(doc.metadata_json||{})}catch(e){meta={}}
+  if(typeof meta!=='object'||meta===null)meta={};
+  const storedAuthor=meta.author||'';
+  const sk=doc.source_kind||'user_original';
+  const isExternal=sk==='external_public'||sk==='external_subscription';
+  // Author: keep what's stored; else default to the current user for original
+  // content. External refs with no detected author stay blank (we don't know it).
+  const author=storedAuthor||(isExternal?'':(_ownerName||''));
+  // Date: keep the stored doc date; else the day it entered the KB. created_at
+  // is an ISO string — its first 10 chars are YYYY-MM-DD.
+  const date=(doc.date||'')||((doc.created_at||'').slice(0,10));
+  return {storedAuthor,author,date,sk};
+}
+
+// Single PATCH path shared by the inline editor and the expanded window so the
+// two surfaces can't drift. storedAuthor is the value actually on disk (so an
+// auto-filled author persists on first save). Throws on a failed request.
+async function _saveDocEdit(corpusId,item,doc,storedAuthor,vals){
+  const body={};
+  if(vals.title!==doc.title)body.title=vals.title;
+  if(vals.content!==doc.content)body.content=vals.content;
+  if(vals.sk!==(doc.source_kind||'user_original'))body.source_kind=vals.sk;
+  if(vals.date!==(doc.date||''))body.date=vals.date;
+  if(vals.author!==storedAuthor)body.metadata={author:vals.author};
+  if(!Object.keys(body).length)return;
+  const r=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error((await r.json()).detail||'Failed');
+  if(body.content)ensureIndexed(corpusId);
+  // Surgical refresh — rebuild only THIS row's header from the freshly saved
+  // doc so other inline editors on the page stay open (a full renderCorpus
+  // would wipe any sibling editor in mid-edit).
+  const fresh=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`).then(rr=>rr.json()).catch(()=>null);
+  if(fresh)refreshDocItemRow(item,fresh);
+}
+
 function showDocInlineEdit(corpusId,item,doc){
   const existing=item.querySelector('.doc-bd');if(existing)existing.remove();
   item.classList.remove('expanded');item.classList.add('editing');
   const ed=document.createElement('div');ed.className='doc-edit-inline';
-  const curSk=doc.source_kind||'user_original';
-  const skOptions=SOURCE_KIND_OPTIONS.map(o=>`<option value="${o.value}"${o.value===curSk?' selected':''}>${esc(o.label)}</option>`).join('');
-  // metadata.author/date are extracted at ingest from <meta> tags / file
-  // frontmatter and are often wrong. Surface them as editable fields so users
-  // can correct without delete-and-reingest.
-  let curMeta={};
-  try{curMeta=typeof doc.metadata_json==='string'?JSON.parse(doc.metadata_json||'{}'):(doc.metadata_json||{})}catch(e){curMeta={}}
-  if(typeof curMeta!=='object'||curMeta===null)curMeta={};
-  const curAuthor=curMeta.author||'';
-  const curDate=doc.date||'';
-  ed.innerHTML=`<input type="text" class="doc-edit-title" value="${esc(doc.title||'')}" placeholder="Title" /><textarea class="doc-edit-content" rows="8" placeholder="Content (Markdown supported)...">${esc(doc.content||'')}</textarea><div class="doc-edit-meta"><div class="doc-edit-meta-row"><label>Author</label><input type="text" class="doc-edit-author" value="${esc(curAuthor)}" placeholder="(none)" /></div><div class="doc-edit-meta-row"><label>Date</label><input type="text" class="doc-edit-date" value="${esc(curDate)}" placeholder="YYYY-MM-DD" /></div></div><div class="doc-edit-origin"><label for="doc-edit-sk-${doc.id}">Origin</label><select id="doc-edit-sk-${doc.id}" class="doc-edit-sk">${skOptions}</select></div><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-cancel">Cancel</button><button class="btn-sm doc-edit-save">Save</button></div>`;
+  const def=_docEditDefaults(doc);
+  const skOptions=SOURCE_KIND_OPTIONS.map(o=>`<option value="${o.value}"${o.value===def.sk?' selected':''}>${esc(o.label)}</option>`).join('');
+  ed.innerHTML=`<input type="text" class="doc-edit-title" value="${esc(doc.title||'')}" placeholder="Title" /><textarea class="doc-edit-content" rows="8" placeholder="Content (Markdown supported)...">${esc(doc.content||'')}</textarea><div class="doc-edit-meta"><div class="doc-edit-meta-row"><label>Author</label><input type="text" class="doc-edit-author" value="${esc(def.author)}" placeholder="(none)" /></div><div class="doc-edit-meta-row"><label>Date</label><input type="text" class="doc-edit-date" value="${esc(def.date)}" placeholder="YYYY-MM-DD" /></div></div><div class="doc-edit-origin"><label for="doc-edit-sk-${doc.id}">Origin</label><select id="doc-edit-sk-${doc.id}" class="doc-edit-sk">${skOptions}</select></div><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-expand" title="Edit in a larger window">${ICON_EXPAND}Expand</button><button class="btn-sm-ghost doc-edit-cancel">Cancel</button><button class="btn-sm doc-edit-save">Save</button></div>`;
   ed.onclick=e=>e.stopPropagation();
   item.appendChild(ed);
   ed.querySelector('.doc-edit-title').focus();
+  const readVals=()=>({title:ed.querySelector('.doc-edit-title').value.trim(),content:ed.querySelector('.doc-edit-content').value.trim(),sk:ed.querySelector('.doc-edit-sk').value,author:ed.querySelector('.doc-edit-author').value.trim(),date:ed.querySelector('.doc-edit-date').value.trim()});
   ed.querySelector('.doc-edit-cancel').onclick=()=>{ed.remove();item.classList.remove('editing')};
+  ed.querySelector('.doc-edit-expand').onclick=()=>showDocEditModal(corpusId,item,doc,def.storedAuthor,readVals());
   ed.querySelector('.doc-edit-save').onclick=async()=>{
-    const title=ed.querySelector('.doc-edit-title').value.trim();
-    const content=ed.querySelector('.doc-edit-content').value.trim();
-    const sk=ed.querySelector('.doc-edit-sk').value;
-    const author=ed.querySelector('.doc-edit-author').value.trim();
-    const date=ed.querySelector('.doc-edit-date').value.trim();
-    if(!title){toast('Title is required');return}
+    const vals=readVals();
+    if(!vals.title){toast('Title is required');return}
     const btn=ed.querySelector('.doc-edit-save');btn.disabled=true;btn.textContent='Saving...';
-    const body={};
-    if(title!==doc.title)body.title=title;
-    if(content!==doc.content)body.content=content;
-    if(sk!==(doc.source_kind||'user_original'))body.source_kind=sk;
-    if(date!==(doc.date||''))body.date=date;
-    if(author!==curAuthor)body.metadata={author};
-    if(!Object.keys(body).length){ed.remove();item.classList.remove('editing');return}
     try{
-      const r=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      if(!r.ok)throw new Error((await r.json()).detail||'Failed');
-      if(body.content)ensureIndexed(corpusId);
-      // Surgical refresh — rebuild only THIS row's header from the freshly
-      // saved doc so other inline editors on the page stay open. Falling
-      // back to a full renderCorpus() (the previous behavior) wiped any
-      // sibling editor in mid-edit.
-      const fresh=await fetch(`${API}/corpora/${corpusId}/documents/${doc.id}`).then(rr=>rr.json()).catch(()=>null);
+      await _saveDocEdit(corpusId,item,doc,def.storedAuthor,vals);
       ed.remove();item.classList.remove('editing');
-      if(fresh)refreshDocItemRow(item,fresh);
+    }catch(e){toast('Save failed: '+e.message);btn.disabled=false;btn.textContent='Save'}
+  };
+}
+
+// Expanded editing surface — the same fields as the inline editor in a roomy
+// floating window for long sources. Seeded with the inline editor's current
+// (possibly unsaved) values so nothing is lost on expand. Save commits and
+// closes both surfaces; Collapse pushes the window's values back to the inline
+// editor and closes only the window; ×/Esc/click-away close the window with the
+// inline editor left untouched (standard modal discard).
+function showDocEditModal(corpusId,item,doc,storedAuthor,seed){
+  const skOptions=SOURCE_KIND_OPTIONS.map(o=>`<option value="${o.value}"${o.value===seed.sk?' selected':''}>${esc(o.label)}</option>`).join('');
+  const ov=_showModalShell(`<div class="app-panel-hd"><div class="app-panel-hd-text"><h2 class="srcs-pick-ttl">Edit source</h2><p class="srcs-pick-sub">Author and date auto-fill — edit any field, then Save.</p></div></div><div class="app-panel-body doc-edit-modal-body"><input type="text" class="doc-edit-title" value="${esc(seed.title)}" placeholder="Title" /><textarea class="doc-edit-content doc-edit-content--big" placeholder="Content (Markdown supported)...">${esc(seed.content)}</textarea><div class="doc-edit-meta"><div class="doc-edit-meta-row"><label>Author</label><input type="text" class="doc-edit-author" value="${esc(seed.author)}" placeholder="(none)" /></div><div class="doc-edit-meta-row"><label>Date</label><input type="text" class="doc-edit-date" value="${esc(seed.date)}" placeholder="YYYY-MM-DD" /></div></div><div class="doc-edit-origin"><label>Origin</label><select class="doc-edit-sk">${skOptions}</select></div><div class="doc-edit-actions"><button class="btn-sm-ghost doc-edit-collapse">Collapse</button><button class="btn-sm doc-edit-msave">Save</button></div></div>`);
+  const panel=ov.querySelector('.srcs-pick');if(panel)panel.style.maxWidth='760px';
+  const readVals=()=>({title:ov.querySelector('.doc-edit-title').value.trim(),content:ov.querySelector('.doc-edit-content').value.trim(),sk:ov.querySelector('.doc-edit-sk').value,author:ov.querySelector('.doc-edit-author').value.trim(),date:ov.querySelector('.doc-edit-date').value.trim()});
+  // Collapse: copy the window's values back into the inline editor (if it's
+  // still open) so edits made here survive, then close just the window.
+  ov.querySelector('.doc-edit-collapse').onclick=()=>{
+    const inline=item.querySelector('.doc-edit-inline');
+    if(inline){const v=readVals();
+      inline.querySelector('.doc-edit-title').value=v.title;
+      inline.querySelector('.doc-edit-content').value=v.content;
+      inline.querySelector('.doc-edit-sk').value=v.sk;
+      inline.querySelector('.doc-edit-author').value=v.author;
+      inline.querySelector('.doc-edit-date').value=v.date;}
+    _closeModal();
+  };
+  ov.querySelector('.doc-edit-content').focus();
+  ov.querySelector('.doc-edit-msave').onclick=async()=>{
+    const vals=readVals();
+    if(!vals.title){toast('Title is required');return}
+    const btn=ov.querySelector('.doc-edit-msave');btn.disabled=true;btn.textContent='Saving...';
+    try{
+      await _saveDocEdit(corpusId,item,doc,storedAuthor,vals);
+      _closeModal();
+      const inline=item.querySelector('.doc-edit-inline');if(inline)inline.remove();
+      item.classList.remove('editing');
     }catch(e){toast('Save failed: '+e.message);btn.disabled=false;btn.textContent='Save'}
   };
 }

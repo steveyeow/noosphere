@@ -998,6 +998,13 @@ body.cv-readonly .rp-sub-act{display:none !important}
 .doc-edit-origin select{padding:5px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:12px;outline:none;cursor:pointer;flex:1;font-family:inherit}
 .doc-edit-origin select:focus{border-color:var(--tx3)}
 .doc-edit-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+/* Expand button sits left of Cancel/Save; opens the roomy floating editor. */
+.doc-edit-expand{margin-right:auto;display:inline-flex;align-items:center;gap:5px}
+.doc-edit-expand svg{width:13px;height:13px}
+/* Floating editor window — roomy content area for long sources. */
+.doc-edit-modal-body{max-height:68vh}
+.doc-edit-modal-body .doc-edit-title{font-size:16px}
+.doc-edit-content--big{min-height:40vh}
 
 /* ── Write page ── */
 .write-page{display:flex;flex-direction:column;height:100%}
