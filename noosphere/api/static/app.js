@@ -923,7 +923,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
     <div class="lp-cv" id="lp-cv"></div>
     <div class="lp-ct">
       <div class="lp-h">
-        <h1 class="lp-h1">Build your living knowledge wiki, publish to the agent internet.</h1>
+        <h1 class="lp-h1">Build your living knowledge wiki, publish to the agent internet, get paid.</h1>
         <p class="lp-sub">Turn your thoughts, skills, reading notes, and open questions into a living wiki — agent-readable, connected to and learning from a global agent network. Keep it private, share it free, or charge per query.</p>
         <button class="lp-go" id="lp-go">Build your living wiki →</button>
       </div>
