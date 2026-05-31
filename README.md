@@ -2,7 +2,7 @@
 
 **Build your living knowledge wiki, publish to the agent internet.**
 
-Publish your knowledge as living knowledge bases any AI agent can read, query, and learn from. It grows over time as you add content or chat, and also as the network expands. You can keep it private, open, or charge for access.
+Noosphere is an agent-native data access network for user-owned, self-growing first-party knowledge and skills. Publish your knowledge as living knowledge bases any AI agent can discover, preview, query, cite, and pay for. It grows over time as you add content or chat, and also as the network expands. You can keep it private, open, or charge for access.
 
 Write what you know, distill it through chat, or connect what's already scattered across your apps. Noosphere indexes everything for agent retrieval, synthesizes it into living concept notes that compound over time, and keeps it yours. Solo creators publish their expertise; teams turn scattered fragments — Slack, meetings, decisions, customer calls — into a shared and living brain that compounds as the team works.
 
@@ -16,10 +16,10 @@ AI agents are getting better at executing tasks, but they still struggle with ju
 
 Noosphere adds a **human knowledge layer** to the agent ecosystem. Experts publish what they know as living corpora that join one discovery network; the owner sets access — private, open to every agent, or paid. Agents discover, query, learn from, and cite it on their own — with attribution and quality signals built in.
 
-1. **A knowledge layer for all agents.** Agents today are limited to what's in their training data or what one user uploaded. Noosphere gives every agent access to a growing network of expert knowledge — structured, searchable, and citable. When an agent needs to make a complex decision, it can draw on the collective wisdom of thousands of domain experts rather than reasoning from scratch.
+1. **A runtime knowledge layer for all agents.** Agents today are limited to what's in their training data or what one user uploaded. Noosphere gives every agent access to a growing network of expert knowledge — structured, searchable, citable, and callable while the agent is working. When an agent needs to make a complex decision, it can draw on the collective wisdom of thousands of domain experts rather than reasoning from scratch.
 2. **A connected network.** Every knowledge base can join a global discovery network. An agent helping a startup founder can draw on the best thinking from thousands of domain experts — not just whatever one person uploaded.
 3. **Agent-readable by design.** Every knowledge base is built for AI agents to discover, search, and cite with source attribution.
-4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem.
+4. **Living knowledge.** Knowledge bases grow over time — from conversations, feeds, new documents, and the network itself. As more experts publish and more agents query, the collective intelligence of the network compounds. Not static file dumps, but a growing knowledge ecosystem that buyers can access live or subscribe to as it keeps receiving new deltas.
 5. **Creators get paid.** Open your knowledge to all agents, or set it to paid. Newsletter authors, domain experts, researchers — anyone with valuable knowledge can monetize it through the network. Organizations and agents pay for the expertise they need.
 6. **A shared living brain for teams.** Most of what a team knows lives scattered across Slack threads, meeting transcripts, customer calls, design docs, tickets — none of it queryable by anyone, human or agent. Team Noosphere captures from the edge where work actually happens, synthesizes through compile and distill, and exposes one living record every member and every agent can query. Organizational memory survives turnover; the brain compounds as the team works.
 7. **Order-of-magnitude cheaper for buyers, compounding for creators.** People keep producing knowledge for their own work, learning, research, and teams. Noosphere makes that living, first-party supply agent-readable and owner-priced without turning creators into assigned labor: no recruiting chain, no middle-vendor operating cost, no per-spec collection. Because the rights stay with the user and the same knowledge is non-rival, one corpus can serve many agents at a fraction of today's per-access cost — plausibly 10–100× lower — while the creator's knowledge base compounds into an asset that earns more as they keep using it.
@@ -32,8 +32,8 @@ Three ways human knowledge has reached AI. The first gave the creator nothing; t
 |---|---|---|---|
 | **Where it comes from** | posted for attention | produced on assignment, to a buyer's spec | built and maintained by people for their own use |
 | **Who owns it · who's paid** | the platform takes it; the creator earns nothing | the vendor keeps the margin; the person is piecework labor | the creator owns it, sets terms, keeps the revenue |
-| **Reuse · lifespan** | scraped once, then exhausted; static | single sale to one buyer; static deliverable | non-rival — one corpus, unlimited buyers; self-growing |
-| **How AI gets it · cost** | bulk scrape, murky rights, now tapped out | manual dispatch chain; expensive | agents discover & pay automatically; ~10–100× cheaper |
+| **Reuse · lifespan** | scraped once, then exhausted; static | spec-driven collection or judgment work; often delivered as static datasets or eval outputs | non-rival — one corpus, unlimited buyers; self-growing and subscribable |
+| **How AI gets it · cost** | bulk scrape, murky rights, now tapped out | manual dispatch, collection, review, and delivery chain | agents discover, preview, and pay automatically; no re-collection for every buyer |
 | **Creator upside** | attention, not ownership | one-off task income | just keep building your own knowledge; ownership, reputation, and revenue compound |
 
 ## The loop
@@ -50,7 +50,7 @@ Noosphere is built around a virtuous cycle between human knowledge and agent cap
    Network: corpora discover · subscribe · learn · transact
             ↓
    Any agent (peer Noosphere corpus or external AI)
-   queries · trains on · reasons with corpora
+   queries live · reasons with · licenses corpora
             ↓
    Value flows back to humans
    (decisions, learning, new creation)
@@ -90,9 +90,9 @@ that production model.
                  preview_ask, compile, distill; x402 pay
 
    CONSUMPTION   one non-rival supply, three uses:
-                   runtime agent   per-query lookup; used in context
-                   post-training   a team licenses a corpus to fine-tune
-                   pre-training    a lab licenses it in bulk
+                   runtime agent   native mode: per-query lookup
+                   post-training   licensed corpus for fine-tuning/RAG
+                   pre-training    bulk or versioned corpus license
 ```
 
 Only originated content is monetizable.
@@ -137,6 +137,8 @@ The same toolbox supports several use modes that recur in practice:
 - **Capability source** — a corpus is licensed (per `corpus licensing`) as fine-tuning or persistent RAG substrate for a derivative agent. The corpus stays the source of truth; new agents inherit the underlying knowledge.
 
 Discovery serves all three. Both **in-network agents** (peer corpora subscribing to or routing across each other) and **out-of-network agents** (a company's AI, a developer's app, a research org's tool) use the same machinery — manifest, `kb_reputation`, `preview_ask`, the citation graph — to find and evaluate corpora. Both classes are first-order consumers; as the network grows, this discovery + evaluation infrastructure becomes its central asset.
+
+Runtime access is the beachhead. Coding agents query docs and SDK knowledge; company agents query private operating memory; legal, medical, finance, and research agents query changing domain corpora; vertical experts expose paid knowledge tools. These already behave like access markets: agents need the right live source at the moment of work.
 
 ### Discovery and trust
 
@@ -771,6 +773,16 @@ noosphere search --corpus my-blog "How does pricing work?"
 # Start the server
 noosphere serve --port 8420
 ```
+
+## Roadmap
+
+Noosphere starts with the access loop that already works for software and knowledge agents, then expands the same ownership model outward:
+
+1. **Runtime knowledge network** — agents discover, preview, query, cite, and pay for living corpora through MCP / REST.
+2. **Demand object + conformance** — agents state their need; corpora report whether they can satisfy it, with confidence, scope, price, and license.
+3. **Living corpus subscriptions + exports** — buyers subscribe to maintained corpora, license versioned snapshots, and renew for new deltas.
+4. **Multimodal owned supply** — screen workflows, voice, meetings, operational traces, images, and other owner-held artifacts follow the same provenance and access model.
+5. **Controlled access** — compute-to-data, policy/environment APIs, and runtime skills for cases where raw data should not leave the owner's control.
 
 ## Spec
 

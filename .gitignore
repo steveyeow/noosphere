@@ -24,3 +24,7 @@ GAP-PLAN.md
 HARDENING.md
 RETRIEVAL_UPGRADE.md
 docs/NEXT-SESSION.md
+
+# Internal strategy / product-definition / competitor notes — never commit
+docs/agent-data-market-thesis.md
+docs/noosphere-market-product-strategy.md

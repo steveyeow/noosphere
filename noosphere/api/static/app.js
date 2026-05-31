@@ -924,7 +924,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
     <div class="lp-ct">
       <div class="lp-h">
         <h1 class="lp-h1">Build your living knowledge wiki, publish to the agent internet, get paid.</h1>
-        <p class="lp-sub">Turn your thoughts, skills, reading notes, and open questions into a living wiki — agent-readable, connected to and learning from a global agent network. Keep it private, share it free, or charge per query.</p>
+        <p class="lp-sub">Turn your thoughts, skills, reading notes, and open questions into a user-owned living wiki — agent-readable, connected to a global network, and payable by agents. Keep it private, share it free, or charge for access.</p>
         <button class="lp-go" id="lp-go">Build your living wiki →</button>
       </div>
       <div class="lp-term" id="lp-term">
@@ -968,7 +968,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
   <section class="lp-sec lp-sec-agent">
     <div class="lp-sec-inner">
       <h2 class="lp-sec-h">Agent-readable by design, automatically matched.</h2>
-      <p class="lp-sec-sub">Publish a corpus to the network and every agent on it can describe, ask, cite. Legacy media ranked for attention — <strong>popular beat valuable</strong>. Agents only care about information value and verifiable provenance. Every Noosphere corpus speaks the same small toolbox — MCP-native, plus REST.</p>
+      <p class="lp-sec-sub">Publish a corpus to the network and every agent on it can discover, preview, ask, cite, and pay. Legacy media ranked for attention — <strong>popular beat valuable</strong>. Agents care about information value and verifiable provenance. Every Noosphere corpus speaks the same small toolbox — MCP-native, plus REST.</p>
       <div class="lp-tool-list">
         <div class="lp-tool"><code>manifest</code><span>Machine-readable capability card — scope, task types, license, and the requirements a caller must meet.</span></div>
         <div class="lp-tool"><code>ask</code><span>Full synthesized answer with inline [N] citations + calibrated confidence; respects the access gate.</span></div>
@@ -1007,7 +1007,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
         </div>
         <div class="lp-card">
           <h3 class="lp-card-h">Four pricing shapes</h3>
-          <p class="lp-card-p">Pay-per-query, subscription, corpus licensing (bulk / training data), agent-to-agent payment.</p>
+          <p class="lp-card-p">Pay-per-query, subscription (including living corpora), corpus licensing (snapshots / deltas / bulk), agent-to-agent payment.</p>
         </div>
         <div class="lp-card">
           <h3 class="lp-card-h">Anti copyright-laundering</h3>
@@ -1039,7 +1039,7 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           <div class="lp-flow-edge"><span class="lp-flow-arr" aria-hidden="true">→</span></div>
           <div class="lp-flow-node">
             <span class="lp-flow-k">AI consumers</span>
-            <p class="lp-flow-d">Read as runtime answers, post-training data, or bulk licenses.</p>
+            <p class="lp-flow-d">Read as runtime answers, living subscriptions, or bulk licenses.</p>
           </div>
         </div>
         <div class="lp-flow-return">
@@ -1084,8 +1084,8 @@ function renderLP(){const el=document.getElementById('page-landing');el.innerHTM
           </div>
           <div class="lp-shift-row">
             <div class="lp-shift-old">
-              <span>Generic, made to pass review</span>
-              <p>Vendors can only produce generic to-spec data, and piecework drifts toward whatever just passes the buyer's review.</p>
+              <span>Buyer-specified, review-gated</span>
+              <p>Data is produced to a buyer's spec and gated by review; every new bespoke need depends on the dispatch and QA chain.</p>
             </div>            <div class="lp-shift-new">
               <span>First-party and true at the source</span>
               <p>Built for the creator's own work, learning, and research — knowledge vendors can't reach, and never shaped to pass someone's check.</p>
