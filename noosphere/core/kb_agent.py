@@ -13,7 +13,7 @@ subscribing, L2 synthesizing, L3 proactive) build on top of L0.
 
 from __future__ import annotations
 
-from noosphere.core.corpus import get_corpus, list_corpora, source_composition
+from noosphere.core.corpus import get_corpus, list_corpora, source_composition, data_contract
 from noosphere.core.citations import citations_out, KIND_MANIFEST
 from noosphere.core.db import get_conn
 from noosphere.core.llm import call_llm as _call_llm
@@ -147,6 +147,10 @@ def describe(corpus_id: str) -> dict | None:
         "calibration_policy": corpus.get("calibration_policy"),
         "license_terms": corpus.get("license_terms"),
         "access_level": corpus.get("access_level", "public"),
+        # Consolidated data-contract brief: what this corpus delivers, how to
+        # obtain it, under what license, with what provenance/freshness posture.
+        # The single front-door summary for agents and the capability card.
+        "data_contract": data_contract(corpus),
         "kb_reputation": corpus.get("kb_reputation", 0.0) or 0.0,
         "discovery_reach": reach,
         "revenue_health": rev,

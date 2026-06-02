@@ -294,3 +294,96 @@ def source_composition(corpus_id: str) -> dict[str, float]:
     if total == 0:
         return {}
     return {r["source_kind"] or "unknown": round(r["n"] / total, 4) for r in rows}
+
+
+# Default permitted-use grants by access level. Owners can override via the
+# `license_terms.permitted_use` field; these are the floor we advertise when
+# the owner hasn't set anything explicit. `train` / `redistribute` are never
+# granted by default — the owner must opt in, since they are irreversible.
+_DEFAULT_PERMITTED_USE = {
+    "public": ["read", "cite", "cache"],
+    "token": ["read", "cite", "cache"],
+    "paid": ["read", "cite"],
+    "private": [],
+}
+
+
+def data_contract(corpus: dict) -> dict:
+    """The consolidated, machine-readable "data contract" for a corpus.
+
+    This is the single brief an external agent (or a human reading the
+    capability card) consults to answer, at a glance: *what* outputs this
+    corpus can deliver, *how* to obtain them, *under what license*, and with
+    *what provenance / calibration / freshness posture*.
+
+    It is a **declaration**, derived from the corpus row + computed signals —
+    not the per-response instance values. Per-claim provenance, conformance
+    reports, and typed training exports (SFT / eval / preference) are declared
+    here as roadmap, not yet emitted (see SPEC Phase 4g). We declare current
+    capabilities honestly so an agent never over-trusts the contract.
+    """
+    access = corpus.get("access_level", "public") or "public"
+    license_terms = corpus.get("license_terms") or {}
+    if isinstance(license_terms, str):
+        try:
+            license_terms = json.loads(license_terms)
+        except (json.JSONDecodeError, TypeError):
+            license_terms = {}
+    permitted_use = (
+        license_terms.get("permitted_use")
+        if isinstance(license_terms, dict) else None
+    ) or _DEFAULT_PERMITTED_USE.get(access, _DEFAULT_PERMITTED_USE["public"])
+
+    # How a consumer obtains each thing. preview_ask is always free (bypasses
+    # the access gate) so an agent can evaluate before paying.
+    obtain = {
+        "discover": "describe",
+        "evaluate": "preview_ask (free, truncated, bypasses gating)",
+        "query": "ask / search",
+        "bulk": "export (portable ZIP: documents + chunks.jsonl + manifest)",
+    }
+    if access == "paid":
+        obtain["pay"] = "x402 (agent-native) or Stripe checkout (human)"
+    elif access == "token":
+        obtain["auth"] = "bearer token issued by the owner"
+
+    # Output types this corpus can actually deliver today. Honest scope: no
+    # preference pairs (needs the buyer's own model outputs), no typed
+    # SFT/eval export yet — those are Phase 4g.
+    supported_outputs = [
+        {"type": "answer", "format": "synthesized text + inline [N] citations + confidence", "via": "ask"},
+        {"type": "chunks", "format": "ranked source passages with citations", "via": "search"},
+        {"type": "rag_substrate", "format": "documents (markdown) + chunks.jsonl + manifest", "via": "export"},
+    ]
+
+    provenance = {
+        # Citations are document-level today; per-claim is Phase 4g.
+        "granularity": "document",
+        "fields": ["document_id", "title", "date"],
+        "source_composition": source_composition(corpus["id"]),
+        # Anti-laundering / creator-sovereignty rule, enforced at retrieval.
+        "monetizable_rule": "only user-originated content is served to paid callers; imported external_public content is filtered out",
+    }
+
+    freshness = {
+        "last_updated": corpus.get("updated_at", ""),
+        "stale_threshold_days": corpus.get("stale_threshold_days"),
+        "asserted_at": "per-document date when present",
+    }
+
+    return {
+        "access_level": access,
+        "obtain": obtain,
+        "supported_outputs": supported_outputs,
+        "license": {"permitted_use": permitted_use, "terms": license_terms or {}},
+        "provenance": provenance,
+        "calibration_policy": corpus.get("calibration_policy"),
+        "freshness": freshness,
+        # Declared-but-not-yet-emitted, so agents don't expect them.
+        "roadmap": [
+            "demand_object",
+            "conformance_report",
+            "per_claim_provenance",
+            "typed_export (SFT / eval)",
+        ],
+    }

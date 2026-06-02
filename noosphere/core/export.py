@@ -4,7 +4,7 @@ import io
 import json
 import zipfile
 
-from noosphere.core.corpus import get_corpus, source_composition
+from noosphere.core.corpus import get_corpus, source_composition, data_contract
 from noosphere.core.ingest import get_documents
 from noosphere.core.db import get_conn
 
@@ -72,6 +72,7 @@ def export_corpus(corpus_id: str) -> io.BytesIO:
             "level": corpus.get("access_level", "public"),
             "pricing": None,
         },
+        "data_contract": data_contract(corpus),
     }
 
     all_topics = set()

@@ -142,7 +142,7 @@ Runtime access is the beachhead. Coding agents query docs and SDK knowledge; com
 
 ### Discovery and trust
 
-Every corpus has a machine-readable **manifest** — its identity card: task types, sample Q&A, source composition, calibration policy, license terms. Agents read it to decide whether you're worth querying.
+Every corpus has a machine-readable **manifest** — its identity card: task types, sample Q&A, source composition, calibration policy, license terms. It also carries a **data contract** — a single at-a-glance brief of what outputs the corpus delivers (answer / chunks / RAG substrate), how to obtain them, the permitted-use license, and its provenance/freshness posture. Agents read it to decide whether you're worth querying; the same brief renders on the human capability card. One declaration, two renderings.
 
 Discovery is signal-based, not attention-based. Four tiers:
 - **Self-declared** — manifest fields; cheap, falsifiable

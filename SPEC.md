@@ -2,9 +2,30 @@
 
 > Expand the scope and scale of collective enlightenment.
 
-Noosphere lets you publish your knowledge as living knowledge bases any AI agent can read, query, and learn from. It grows over time as you add content or chat, and also as the network expands. You can keep it private, open, or charge for access.
+Noosphere is an **agent-native data platform** for user-owned, self-growing
+first-party human knowledge and skills. You publish your knowledge as living
+knowledge bases that any AI agent can discover, preview, query, cite, pay for,
+subscribe to, and license. It grows over time as you add content or chat, and as
+the network expands. You can keep it private, open, or charge for access.
 
-Write what you know, distill it through chat, or connect what's already scattered across your apps. Noosphere indexes everything for agent retrieval, synthesizes it into living concept notes that compound over time, and keeps it yours. Solo creators publish their expertise; teams turn scattered fragments — Slack, meetings, decisions, customer calls — into a shared and living brain that compounds as the team works.
+Write what you know, distill it through chat, or connect what's already scattered
+across your apps. Noosphere indexes everything for agent retrieval, synthesizes it
+into living concept notes that compound over time, and keeps it yours. Solo
+creators publish their expertise; teams turn scattered fragments — Slack,
+meetings, decisions, customer calls — into a shared and living brain that
+compounds as the team works.
+
+**Positioning.** Noosphere is not only a new knowledge-publishing product
+(Wikipedia / arXiv / Substack); it is also a new shape of the AI data layer that
+today is served manually by vendors like Scale, Surge, Mercor, and Luel. Those are
+made-to-order data services: a buyer posts a spec, the platform recruits and
+dispatches people, work is reviewed by hand, and a dataset or eval is delivered.
+Noosphere is the agent-native inverse: the creator only creates; each corpus is
+itself an agent that maintains and grows itself, advertises its supply, and gets
+discovered, evaluated, subscribed to, and paid — agent-to-agent, with no
+recruiting, dispatch, or human review in the loop. The native mode is
+inference-time runtime access; bulk train-time licensing is an adjacency off the
+same supply (full thesis in `docs/agent-data-market-thesis.md`).
 
 ---
 
@@ -566,6 +587,29 @@ The manifest is the KB's **agent-media capability card** — it's how external a
   "access": {
     "level": "public",
     "pricing": null
+  },
+  "data_contract": {
+    "access_level": "public",
+    "obtain": {
+      "discover": "describe",
+      "evaluate": "preview_ask (free, truncated, bypasses gating)",
+      "query": "ask / search",
+      "bulk": "export (portable ZIP: documents + chunks.jsonl + manifest)"
+    },
+    "supported_outputs": [
+      {"type": "answer", "format": "synthesized text + inline [N] citations + confidence", "via": "ask"},
+      {"type": "chunks", "format": "ranked source passages with citations", "via": "search"},
+      {"type": "rag_substrate", "format": "documents + chunks.jsonl + manifest", "via": "export"}
+    ],
+    "license": {"permitted_use": ["read", "cite", "cache"], "terms": {}},
+    "provenance": {
+      "granularity": "document",
+      "source_composition": {"user_original": 0.6},
+      "monetizable_rule": "only user-originated content served to paid callers"
+    },
+    "calibration_policy": {"reports_confidence": true, "confidence_source": "self"},
+    "freshness": {"last_updated": "2026-03-19T00:00:00Z", "stale_threshold_days": 90},
+    "roadmap": ["demand_object", "conformance_report", "per_claim_provenance", "typed_export (SFT / eval)"]
   }
 }
 ```
@@ -577,6 +621,50 @@ The manifest is the KB's **agent-media capability card** — it's how external a
 - `autonomy_level` — Static (default), Living, Fully Autonomous (see Core value #5 for definitions)
 - `calibration_policy` — whether and how the KB reports confidence
 - `license_terms` — accepted monetization shapes (query / subscription / bulk / licensing)
+
+### The data contract — the manifest as the single front door
+
+`data_contract` is the consolidated, machine-readable brief an external agent (or
+a human reading the capability card) consults to answer, at a glance: **what**
+outputs this corpus can deliver, **how** to obtain them, **under what license**,
+and with **what provenance / calibration / freshness posture**. Both the
+`describe` response (agents) and the rendered manifest doc / capability card
+(humans) carry it — one declaration, two renderings, no privileged channel.
+
+Design principle — **declaration vs instance**:
+
+- The manifest declares *capability and posture* (output types, permitted use,
+  provenance granularity, calibration, freshness policy). This is the brief.
+- The actual *instance values* (a specific answer's per-claim provenance, a
+  document's `source_kind` and date) travel with each response / live on each
+  document. They are scattered by scope **by design** — the manifest does not
+  centralize them, it only declares that they exist and points to how.
+
+So an agent's flow is: read `describe` → check `data_contract` (can this corpus
+satisfy my need, in a format and license I can use?) → `preview_ask` to verify →
+`ask` / `export`. Conformance is checked against this declared contract.
+
+Fields:
+
+- `access_level` — public / token / paid / private.
+- `obtain` — how a consumer gets each thing (discover → `describe`, evaluate →
+  `preview_ask`, query → `ask`/`search`, bulk → `export`; plus `pay`/`auth` when
+  gated). `preview_ask` is always free, even for paid corpora.
+- `supported_outputs` — the output types this corpus can actually deliver
+  **today**: `answer` (cited synthesis), `chunks` (ranked passages),
+  `rag_substrate` (export ZIP). Honest scope: no `preference` pairs (those need
+  the buyer's own model outputs) and no typed SFT/eval export yet — those are
+  declared under `roadmap`, not emitted, so an agent never over-trusts.
+- `license.permitted_use` — enum (`read` / `cite` / `cache` / `train` /
+  `redistribute`). Defaults by access level; `train`/`redistribute` are never
+  granted by default (irreversible — owner must opt in).
+- `provenance` — current `granularity` (document-level today; per-claim is Phase
+  4g), `source_composition`, and the anti-laundering rule (only user-originated
+  content served to paid callers).
+- `calibration_policy`, `freshness` — confidence posture and staleness policy.
+- `roadmap` — declared-but-not-yet-emitted capabilities (`demand_object`,
+  `conformance_report`, `per_claim_provenance`, `typed_export`), kept explicit so
+  the contract stays truthful as Phase 4g lands.
 
 ---
 

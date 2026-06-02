@@ -154,6 +154,43 @@ def render_manifest_markdown(corpus: dict) -> str:
     lines.append(f"- **Licensing:** {lic_map.get(access_level, lic_map['public'])}")
     lines.append("")
 
+    # Data contract — the at-a-glance "what / how / under what terms" brief.
+    # Derived from the same fields the `describe` endpoint serves to agents,
+    # so the human card and the machine contract never drift.
+    try:
+        from noosphere.core.corpus import data_contract as _data_contract
+        dc = _data_contract(corpus)
+    except Exception:
+        dc = None
+    if dc:
+        lines.append("## Data contract")
+        lines.append("")
+        lines.append("_What this KB delivers to agents, how to get it, and under what terms._")
+        lines.append("")
+        outs = dc.get("supported_outputs") or []
+        if outs:
+            lines.append("**Outputs:** " + ", ".join(
+                f"`{o.get('type')}` ({o.get('via')})" for o in outs if isinstance(o, dict)
+            ))
+        permitted = (dc.get("license") or {}).get("permitted_use") or []
+        if permitted:
+            lines.append("**Permitted use:** " + ", ".join(f"`{p}`" for p in permitted))
+        prov = dc.get("provenance") or {}
+        if prov:
+            lines.append(
+                f"**Provenance:** {prov.get('granularity', 'document')}-level citations; "
+                "only originated content is served to paid callers."
+            )
+        obtain = dc.get("obtain") or {}
+        if obtain:
+            lines.append("**How to obtain:** " + " · ".join(
+                f"{k} → {v}" for k, v in obtain.items()
+            ))
+        roadmap = dc.get("roadmap") or []
+        if roadmap:
+            lines.append("**Coming (Phase 4g):** " + ", ".join(f"`{r}`" for r in roadmap))
+        lines.append("")
+
     # Autonomy
     autonomy_stage = (
         "Networked" if autonomy_level >= 3
