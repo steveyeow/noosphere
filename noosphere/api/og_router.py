@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from noosphere.core.corpus import get_corpus_by_slug, list_corpora
@@ -852,20 +852,23 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
 
 
 @router.get("/c/{slug}", response_class=HTMLResponse)
-async def share_corpus(slug: str, request: Request):
+async def share_corpus(slug: str, request: Request, background_tasks: BackgroundTasks):
     """Canonical share landing page for a corpus.
 
     A no-frills SPA shell with corpus-specific OG meta — Twitter and friends
-    read the head, humans get the same app they'd see at the hash route.
+    read the head, humans get the same app they'd see at the hash route. We
+    pre-warm the og:image in the background so the scraper's follow-up image
+    fetch lands on a warm cache instead of a cold render.
     """
     corpus = get_corpus_by_slug(slug)
     if not corpus:
         raise HTTPException(status_code=404, detail="Corpus not found")
+    background_tasks.add_task(prewarm_corpus_card, corpus)
     return HTMLResponse(content=_render_share_html(corpus, None, request))
 
 
 @router.get("/c/{slug}/d/{doc_id}", response_class=HTMLResponse)
-async def share_document(slug: str, doc_id: str, request: Request):
+async def share_document(slug: str, doc_id: str, request: Request, background_tasks: BackgroundTasks):
     """Canonical share landing page for a single document inside a corpus."""
     corpus = get_corpus_by_slug(slug)
     if not corpus:
@@ -873,6 +876,7 @@ async def share_document(slug: str, doc_id: str, request: Request):
     doc = get_document(doc_id)
     if not doc or doc.get("corpus_id") != corpus["id"]:
         raise HTTPException(status_code=404, detail="Document not found in this corpus")
+    background_tasks.add_task(prewarm_doc_card, corpus, doc)
     return HTMLResponse(content=_render_share_html(corpus, doc, request))
 
 
@@ -928,7 +932,10 @@ async def _render_html_to_png(html_content: str) -> bytes:
     the image request degrades.
     """
     try:
-        from playwright.async_api import async_playwright
+        from playwright.async_api import (
+            TimeoutError as PlaywrightTimeoutError,
+            async_playwright,
+        )
     except ImportError:
         raise HTTPException(
             status_code=503,
@@ -953,32 +960,73 @@ async def _render_html_to_png(html_content: str) -> bytes:
                 device_scale_factor=1,
             )
             page = await ctx.new_page()
-            await page.set_content(html_content, wait_until="networkidle")
-            await page.evaluate("document.fonts.ready")
+            # Why this is bounded: a social scraper (Twitterbot) fetches the
+            # og:image with a short, hard timeout. The card pulls 3 font families
+            # from Google Fonts, and the page ``load`` event waits on that
+            # stylesheet — so when the font CDN is slow or blocked the render can
+            # hang for tens of seconds (observed: ~60s), the scraper's image
+            # fetch fails, and Twitter caches a small no-image "summary" card for
+            # ~7 days.
+            #
+            # So: cap the load wait at 4s. On a fast network ``load`` fires well
+            # under the cap and we snapshot with the intended web fonts; if the
+            # CDN stalls we abandon the wait and snapshot with the
+            # locally-installed fallbacks (the Docker image ships fonts-noto-cjk,
+            # so CJK still renders real glyphs rather than tofu). The DOM is
+            # already set the instant ``set_content`` is called — the timeout
+            # only abandons the *wait*, not the content.
+            try:
+                await page.set_content(html_content, wait_until="load", timeout=4000)
+            except PlaywrightTimeoutError:
+                pass
+            # Brief, hard-capped grace for any web fonts still finishing, so we
+            # don't snapshot a frame mid-swap. Cannot reintroduce the stall.
+            try:
+                await page.evaluate(
+                    "Promise.race(["
+                    "  document.fonts.ready,"
+                    "  new Promise((resolve) => setTimeout(resolve, 800)),"
+                    "])"
+                )
+            except Exception:
+                pass
             return await page.screenshot(type="png", full_page=False)
         finally:
             await browser.close()
 
 
 def _cache_key_corpus(corpus: dict) -> str:
-    # ``document_count`` is rendered in the card meta line ("47 documents · Public").
-    # It can change without ``updated_at`` moving — the ingest pipeline writes
-    # documents and bumps ``document_count`` independently of the corpus row's
-    # mtime — so keying on updated_at alone would serve stale share cards
-    # forever after the first cache write. Including the count rotates the key
-    # on every new ingest.
+    # Content-addressed: hash exactly the fields the corpus card renders. Any
+    # edit that changes a pixel (name, description, access posture, author,
+    # document count) rotates the key; anything else reuses the cached PNG. We
+    # deliberately do NOT key on ``updated_at`` — an mtime bump from an
+    # unrelated field would needlessly invalidate the card and force a fresh
+    # cold render right when a scraper might be fetching it.
     raw = (
         f"corpus:{corpus['id']}:"
-        f"{corpus.get('updated_at') or ''}:"
-        f"{corpus.get('document_count') or 0}"
+        f"name={corpus.get('name') or ''}:"
+        f"desc={corpus.get('description') or ''}:"
+        f"access={corpus.get('access_level') or 'public'}:"
+        f"author={corpus.get('author_name') or ''}:"
+        f"docs={corpus.get('document_count') or 0}"
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
 def _cache_key_doc(corpus: dict, doc: dict) -> str:
+    # Content-addressed, same rationale as the corpus key. The card pixels are a
+    # function of the doc's title + content and the corpus identity bits shown
+    # on it (name → accent + footer, access_level → accent). Hashing the title
+    # and content means a content edit rotates the key on its own — the
+    # documents table has no ``updated_at`` and editing content doesn't move
+    # ``created_at``, so the previous key (which leaned on ``corpus.updated_at``)
+    # both missed silent edits and over-invalidated on corpus-wide changes.
     raw = (
         f"doc:{corpus['id']}:{doc['id']}:"
-        f"{corpus.get('updated_at') or ''}:{doc.get('created_at') or ''}"
+        f"name={corpus.get('name') or ''}:"
+        f"access={corpus.get('access_level') or 'public'}:"
+        f"title={doc.get('title') or ''}:"
+        f"content={doc.get('content') or ''}"
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
@@ -999,16 +1047,54 @@ def _png_response(data: bytes) -> Response:
     )
 
 
+async def _ensure_corpus_png(corpus: dict) -> Path:
+    """Return the on-disk PNG path for a corpus card, rendering + caching if cold."""
+    path = _cache_path(_cache_key_corpus(corpus))
+    if not path.exists():
+        png = await _render_html_to_png(_bare_card_doc(_render_corpus_card(corpus)))
+        path.write_bytes(png)
+    return path
+
+
+async def _ensure_doc_png(corpus: dict, doc: dict) -> Path:
+    """Return the on-disk PNG path for a document card, rendering + caching if cold."""
+    path = _cache_path(_cache_key_doc(corpus, doc))
+    if not path.exists():
+        png = await _render_html_to_png(_bare_card_doc(_render_content_card(corpus, doc)))
+        path.write_bytes(png)
+    return path
+
+
+async def prewarm_corpus_card(corpus: dict) -> None:
+    """Fire-and-forget render so the corpus card PNG is warm before a scraper asks.
+
+    Scheduled off the share landing page: a social crawler fetches the HTML
+    first and the og:image moments later (often as a separate request), so a
+    head-start render here means the image fetch usually lands on a warm cache
+    instead of triggering a cold render under the crawler's tight timeout.
+    Swallows everything — a missing Playwright install (503) or a transient
+    render error must never surface on the landing-page response path.
+    """
+    try:
+        await _ensure_corpus_png(corpus)
+    except Exception:
+        pass
+
+
+async def prewarm_doc_card(corpus: dict, doc: dict) -> None:
+    """Fire-and-forget render so the document card PNG is warm before a scraper asks."""
+    try:
+        await _ensure_doc_png(corpus, doc)
+    except Exception:
+        pass
+
+
 @router.get("/og/c/{slug}.png")
 async def og_corpus_png(slug: str):
     corpus = get_corpus_by_slug(slug)
     if not corpus:
         raise HTTPException(status_code=404, detail="Corpus not found")
-
-    path = _cache_path(_cache_key_corpus(corpus))
-    if not path.exists():
-        png = await _render_html_to_png(_bare_card_doc(_render_corpus_card(corpus)))
-        path.write_bytes(png)
+    path = await _ensure_corpus_png(corpus)
     return _png_response(path.read_bytes())
 
 
@@ -1020,9 +1106,5 @@ async def og_doc_png(slug: str, doc_id: str):
     doc = get_document(doc_id)
     if not doc or doc.get("corpus_id") != corpus["id"]:
         raise HTTPException(status_code=404, detail="Document not found in this corpus")
-
-    path = _cache_path(_cache_key_doc(corpus, doc))
-    if not path.exists():
-        png = await _render_html_to_png(_bare_card_doc(_render_content_card(corpus, doc)))
-        path.write_bytes(png)
+    path = await _ensure_doc_png(corpus, doc)
     return _png_response(path.read_bytes())

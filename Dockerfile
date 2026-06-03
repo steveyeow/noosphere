@@ -2,9 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system deps for pymupdf and psycopg2
+# Install system deps for pymupdf and psycopg2, plus fonts for OG card rendering.
+# fonts-noto-cjk / fonts-noto-core guarantee CJK + broad Unicode glyphs are
+# present locally so the headless-Chrome OG render never falls back to tofu
+# boxes when the Google Fonts fetch is slow or blocked; fonts-dejavu covers the
+# Latin serif/sans fallbacks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmupdf-dev gcc libpq-dev \
+    fonts-noto-cjk fonts-noto-core fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
