@@ -184,6 +184,23 @@ def _smart_excerpt(text: str, max_chars: int) -> str:
     return cut.rstrip() + "…"
 
 
+def _title_is_derived(title: str, content: str) -> bool:
+    """True when the stored title is just the note's opening line (auto-derived
+    from the first sentence). Such a title is not a real headline — rendering it
+    title-led just truncates a sentence the body repeats — so the card goes
+    body-first (quote-hero). Mirrors app.js:_titleIsDerived."""
+    t = (title or "").strip().rstrip("…").rstrip(".!?;:。！？；").strip()
+    if len(t) < 4:
+        return False
+    first = ""
+    for line in (content or "").split("\n"):
+        s = line.strip()
+        if s:
+            first = re.sub(r"^#{1,6}\s*", "", s).strip()
+            break
+    return bool(first) and first.lower().startswith(t.lower())
+
+
 # ── Card classification ───────────────────────────────────────────────
 
 def _is_wiki(doc: dict) -> bool:
@@ -577,34 +594,30 @@ def _render_content_card(corpus: dict, doc: dict) -> str:
     if _is_wiki(doc):
         raw_content = _extract_concept_summary(raw_content)
 
-    # Strip title echo — both the markdown-heading form (``# <title>``) and
-    # the plain-text form (author repeats the title as the first sentence of
-    # the body). Pass the title so the plain-text pass can match.
-    content = _drop_title_echo(raw_content, title=raw_title)
-    content = _strip_markdown(content)
-    content = content.strip()
-
     corpus_name = (corpus.get("name") or "").strip() or "Untitled"
     accent = _accent_for(corpus)
     initials = _initials(corpus_name)
     content_label = _content_label(doc)
 
-    # Heuristic: "no meaningful title" = empty, or auto-generated patterns
-    # like "user_original-3". We keep the title for everything else.
+    # "No meaningful title" → body-first quote-hero. True when the title is
+    # empty, an auto-id pattern ("user_original-3"), OR merely the note's own
+    # opening line (auto-derived from the first sentence). A derived title
+    # crammed into the 2-line headline just truncates a sentence the body
+    # repeats below — so we render the opening as the hero instead. Matches the
+    # in-app reader (app.js:_titleIsDerived).
     auto_title_pat = re.compile(r"^(user_(original|capture)|untitled)[-_\s]?\d*$", re.I)
-    has_meaningful_title = bool(raw_title) and not auto_title_pat.match(raw_title)
+    has_meaningful_title = (
+        bool(raw_title)
+        and not auto_title_pat.match(raw_title)
+        and not _title_is_derived(raw_title, raw_content)
+    )
 
     if has_meaningful_title:
-        # Long titles (e.g. Karpathy-style full-sentence wiki entry titles)
-        # used to rely on CSS ellipsis, which cuts mid-character and makes
-        # the headline look broken. Trim at a sentence/word boundary in
-        # Python so the truncation lands cleanly. The 70 cap (vs the
-        # 320 used for body excerpts) is tuned to the title slot's
-        # ~2-line capacity at 1200px width; it also widens the
-        # look_back window in _smart_excerpt enough that a sentence
-        # ender within the first 40-50 chars gets found instead of
-        # missed (an 80 cap left look_back=40, which excluded period
-        # at index 39 for a typical long title).
+        # Title shown above as a headline — strip its echo (markdown-heading or
+        # plain-text repeat) from the body so it isn't printed twice. Long
+        # titles trim at a sentence/word boundary (70 cap ≈ the 2-line title
+        # slot at 1200px) so the headline never cuts mid-character.
+        content = _strip_markdown(_drop_title_echo(raw_content, title=raw_title)).strip()
         display_title = _smart_excerpt(raw_title, max_chars=70)
         excerpt = _smart_excerpt(content, max_chars=320)
         body = f"""
@@ -612,6 +625,10 @@ def _render_content_card(corpus: dict, doc: dict) -> str:
     <div class="excerpt">{html.escape(excerpt)}</div>
 """
     else:
+        # Body-first: the opening line IS the hero, so keep it — only strip a
+        # leading markdown heading (formatting), never the plain-text title
+        # echo (that would start the quote mid-sentence).
+        content = _strip_markdown(_drop_title_echo(raw_content, title=None)).strip()
         excerpt = _smart_excerpt(content, max_chars=260)
         body = f"""
     <div class="quote">{html.escape(excerpt)}</div>

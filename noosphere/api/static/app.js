@@ -1993,7 +1993,7 @@ function renderHome(){
     _mode='write';
     composer.classList.add('home-composer-note');
     const h=document.getElementById('home');if(h)h.classList.add('home--writing');
-    input.placeholder='Jot down a note — first line becomes the title. Markdown supported.';
+    input.placeholder='Jot down a note — no title needed. Markdown supported.';
     input.rows=10;
     // Pre-fill the first line with the suggested title so the user jumps
     // straight into the body. The first line is treated as the title on save.
@@ -2133,9 +2133,9 @@ function renderHome(){
 
   let _sending=false;
   async function saveNote(body){
-    // Derive title from the first non-empty line (strip markdown headers).
-    const firstLine=(body.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
-    const title=firstLine.slice(0,80)||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    // Label derived from the opening sentence (see _deriveNoteTitle). Used as
+    // the list-row label only — the reader renders this note body-first.
+    const title=_deriveNoteTitle(body)||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
     sendBtn.disabled=true;
     await loadC();
     let cid=_homeScope;
@@ -2321,8 +2321,7 @@ function renderHome(){
     const content=(btn.dataset.content||'').trim();
     if(!content)return;
     btn.disabled=true;const orig=btn.innerHTML;btn.innerHTML='Saving…';
-    const firstLine=(content.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
-    const title=firstLine.slice(0,80)||('Captured '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    const title=_deriveNoteTitle(content)||('Captured '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
     let cid=_homeScope;
     if(!cid){
       await loadC();
@@ -2437,6 +2436,41 @@ async function renderHomeTworow(enterWrite){
    The canvas is not an editor — refine chat is the only way to change it.
    Keeps the one-directional Feynman pattern (chat → canvas, not the reverse).
 */
+
+// Derive a clean label from free-form note text: first non-empty line, cut at
+// the first sentence boundary (CJK 。．！？ or Latin .!? followed by space/end)
+// or newline, trailing terminator trimmed, capped with an ellipsis. This is
+// only a list-row label / SEO title now — the reader renders untitled notes
+// body-first (no heading), so it's never shown as a heading unless the user
+// set an explicit, distinct title. Replaces a blind firstLine.slice(0,80) that
+// produced truncated mid-sentence headings.
+function _deriveNoteTitle(text){
+  const firstLine=(String(text||'').split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+  if(!firstLine)return '';
+  const m=firstLine.match(/^[\s\S]*?(?:[。．！？]|[.!?](?=\s|$))/);
+  let t=(m?m[0]:firstLine).replace(/[。．！？.!?]+$/,'').trim();
+  const MAX=100;
+  if(t.length>MAX)t=t.slice(0,MAX).trim()+'…';
+  return t;
+}
+
+// A doc's display date: its explicit date if set, else the day it was added
+// (created_at, an ISO string → first 10 chars). Lets every row show a date
+// without the user opening the editor to fill one in.
+function _docDate(d){
+  if(!d)return '';
+  return (d.date||'')||((d.created_at||'').slice(0,10));
+}
+
+// True when a stored title is just the note's own opening line (auto-derived),
+// so display surfaces (reader, share card) render body-first instead of
+// repeating/truncating it as a heading. Mirrors og_router._title_is_derived.
+function _titleIsDerived(title,content){
+  const t=String(title||'').replace(/…$/,'').replace(/[.!?;:。！？；]+$/,'').trim();
+  if(t.length<4)return false;
+  const first=(String(content||'').split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
+  return !!first&&first.toLowerCase().startsWith(t.toLowerCase());
+}
 
 // Minimal markdown→HTML. Scoped to what compile output actually contains:
 // headings, paragraphs, bullet lists, bold/italic/inline-code, links.
@@ -2950,7 +2984,7 @@ function showTermUpload(output,input,defaultCorpus,opts){
     };
   }
   function renderPaste(){
-    body.innerHTML=`<div class="term-upload-txt-hint">Paste any text — the first line becomes the title. Markdown is supported.</div><textarea id="tu-paste" class="term-upload-input term-upload-textarea" placeholder="Paste article, notes, transcript…" rows="7"></textarea><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="external_public" selected>Public external reference</option><option value="user_original">My original content</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Save</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
+    body.innerHTML=`<div class="term-upload-txt-hint">Paste any text — no title needed, Markdown supported.</div><textarea id="tu-paste" class="term-upload-input term-upload-textarea" placeholder="Paste article, notes, transcript…" rows="7"></textarea><div class="term-upload-origin"><label for="tu-sk">Origin</label><select id="tu-sk"><option value="external_public" selected>Public external reference</option><option value="user_original">My original content</option><option value="external_subscription">Subscription / paid external</option></select></div><div class="term-upload-actions"><button class="btn-sm" id="tu-go" disabled>Save</button><button class="btn-sm-ghost" id="tu-cancel">Cancel</button></div>`;
     const taEl=body.querySelector('#tu-paste'),goBtn=body.querySelector('#tu-go'),cancelBtn=body.querySelector('#tu-cancel');
     taEl.focus();
     taEl.oninput=()=>{goBtn.disabled=!taEl.value.trim()};
@@ -2960,8 +2994,7 @@ function showTermUpload(output,input,defaultCorpus,opts){
       goBtn.disabled=true;goBtn.textContent='Saving...';cancelBtn.style.display='none';
       const cid=await resolveCorpus();
       if(!cid){wrap.remove();reportErr('No corpus selected.');if(input)input.focus();return}
-      const firstLine=(text.split('\n').find(l=>l.trim())||'').replace(/^#+\s*/,'').trim();
-      const title=firstLine.slice(0,80)||('Pasted '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+      const title=_deriveNoteTitle(text)||('Pasted '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
       const fd=new FormData();
       fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+text],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-').slice(0,60)+'.md');
       fd.append('source_kind',body.querySelector('#tu-sk')?.value||'external_public');
@@ -4596,6 +4629,11 @@ function openShareDialog(corpus,doc){
     defaultText=(corpus.description||'').trim();
   }else{
     const ttl=(doc.title||'').replace(/^Concept:\s+/,'').trim();
+    // When the title is just the note's opening line (auto-derived), the OG
+    // card renders body-first (quote-hero) — so the tweet must keep the full
+    // opening, not strip a "title echo" that would leave a mid-sentence
+    // fragment. Only dedupe the echo for genuinely distinct titles.
+    const _titleDerived=_titleIsDerived(ttl,doc.content);
     // 200-char title-echo cap matches og_router.py:_drop_title_echo —
     // earlier 80-char cap let long titles leak verbatim into the body
     // beneath the card title, causing the tweet to print the title
@@ -4612,7 +4650,7 @@ function openShareDialog(corpus,doc){
     // Mirrors og_router.py:_drop_title_echo's title-aware pass. 10-char
     // floor avoids false positives on short titles.
     const _tNorm=ttl.replace(/[.!?;:]+$/,'').trim();
-    if(_tNorm&&_tNorm.length>=10){
+    if(!_titleDerived&&_tNorm&&_tNorm.length>=10){
       const head=content.replace(/^\s+/,'');
       if(head.toLowerCase().startsWith(_tNorm.toLowerCase())){
         const rest=head.slice(_tNorm.length).replace(/^[.!?;:\s]+/,'');
@@ -4781,7 +4819,7 @@ async function renderCorpus(id,sessionId,opts){
     const sk=d.source_kind||'user_original';const skLabel=sk.replace('_',' ');
     // Show the contributor pill only in team workspaces — meaningless solo.
     const contribHTML=(_workspace.kind==='org'&&d.contributor_user_id)?(' · '+renderContributorPill(d.contributor_user_id)):'';
-    return `<div class="doc-item" data-id="${d.id}" data-cat="${esc(d.doc_type||'doc')}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${d.date?' · '+d.date:''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-share-btn" data-id="${d.id}" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span>${_readBtn(d.id)}<span class="doc-ar">▸</span></span></div></div>`;
+    return `<div class="doc-item" data-id="${d.id}" data-cat="${esc(d.doc_type||'doc')}"><div class="doc-hd"><span class="doc-tt">${esc(d.title)}</span><span class="doc-hd-right"><span class="doc-mt">${wlab}${_docDate(d)?' · '+_docDate(d):''} · <span class="doc-sk sk-${sk}">${skLabel}</span>${contribHTML}</span><span class="doc-actions"><button class="doc-action-btn doc-share-btn" data-id="${d.id}" title="Share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button><button class="doc-action-btn doc-edit-btn" data-id="${d.id}" title="Edit"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="doc-action-btn doc-del-btn" data-id="${d.id}" title="Delete"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></span>${_readBtn(d.id)}<span class="doc-ar">▸</span></span></div></div>`;
   };
   // Wiki empty-state: phrase matters depending on whether the manifest is
   // already there. Even before the user compiles a single concept note, the
@@ -5610,14 +5648,22 @@ async function openDocReader(corpusId,docId){
   let d=null;
   try{const r=await fetch(`${API}/corpora/${corpusId}/documents/${docId}`);if(r.ok)d=await r.json()}catch(e){}
   if(!d){ov.querySelector('#read-body').innerHTML='<div class="read-loading">Failed to load.</div>';return}
-  ov.querySelector('#read-title').textContent=d.title||'Untitled';
+  // Title display: a note whose stored title is just its opening line (the
+  // auto-derived case) renders body-first — no heading — so the first line
+  // isn't shown twice and a long line is never chopped into a partial heading.
+  // A genuinely distinct title (user-set, not the opening line) still gets one.
+  const titleEl=ov.querySelector('#read-title');
+  const titleStr=(d.title||'').trim();
+  const titleIsDerived=d.doc_type!=='manifest'&&(!titleStr||_titleIsDerived(titleStr,d.content));
+  if(titleIsDerived){titleEl.textContent='';titleEl.style.display='none';}
+  else{titleEl.textContent=titleStr||'Untitled';titleEl.style.display='';}
   const wc=d.word_count||0;
   let skHTML='';
   if(d.doc_type==='manifest')skHTML='<span class="doc-sk sk-system">system generated</span>';
   else if(d.source_kind)skHTML=`<span class="doc-sk sk-${esc(d.source_kind)}">${esc(d.source_kind.replace('_',' '))}</span>`;
   const parts=[];
   if(wc)parts.push(wc.toLocaleString()+' word'+(wc===1?'':'s'));
-  if(d.date)parts.push(esc(d.date));
+  const _dt=_docDate(d);if(_dt)parts.push(esc(_dt));
   if(skHTML)parts.push(skHTML);
   ov.querySelector('#read-meta').innerHTML=parts.join(' · ');
   const bodyEl=ov.querySelector('#read-body');
@@ -5721,7 +5767,8 @@ function showDocInlineEdit(corpusId,item,doc){
   ed.querySelector('.doc-edit-expand').onclick=()=>showDocEditModal(corpusId,item,doc,def.storedAuthor,readVals());
   ed.querySelector('.doc-edit-save').onclick=async()=>{
     const vals=readVals();
-    if(!vals.title){toast('Title is required');return}
+    if(!vals.title)vals.title=_deriveNoteTitle(vals.content);
+    if(!vals.title&&!vals.content){toast('Add a title or some text');return}
     const btn=ed.querySelector('.doc-edit-save');btn.disabled=true;btn.textContent='Saving...';
     try{
       await _saveDocEdit(corpusId,item,doc,def.storedAuthor,vals);
@@ -5756,7 +5803,8 @@ function showDocEditModal(corpusId,item,doc,storedAuthor,seed){
   ov.querySelector('.doc-edit-content').focus();
   ov.querySelector('.doc-edit-msave').onclick=async()=>{
     const vals=readVals();
-    if(!vals.title){toast('Title is required');return}
+    if(!vals.title)vals.title=_deriveNoteTitle(vals.content);
+    if(!vals.title&&!vals.content){toast('Add a title or some text');return}
     const btn=ov.querySelector('.doc-edit-msave');btn.disabled=true;btn.textContent='Saving...';
     try{
       await _saveDocEdit(corpusId,item,doc,storedAuthor,vals);
@@ -5786,7 +5834,7 @@ function refreshDocItemRow(item,doc){
     // Preserve the source-kind pill node we just patched; only swap the
     // word-count + date prefix that lives before it.
     const skNode=skEl?skEl.cloneNode(true):null;
-    metaEl.innerHTML=wlab+(doc.date?' · '+doc.date:'')+' · ';
+    const _dt=_docDate(doc);metaEl.innerHTML=wlab+(_dt?' · '+_dt:'')+' · ';
     if(skNode)metaEl.appendChild(skNode);
   }
 }
