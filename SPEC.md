@@ -666,6 +666,32 @@ Fields:
   `conformance_report`, `per_claim_provenance`, `typed_export`), kept explicit so
   the contract stays truthful as Phase 4g lands.
 
+### Manifest update mechanism
+
+The manifest has three update cadences, by field kind:
+
+1. **Computed / derived fields** — `source_composition`, `data_contract`, quality
+   stats, `kb_reputation`, `discovery_reach`. Recomputed **live on every
+   `describe` / export call**, so they are always current; no staleness.
+2. **LLM-derived semantic fields** — `task_types`, `samples`, `description`. Stored
+   on the corpus row and updated at discrete events, not continuously:
+   - **First index after ingest** — `autofill_if_empty` derives them once (no-op
+     if already set), recording a staleness baseline (the corpus document count
+     at derivation) and `manifest_source = "auto"`.
+   - **Staleness refresh** — on later indexing, `refresh_manifest_if_stale`
+     re-derives them when the corpus has grown materially since the baseline
+     (both an absolute and a relative gate, so an LLM call only fires on real
+     growth). This keeps the manifest semantically current as content drifts.
+   - **Owner edit** — applying via `manifest/apply` or PATCHing `task_types` /
+     `samples` sets `manifest_source = "owner"`. An owner-authored manifest is
+     **never** auto-overwritten by the staleness refresh — human always wins; the
+     owner re-derives manually via `manifest/suggest` if they want.
+3. **Rendered manifest doc** (the human capability card in the Wiki) — regenerated
+   from the stored fields on corpus create and on every field edit.
+
+Bookkeeping (`manifest_source`, `autofill_doc_count`) lives in the manifest doc's
+metadata, so no corpora-table migration is needed.
+
 ---
 
 ## Agent access interface
@@ -1519,6 +1545,7 @@ Networking is the substrate (every corpus is reachable in the network by default
 
 *Living tier (mostly shipped via the connector framework):*
 - [x] Auto-ingest from connected feeds (RSS, URL, directory sync)
+- [x] Manifest staleness refresh — `refresh_manifest_if_stale` re-derives `task_types` / `samples` on material growth (absolute + relative gates); owner-authored manifests are never auto-overwritten (`manifest_source`), baseline tracked in manifest-doc metadata
 - [ ] Periodic auto-compile from consumed material — keeps Wiki / entities / timelines in sync as sources change
 - [ ] Stale-concept detection + scheduled recompile (uses `stale_threshold_days`)
 

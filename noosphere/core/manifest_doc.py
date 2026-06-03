@@ -227,6 +227,43 @@ def get_manifest_doc_id(corpus_id: str) -> str | None:
     return row["id"] if row else None
 
 
+def get_manifest_meta(corpus_id: str) -> dict:
+    """Read the manifest doc's metadata_json (autofill bookkeeping lives here).
+
+    Returns {} if there is no manifest doc yet. Used to track whether the
+    semantic fields were machine-derived (``manifest_source``) and the corpus
+    size at the last auto-derivation (``autofill_doc_count``) — the inputs to
+    staleness detection. Storing it on the manifest doc avoids a corpora-table
+    migration.
+    """
+    row = get_conn().execute(
+        "SELECT metadata_json FROM documents WHERE corpus_id=? AND doc_type=? LIMIT 1",
+        (corpus_id, MANIFEST_DOC_TYPE),
+    ).fetchone()
+    if not row or not row["metadata_json"]:
+        return {}
+    try:
+        meta = json.loads(row["metadata_json"])
+        return meta if isinstance(meta, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def set_manifest_meta(corpus_id: str, **updates) -> None:
+    """Merge ``updates`` into the manifest doc's metadata_json. No-op if the
+    manifest doc doesn't exist yet (call ensure_manifest_doc first)."""
+    doc_id = get_manifest_doc_id(corpus_id)
+    if not doc_id:
+        return
+    meta = get_manifest_meta(corpus_id)
+    meta.update(updates)
+    get_conn().execute(
+        "UPDATE documents SET metadata_json=? WHERE id=?",
+        (json.dumps(meta), doc_id),
+    )
+    get_conn().commit()
+
+
 def ensure_manifest_doc(corpus_id: str) -> str:
     """Create the manifest doc for this corpus if missing. Returns doc id.
 

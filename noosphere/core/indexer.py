@@ -183,8 +183,12 @@ def index_corpus(
     # per corpus (no-op if `task_types` is already set), so owner customizations
     # are preserved. Silent on LLM failure — indexing itself already succeeded.
     try:
-        from noosphere.core.manifest_autofill import autofill_if_empty
+        from noosphere.core.manifest_autofill import autofill_if_empty, refresh_manifest_if_stale
+        # First-time fill (no-op if already set), then staleness refresh for
+        # corpora that have grown materially since the last auto-derivation.
+        # Owner-customized manifests are left untouched (human always wins).
         autofill_if_empty(corpus_id)
+        refresh_manifest_if_stale(corpus_id)
     except Exception:
         pass
 

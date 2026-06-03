@@ -161,12 +161,24 @@ def suggest_manifest(corpus_id: str) -> dict | None:
     return _normalize_proposal(proposal, corpus)
 
 
-def apply_proposal(corpus_id: str, proposal: dict, *, refresh_description: bool = False) -> dict:
+def apply_proposal(
+    corpus_id: str,
+    proposal: dict,
+    *,
+    refresh_description: bool = False,
+    source: str = "auto",
+) -> dict:
     """Persist a proposal to the corpus manifest.
 
     By default only `task_types` and `samples` are written; the description is
     treated as a suggestion the owner may or may not want applied. Pass
     `refresh_description=True` to overwrite description too.
+
+    `source` records who authored the manifest's semantic fields:
+    ``"auto"`` (machine-derived) or ``"owner"`` (human edit). When ``"auto"``,
+    the current document count is stored as the staleness baseline. An
+    ``"owner"`` manifest is never auto-overwritten by the staleness refresh —
+    human always wins.
     """
     from noosphere.core.corpus import update_corpus
 
@@ -181,11 +193,18 @@ def apply_proposal(corpus_id: str, proposal: dict, *, refresh_description: bool 
         return get_corpus(corpus_id)
     result = update_corpus(corpus_id, **updates)
     # Keep the pinned manifest document in sync with the canonical fields.
-    # Missing doc → lazy-create; existing doc → rewrite in place.
+    # Missing doc → lazy-create; existing doc → rewrite in place. Also record
+    # the authorship + staleness baseline in the manifest doc's metadata.
     try:
-        from noosphere.core.manifest_doc import ensure_manifest_doc, refresh_manifest_doc
+        from noosphere.core.manifest_doc import (
+            ensure_manifest_doc, refresh_manifest_doc, set_manifest_meta,
+        )
         ensure_manifest_doc(corpus_id)
         refresh_manifest_doc(corpus_id)
+        meta_updates: dict[str, Any] = {"manifest_source": source}
+        if source == "auto":
+            meta_updates["autofill_doc_count"] = int((result or {}).get("document_count") or 0)
+        set_manifest_meta(corpus_id, **meta_updates)
     except Exception as e:  # pragma: no cover — cosmetic sync, don't block edits
         log.info(f"manifest_doc refresh skipped: {e}")
     return result
@@ -210,5 +229,56 @@ def autofill_if_empty(corpus_id: str) -> dict | None:
         return None
     if not proposal:
         return None
-    apply_proposal(corpus_id, proposal, refresh_description=False)
+    apply_proposal(corpus_id, proposal, refresh_description=False, source="auto")
+    return proposal
+
+
+# Staleness gates: re-derive only on *material* growth since the last
+# auto-derivation, so we don't burn an LLM call on every re-index. Both gates
+# must hold — an absolute floor (tiny corpora) and a relative ratio (large
+# corpora whose semantic identity is already stable).
+_STALE_ABS_DELTA = 5
+_STALE_REL_RATIO = 1.5
+
+
+def refresh_manifest_if_stale(corpus_id: str) -> dict | None:
+    """Re-derive the manifest's semantic fields when the corpus has grown
+    materially since the last auto-derivation.
+
+    Skips entirely when:
+    - the manifest is empty (``autofill_if_empty`` owns that case), or
+    - the manifest was authored/edited by the owner (``manifest_source ==
+      "owner"``) — human always wins, never auto-overwrite, and
+    - growth is below the staleness gates.
+
+    Returns the applied proposal, or None if skipped / failed. Computed
+    signals (source_composition, data_contract, stats) are always live on
+    `describe`; this only refreshes the LLM-derived task_types / samples.
+    """
+    corpus = get_corpus(corpus_id)
+    if not corpus or not corpus.get("task_types"):
+        return None  # empty manifest → autofill_if_empty handles it
+
+    try:
+        from noosphere.core.manifest_doc import get_manifest_meta
+        meta = get_manifest_meta(corpus_id)
+    except Exception:
+        meta = {}
+    if meta.get("manifest_source") == "owner":
+        return None  # owner-customized — never auto-overwrite
+
+    baseline = int(meta.get("autofill_doc_count") or 0)
+    current = int(corpus.get("document_count") or 0)
+    grown_enough = current >= baseline + _STALE_ABS_DELTA and current >= baseline * _STALE_REL_RATIO
+    if not grown_enough:
+        return None
+
+    try:
+        proposal = suggest_manifest(corpus_id)
+    except LLMError as e:
+        log.info(f"manifest staleness refresh skipped ({e})")
+        return None
+    if not proposal:
+        return None
+    apply_proposal(corpus_id, proposal, refresh_description=False, source="auto")
     return proposal

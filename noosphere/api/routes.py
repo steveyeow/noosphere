@@ -1406,9 +1406,15 @@ async def api_update_corpus(corpus_id: str, req: UpdateCorpusRequest, request: R
     }
     if updates.keys() & manifest_affecting:
         try:
-            from noosphere.core.manifest_doc import ensure_manifest_doc, refresh_manifest_doc
+            from noosphere.core.manifest_doc import (
+                ensure_manifest_doc, refresh_manifest_doc, set_manifest_meta,
+            )
             ensure_manifest_doc(corpus_id)
             refresh_manifest_doc(corpus_id)
+            # A direct edit of the semantic fields makes the manifest
+            # owner-authored — the staleness refresh must not overwrite it.
+            if updates.keys() & {"task_types", "samples"}:
+                set_manifest_meta(corpus_id, manifest_source="owner")
         except Exception:
             pass
     # Registry resync: any field change touches the registered record. The
@@ -2520,7 +2526,11 @@ async def api_manifest_apply(corpus_id: str, req: ManifestApplyRequest, request:
         "samples": req.samples,
         "description_suggestion": req.description_suggestion,
     }
-    result = apply_proposal(corpus["id"], proposal, refresh_description=req.refresh_description)
+    # Owner-applied → mark the manifest as human-authored so the staleness
+    # refresh never auto-overwrites it.
+    result = apply_proposal(
+        corpus["id"], proposal, refresh_description=req.refresh_description, source="owner",
+    )
     return result
 
 
