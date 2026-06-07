@@ -42,7 +42,7 @@ _OG_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "og_cac
 # of index.html's ?v= bundle bust. data/og_cache is a persistent volume on
 # Railway, so a deploy alone does NOT clear it; without this bump, template-only
 # changes keep serving stale cards for already-cached docs.
-_CARD_TEMPLATE_VERSION = "2"
+_CARD_TEMPLATE_VERSION = "3"
 
 
 # ── Palette + hash (mirror of app.js lines 85–86) ─────────────────────
@@ -379,14 +379,15 @@ body {
   border-top: 1px solid rgba(0, 0, 0, 0.07);
 }
 
-/* Brand cluster (glyph + corpus name) sits in the TOP-RIGHT corner, out of the
-   bottom-left zone where X/Twitter stamps its own title overlay on the card
-   image — so the source name never collides with X's pill. The card stays
-   position:relative, so these offsets are from its top-right padding edge. */
+/* Brand cluster (glyph + corpus name) sits in the TOP-LEFT corner. X/Twitter
+   stamps its own title overlay on the BOTTOM-left of the card image, so keeping
+   our brand at the top (not the bottom) keeps the source name from colliding
+   with X's pill. The card is position:relative, so these offsets are measured
+   from its top-left padding edge. */
 .foot-left {
   position: absolute;
   top: 56px;
-  right: 96px;
+  left: 96px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -827,10 +828,15 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
     slug_q = quote(slug, safe="")
     corpus_id = corpus["id"]
 
+    # ?tv= versions the image URL itself so a template bump busts DOWNSTREAM
+    # caches too (Railway edge sets stale-while-revalidate, and X caches the
+    # og:image URL). The .png route ignores the query string, so it still
+    # renders; only the cache identity changes. Pairs with the server-side
+    # _cache_key_doc tv= (which busts the on-disk render cache).
     if doc is None:
         canonical_path = f"/c/{slug_q}"
         hash_route = f"#/corpus/{corpus_id}"
-        og_image_path = f"/og/c/{slug_q}.png"
+        og_image_path = f"/og/c/{slug_q}.png?tv={_CARD_TEMPLATE_VERSION}"
     else:
         canonical_path = f"/c/{slug_q}/d/{doc['id']}"
         # Single-doc share: route to the corpus view with /d/{doc_id} on the
@@ -839,7 +845,7 @@ def _render_share_html(corpus: dict, doc: dict | None, request: Request) -> str:
         # it inline — there's still no standalone single-doc page, but the
         # recipient lands on the actual content rather than the corpus root.
         hash_route = f"#/corpus/{corpus_id}/d/{doc['id']}"
-        og_image_path = f"/og/c/{slug_q}/d/{doc['id']}.png"
+        og_image_path = f"/og/c/{slug_q}/d/{doc['id']}.png?tv={_CARD_TEMPLATE_VERSION}"
 
     canonical_url = f"{base_url}{canonical_path}"
     og_image_url = f"{base_url}{og_image_path}"

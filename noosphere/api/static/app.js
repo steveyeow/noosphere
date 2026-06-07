@@ -4606,7 +4606,10 @@ function openShareDialog(corpus,doc){
   // slug yields a broken/truncated link in the tweet. Percent-encode it.
   const slug=encodeURIComponent(corpus.slug||corpus.id);
   const url=doc?`${base}/c/${slug}/d/${doc.id}`:`${base}/c/${slug}`;
-  const ogImg=doc?`/og/c/${slug}/d/${doc.id}.png`:`/og/c/${slug}.png`;
+  // Cache-bust the in-modal preview so the user always sees the freshly
+  // rendered card (the shared og:image URL is versioned separately, server-side).
+  const _ogBust=`?t=${Date.now()}`;
+  const ogImg=doc?`/og/c/${slug}/d/${doc.id}.png${_ogBust}`:`/og/c/${slug}.png${_ogBust}`;
   // Subject label for the dialog header — "corpus" / "wiki entry" / "note"
   // gives the user a moment of confirmation about what they're actually
   // sharing before the tweet ships.
