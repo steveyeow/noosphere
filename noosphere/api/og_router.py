@@ -36,6 +36,14 @@ router = APIRouter()
 _STATIC_INDEX = Path(__file__).parent / "static" / "index.html"
 _OG_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "og_cache"
 
+# Bump on ANY change to the card HTML/CSS (_render_*_card or _BASE_STYLES). It's
+# folded into the content-addressed cache key, so a bump rotates every cached
+# PNG and forces a fresh render with the new template — the OG-card equivalent
+# of index.html's ?v= bundle bust. data/og_cache is a persistent volume on
+# Railway, so a deploy alone does NOT clear it; without this bump, template-only
+# changes keep serving stale cards for already-cached docs.
+_CARD_TEMPLATE_VERSION = "2"
+
 
 # ── Palette + hash (mirror of app.js lines 85–86) ─────────────────────
 PAL = [
@@ -1046,6 +1054,7 @@ def _cache_key_corpus(corpus: dict) -> str:
     # cold render right when a scraper might be fetching it.
     raw = (
         f"corpus:{corpus['id']}:"
+        f"tv={_CARD_TEMPLATE_VERSION}:"
         f"name={corpus.get('name') or ''}:"
         f"desc={corpus.get('description') or ''}:"
         f"access={corpus.get('access_level') or 'public'}:"
@@ -1065,6 +1074,7 @@ def _cache_key_doc(corpus: dict, doc: dict) -> str:
     # both missed silent edits and over-invalidated on corpus-wide changes.
     raw = (
         f"doc:{corpus['id']}:{doc['id']}:"
+        f"tv={_CARD_TEMPLATE_VERSION}:"
         f"name={corpus.get('name') or ''}:"
         f"access={corpus.get('access_level') or 'public'}:"
         f"title={doc.get('title') or ''}:"
