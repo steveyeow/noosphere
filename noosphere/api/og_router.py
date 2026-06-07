@@ -366,12 +366,19 @@ body {
 .foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding-top: 22px;
   border-top: 1px solid rgba(0, 0, 0, 0.07);
 }
 
+/* Brand cluster (glyph + corpus name) sits in the TOP-RIGHT corner, out of the
+   bottom-left zone where X/Twitter stamps its own title overlay on the card
+   image — so the source name never collides with X's pill. The card stays
+   position:relative, so these offsets are from its top-right padding edge. */
 .foot-left {
+  position: absolute;
+  top: 56px;
+  right: 96px;
   display: flex;
   align-items: center;
   gap: 14px;
