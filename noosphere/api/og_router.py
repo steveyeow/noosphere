@@ -757,14 +757,32 @@ def _share_describe(corpus: dict, doc: dict | None) -> tuple[str, str, str]:
     is_wiki = _is_wiki(doc)
     label = "Wiki" if is_wiki else "Note"
     raw_title = _clean_title(doc.get("title") or "")
-    og_title = raw_title or corpus_name
 
     raw_content = doc.get("content") or ""
     if is_wiki:
         raw_content = _extract_concept_summary(raw_content)
+
+    # og_title / twitter:title is what X overlays as a label on the card image.
+    # When the title is just the note's opening line (auto-derived), empty, or an
+    # auto-id pattern, the card image already renders that opening body-first —
+    # echoing it here double-prints the same sentence on the card. Fall back to
+    # the corpus name (the source identity) so the overlay says where it's from.
+    # Real distinct titles stay as the headline. Mirrors _render_content_card's
+    # has_meaningful_title.
+    auto_title_pat = re.compile(r"^(user_(original|capture)|untitled)[-_\s]?\d*$", re.I)
+    has_meaningful_title = (
+        bool(raw_title)
+        and not auto_title_pat.match(raw_title)
+        and not _title_is_derived(raw_title, raw_content)
+    )
+    og_title = raw_title if has_meaningful_title else corpus_name
+
     content = _strip_markdown(_drop_title_echo(raw_content)).strip()
     description = _smart_excerpt(content, max_chars=240)
-    page_title = f"{og_title} — {corpus_name} on Noosphere"
+    # Browser-tab <title> can still carry the derived opening as a snippet —
+    # there's no image overlay there, so no duplication concern.
+    tab_title = raw_title or corpus_name
+    page_title = f"{tab_title} — {corpus_name} on Noosphere"
     if not description:
         description = f"A {label.lower()} in {corpus_name} on Noosphere."
     return page_title, og_title, description
