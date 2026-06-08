@@ -2151,8 +2151,23 @@ function renderHome(){
     }
     const fd=new FormData();
     fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
-    try{await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}
+    let r;
+    try{r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}
     catch(e){toast('Save failed: '+e.message);sendBtn.disabled=false;return}
+    if(!r.ok){
+      // Don't lie about success. A quota/limit rejection (e.g. Free tier's daily
+      // index cap, HTTP 429) doesn't throw on fetch — without this the note was
+      // reported "saved", the draft cleared, and nothing persisted. Surface the
+      // real error (paywall for quota), keep the draft + input so the note isn't
+      // lost, and bail.
+      const e=await r.json().catch(()=>({}));
+      sendBtn.disabled=false;
+      if(!handleQuotaError(r,e)){
+        const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;
+        toast('Save failed: '+m,'error');
+      }
+      return;
+    }
     ensureIndexed(cid);
     clearDraft();
     input.value='';autosize();sendBtn.disabled=false;
@@ -2344,7 +2359,14 @@ function renderHome(){
     // should feed monetization downstream.
     fd.append('source_kind','user_capture');
     try{
-      await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
+      const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
+      if(!r.ok){
+        // Same as saveNote: a 429 quota rejection doesn't throw, so without this
+        // the button flipped to "Saved" while nothing persisted. Surface it.
+        const e=await r.json().catch(()=>({}));
+        if(!handleQuotaError(r,e)){const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;toast('Save failed: '+m,'error')}
+        btn.innerHTML=orig;btn.disabled=false;return;
+      }
       ensureIndexed(cid);
       btn.classList.add('saved');btn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Saved`;
       await loadC();
@@ -2914,7 +2936,7 @@ function showTermUpload(output,input,defaultCorpus,opts){
         const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
         const d=await r.json();
         wrap.remove();
-        if(!r.ok){reportErr('Upload failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        if(!r.ok){if(!handleQuotaError(r,d)){reportErr('Upload failed: '+(d.detail&&typeof d.detail==='object'?d.detail.message:(d.detail||r.statusText)))}if(input)input.focus();return}
         // Per-file errors — surface them so the user knows which file(s)
         // didn't make it. We previously reported the batch count and the
         // user couldn't tell that, say, file 3 was a corrupted PDF.
@@ -3002,7 +3024,7 @@ function showTermUpload(output,input,defaultCorpus,opts){
         const r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd});
         const d=await r.json();
         wrap.remove();
-        if(!r.ok){reportErr('Save failed: '+(d.detail||r.statusText));if(input)input.focus();return}
+        if(!r.ok){if(!handleQuotaError(r,d)){reportErr('Save failed: '+(d.detail&&typeof d.detail==='object'?d.detail.message:(d.detail||r.statusText)))}if(input)input.focus();return}
         ensureIndexed(cid);
         await loadC();
         const corpus=_corpora.find(c=>c.id===cid);
