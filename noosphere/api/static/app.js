@@ -2133,9 +2133,12 @@ function renderHome(){
 
   let _sending=false;
   async function saveNote(body){
-    // Label derived from the opening sentence (see _deriveNoteTitle). Used as
-    // the list-row label only — the reader renders this note body-first.
-    const title=_deriveNoteTitle(body)||('Note '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    // A written note is the SAME action as a note typed into the composer, so it
+    // runs through the identical enrich flow (POST /terminal → _handle_enrich_text):
+    // same status sequence (Saved → Indexing → Indexed → Note Saved → "Agents can
+    // now cite") AND a persisted chat session that shows in the sidebar. This was
+    // previously a bare /upload that produced a minimal "Saved" line and no chat
+    // record — inconsistent with the chat path for the very same action.
     sendBtn.disabled=true;
     await loadC();
     let cid=_homeScope;
@@ -2149,32 +2152,36 @@ function renderHome(){
         toast('Pick a corpus first');sendBtn.disabled=false;openChipMenu();return;
       }
     }
-    const fd=new FormData();
-    fd.append('files',new Blob(['---\ntitle: '+title+'\n---\n\n'+body],{type:'text/markdown'}),title.replace(/[^a-zA-Z0-9]/g,'-')+'.md');
+    // Mirror a chat send (see sendInput): echo the note, show a loader, run the
+    // enrich terminal flow, render its status lines, surface the freshly persisted
+    // chat session in the sidebar.
+    input.value='';autosize();
+    collapseToChat();
+    addLine(output,'prompt',body);
+    const loadId='ld-'+Date.now();
+    addLine(output,'thinking','Saving…',loadId);
     let r;
-    try{r=await fetch(`${API}/corpora/${cid}/upload`,{method:'POST',body:fd})}
-    catch(e){toast('Save failed: '+e.message);sendBtn.disabled=false;return}
+    try{r=await fetch(`${API}/terminal`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:body,context:{},mode:'enrich',corpus_id:cid})})}
+    catch(e){document.getElementById(loadId)?.remove();addLine(output,'resp','Save failed: '+e.message+' — your note is restored, press Send to retry.');input.value=body;autosize();sendBtn.disabled=false;return}
+    document.getElementById(loadId)?.remove();
+    sendBtn.disabled=false;
     if(!r.ok){
-      // Don't lie about success. A quota/limit rejection (e.g. Free tier's daily
-      // index cap, HTTP 429) doesn't throw on fetch — without this the note was
-      // reported "saved", the draft cleared, and nothing persisted. Surface the
-      // real error (paywall for quota), keep the draft + input so the note isn't
-      // lost, and bail.
+      // Keep the note: a quota/limit rejection (e.g. Free tier's daily cap) must
+      // not silently drop it. Surface the real error (paywall for quota) and
+      // restore the text so Send retries. _mode is still 'write', so Send re-runs
+      // saveNote with the restored body.
       const e=await r.json().catch(()=>({}));
-      sendBtn.disabled=false;
       if(!handleQuotaError(r,e)){
         const m=(e.detail&&typeof e.detail==='object'?e.detail.message:e.detail)||`HTTP ${r.status}`;
-        toast('Save failed: '+m,'error');
+        addLine(output,'resp','Save failed: '+m+' — your note is restored, press Send to retry.');
       }
+      input.value=body;autosize();
       return;
     }
-    ensureIndexed(cid);
+    const d=await r.json();
+    if(d.session_id)renderSBChats();
+    for(const line of(d.lines||[]))addLine(output,line.type,null,null,line);
     clearDraft();
-    input.value='';autosize();sendBtn.disabled=false;
-    collapseToChat();
-    const corpus=_corpora.find(c=>c.id===cid);
-    addLine(output,'resp','Saved: "'+title+'"');
-    addLine(output,'card',null,null,{type:'card',label:'Note saved',status:'READY',detail:(corpus?corpus.name:'Corpus')+' — '+title,corpus_id:cid});
     exitToAsk();
     await loadC();
   }
