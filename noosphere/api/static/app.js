@@ -6194,9 +6194,12 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   ];
   const autonomyHTML=stages.map(s=>{
     let badge='';
-    if(showProUI && s.pro && !isProUser){
-      // Cloud Free — clickable upgrade pill. Cloud Pro sees no badge
-      // (they already have access). Self-hosted sees no badge at all.
+    if(showProUI && s.pro && !isProUser && c.can_write){
+      // Cloud Free OWNER — clickable upgrade pill (upgrades the viewer's own
+      // account; autonomy itself is an owner-only corpus setting). Cloud Pro
+      // sees no badge; self-hosted sees no badge; visitors on someone else's
+      // corpus see no badge — an Upgrade pill there read as "upgrade THEIR
+      // corpus", which nobody but the owner can do.
       badge=`<button type="button" class="rp-auto-tag rp-auto-tag--pro rp-auto-tag--link" data-pro-upsell="${esc(s.label)} autonomy is a Pro feature">Upgrade</button>`;
     }
     return `<div class="rp-stage"><div class="rp-stage-hd"><span class="rp-stage-nm">${s.label}</span>${badge}</div><div class="rp-stage-dc">${s.desc}</div></div>`;
