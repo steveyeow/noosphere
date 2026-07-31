@@ -20,23 +20,45 @@ MAX_RETRIES = 3
 RETRY_BACKOFF = (1, 3, 10)  # seconds
 
 
+RATE_LIMIT_BACKOFF = (15, 30, 60, 60, 60)  # seconds; must outlast a per-minute quota window
+
+
 def _request_with_retry(method, url, **kwargs):
     """HTTP request with exponential backoff retry on transient failures."""
-    last_err = None
-    for attempt in range(MAX_RETRIES):
+    attempt = 0        # transient failures (timeout / connect / 5xx)
+    rate_limited = 0   # 429s get their own, more patient budget
+    while True:
         try:
             resp = method(url, **kwargs)
             resp.raise_for_status()
             return resp
         except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError) as e:
-            last_err = e
-            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:
-                raise  # don't retry 4xx
-            if attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF[attempt]
-                logger.warning("Embedding API attempt %d failed (%s), retrying in %ds", attempt + 1, e, wait)
+            is_429 = isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429
+            # 429 is the one retryable 4xx: rate limits are transient by
+            # definition and Gemini free-tier quotas hit them routinely
+            # mid-index. Other 4xx (bad key, bad payload) stay fatal.
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500 and not is_429:
+                raise
+            if is_429:
+                # Separate budget from transient errors: a quota window needs
+                # to be waited out, not raced. Honor Retry-After when sent.
+                if rate_limited >= len(RATE_LIMIT_BACKOFF):
+                    raise
+                wait = RATE_LIMIT_BACKOFF[rate_limited]
+                retry_after = e.response.headers.get("retry-after", "")
+                if retry_after.isdigit():
+                    wait = max(wait, min(int(retry_after), 120))
+                rate_limited += 1
+                logger.warning("Embedding API rate-limited (429), waiting %ds (retry %d/%d)",
+                               wait, rate_limited, len(RATE_LIMIT_BACKOFF))
                 time.sleep(wait)
-    raise last_err
+                continue
+            if attempt >= MAX_RETRIES - 1:
+                raise
+            wait = RETRY_BACKOFF[attempt]
+            attempt += 1
+            logger.warning("Embedding API attempt %d failed (%s), retrying in %ds", attempt, e, wait)
+            time.sleep(wait)
 
 
 class EmbeddingProvider(ABC):
@@ -161,15 +183,36 @@ class GeminiEmbedder(EmbeddingProvider):
         assert last_err is not None
         raise last_err
 
+    # Per-request word budget. batchEmbedContents accepts up to 100 contents,
+    # but a full 100-chunk batch of dense text (~90k words / ~150k+ tokens)
+    # gets hard-429'd regardless of retries, which used to kill indexing of
+    # any code-heavy corpus. 8k words (~16-20k tokens) is an order of
+    # magnitude under the observed failure point and probed safe.
+    MAX_BATCH_ITEMS = 100
+    MAX_BATCH_WORDS = 8000
+
     def embed(self, texts: list[str]) -> np.ndarray:
         all_embeddings = []
 
-        for i in range(0, len(texts), 100):
-            batch = texts[i : i + 100]
+        batch: list[str] = []
+        batch_words = 0
+        def flush():
+            nonlocal batch, batch_words
+            if not batch:
+                return
             requests_body = [{"model": f"models/{self._model}", "content": {"parts": [{"text": t}]}} for t in batch]
             resp = self._post_with_key_rotation(requests_body)
             embeddings = resp.json()["embeddings"]
             all_embeddings.extend([e["values"] for e in embeddings])
+            batch, batch_words = [], 0
+
+        for t in texts:
+            words = len(t.split())
+            if batch and (len(batch) >= self.MAX_BATCH_ITEMS or batch_words + words > self.MAX_BATCH_WORDS):
+                flush()
+            batch.append(t)
+            batch_words += words
+        flush()
 
         return np.array(all_embeddings, dtype=np.float32)
 

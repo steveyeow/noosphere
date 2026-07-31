@@ -50,7 +50,37 @@ def index_corpus(
     """
     conn = get_conn()
     update_corpus(corpus_id, status="indexing")
+    try:
+        return _index_corpus_inner(
+            corpus_id, conn, provider=provider, on_progress=on_progress,
+            force=force, chunk_strategy=chunk_strategy,
+        )
+    except Exception:
+        # Without this, a mid-run failure (embed 429, provider outage, crash
+        # in chunking) left the corpus stuck at status="indexing" forever —
+        # the UI showed a compile that never finished. Mark it error so the
+        # owner sees a retryable failure; docs whose embedding never landed
+        # keep their old content_hash, so the next run re-indexes them.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            update_corpus(corpus_id, status="error")
+        except Exception:
+            logger.exception("Failed to mark corpus %s as error after index failure", corpus_id)
+        raise
 
+
+def _index_corpus_inner(
+    corpus_id: str,
+    conn,
+    *,
+    provider: str,
+    on_progress,
+    force: bool,
+    chunk_strategy: str,
+) -> dict:
     if not chunk_strategy:
         corpus = get_corpus(corpus_id)
         chunk_strategy = (corpus.get("chunk_strategy") if corpus else None) or "paragraph"

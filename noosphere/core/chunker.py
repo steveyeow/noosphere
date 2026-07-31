@@ -100,6 +100,24 @@ def _split_oversized(sections: list[dict], max_tokens: int, overlap_tokens: int)
 
         current_text = ""
         for sent in sentences:
+            # A single "sentence" can exceed max_tokens on its own — source
+            # code and other prose-free text often has no sentence boundaries,
+            # so re.split returns huge segments. Word-split those immediately;
+            # letting them ride as current_text emitted multi-thousand-word
+            # chunks (only the final tail was word-split before).
+            if _approx_tokens(sent) > max_tokens:
+                if current_text.strip():
+                    result.append({
+                        "text": current_text.strip(),
+                        "char_start": sec["char_start"],
+                        "char_end": sec["char_start"] + len(current_text),
+                    })
+                    current_text = ""
+                result.extend(_split_by_words(
+                    {"text": sent.strip(), "char_start": sec["char_start"], "char_end": sec["char_end"]},
+                    max_tokens, overlap_tokens,
+                ))
+                continue
             if _approx_tokens(current_text + " " + sent) > max_tokens and current_text:
                 result.append({
                     "text": current_text.strip(),
