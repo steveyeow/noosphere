@@ -4889,8 +4889,8 @@ async function renderCorpus(id,sessionId,opts){
   // renderCorpus (the corpus page fails to render).
   const _backHref=_isUnauth?'#/explore':'#/corpora';
   const _backLabel=_isUnauth?'Explore':'Corpora';
-  const _unauthBanner=_isUnauth?`<div class="cv-unauth-banner"><span>Read-only view. <a href="#/login">Sign in</a> to chat, subscribe, or build your own.</span><a class="cv-unauth-cta" href="#/login">Sign in →</a></div>`:'';
-  ct.innerHTML=`${_unauthBanner}<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="${_backHref}">&larr; ${_backLabel}</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
+  const _unauthBanner=_isUnauth?`<div class="cv-unauth-banner"><span>Ask this knowledge base anything below — <a href="#/login">sign in</a> to subscribe or build your own.</span><a class="cv-unauth-cta" href="#/login">Sign in →</a></div>`:'';
+  ct.innerHTML=`${_unauthBanner}<div class="cv-layout"><div class="cv-scroll"><div class="cv-header"><div class="cv-header-top"><a class="cv-back" href="${_backHref}">&larr; ${_backLabel}</a></div><div class="cv-identity"><h1 class="cv-name">${esc(c.name)}</h1><span class="mc-badge mc-badge-${al}">${badgeLabel}</span><button class="cv-share-btn" id="cv-share-btn" type="button" title="Share this corpus">Share</button></div><div class="cv-desc-wrap">${c.description?`<p class="cv-desc" id="cv-desc">${esc(c.description)}</p>`:`<p class="cv-desc cv-desc-empty" id="cv-desc">Add a description...</p>`}<button class="cv-desc-edit-btn" id="cv-desc-edit" title="Edit description"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></div>${tg.length?`<div class="cv-tags">${tg.map(t=>`<span class="mc-meta-tag">${esc(t)}</span>`).join('')}</div>`:''}</div>${tabStripHTML}<div class="cv-sec cv-sec-wiki"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Wiki</span><span class="cv-st-sub">${wikiSubLabel}</span></div><button class="btn-add" id="cv-extract-btn" title="Extract people, companies & concepts from your sources into entity pages">Extract</button><button class="btn-add" id="cv-compile-btn">Compile</button><button class="btn-add" id="cv-interview-btn" title="Answer a few questions to fill thin spots in this corpus">Interview</button></div>${wikiFilterHTML}<div id="cv-wiki-docs">${(wikiDocs.length===0&&ents.length===0)?wikiEmpty:''}${wikiDocs.map(docItemHTML).join('')}${entGroupsHTML}</div></div><div class="cv-sec cv-sec-raw"><div class="cv-st"><div class="cv-st-main"><span class="cv-st-title">Sources</span><span class="cv-st-sub">${rawDocs.length?rawDocs.length+' · substrate':'substrate'}</span></div><button class="btn-add" id="cv-raw-add">+ Add</button></div><div id="cv-raw-docs">${rawDocs.length===0?rawEmpty:rawDocs.map(docItemHTML).join('')}</div></div><div id="cv-ask-thread" class="cv-ask-thread"></div><div class="cv-scroll-end"></div></div><div class="cv-chat-dock" id="cv-chat-dock" role="search"><div class="home-composer cv-composer" id="cv-composer"><textarea class="home-composer-input" id="cv-composer-input" placeholder="" rows="1" autocomplete="off"></textarea><div class="home-composer-foot"><span class="home-composer-left"><button class="composer-attach" id="cv-composer-attach" title="Add content" aria-label="Add content"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button><button class="composer-mode-label" id="cv-composer-mode" type="button">Enrich mode</button><span class="home-composer-hint" id="cv-composer-hint">Press Enter to chat</span></span><span class="home-composer-right"><span class="home-composer-model">Noos</span><button class="home-composer-send" id="cv-composer-send" title="Send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button></span></div><div class="home-composer-conn"><span class="home-chip home-chip-locked" aria-readonly="true"><span class="home-chip-label">Corpus: ${esc(c.name)}</span></span></div></div></div></div>`;
   showRP(c,an);
   // Description editor — surgical (no renderCorpus). Snapshot the read-only
   // markup, swap in the input, and restore (with the new value on save) so
@@ -4969,6 +4969,48 @@ async function renderCorpus(id,sessionId,opts){
   };
   _cvSetMode('enrich');
 
+  // Visitor Ask — anyone who can't write this corpus (anonymous visitor or
+  // signed-in non-owner) gets the composer as a question box instead of the
+  // owner's Enrich/Compile dock. Answers render as cited Q&A cards in the
+  // page; the backend rate-limits anonymous callers per IP per day.
+  const _visitorAsk=!c.can_write;
+  if(_visitorAsk){
+    if(cvComposerMode)cvComposerMode.textContent='Ask';
+    if(cvComposerHint)cvComposerHint.textContent='Press Enter to ask';
+    if(cvComposerInput)cvComposerInput.placeholder=`Ask ${c.name} a question`;
+    if(cvComposerAttach)cvComposerAttach.style.display='none';
+  }
+  async function _visitorAskSend(q){
+    const thread=document.getElementById('cv-ask-thread');
+    if(!thread)return;
+    if(cvComposerInput){cvComposerInput.value='';cvComposerInput.style.height='auto'}
+    const card=document.createElement('div');
+    card.className='cv-ask-card';
+    card.innerHTML=`<div class="cv-ask-q">${esc(q)}</div><div class="cv-ask-a cv-ask-pending">Thinking…</div>`;
+    thread.appendChild(card);
+    card.scrollIntoView({behavior:'smooth',block:'end'});
+    const aEl=card.querySelector('.cv-ask-a');
+    try{
+      const r=await fetch(`${API}/corpora/${id}/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===429){
+        const msg=(d.detail&&d.detail.message)||'Daily free question limit reached.';
+        aEl.classList.remove('cv-ask-pending');
+        aEl.innerHTML=`${esc(msg)} <a href="#/login">Sign in →</a>`;
+        return;
+      }
+      if(!r.ok)throw new Error((d.detail&&(d.detail.message||(typeof d.detail==='string'?d.detail:'')))||('HTTP '+r.status));
+      aEl.classList.remove('cv-ask-pending');
+      const cites=d.citations||[];
+      aEl.innerHTML=(typeof _mdToHtml==='function'?_mdToHtml(d.answer||''):esc(d.answer||''))
+        +(cites.length?`<div class="cv-ask-cites">${cites.map(ci=>`<button class="cv-ask-cite" type="button" data-doc="${esc(ci.document_id)}">[${ci.index}] ${esc(ci.title)}</button>`).join('')}</div>`:'');
+      aEl.querySelectorAll('.cv-ask-cite').forEach(b=>{b.onclick=()=>openDocReader(id,b.dataset.doc)});
+    }catch(e){
+      aEl.classList.remove('cv-ask-pending');
+      aEl.textContent='Could not answer: '+e.message;
+    }
+  }
+
   // Mode picker — small popover with Enrich + Compile, anchored to the mode
   // label. Mirrors the home composer's mode flyout but trimmed to two options.
   function _cvOpenModePicker(anchor){
@@ -4995,7 +5037,7 @@ async function renderCorpus(id,sessionId,opts){
       document.addEventListener('click',outside,true);
     },0);
   }
-  if(cvComposerMode)cvComposerMode.onclick=()=>_cvOpenModePicker(cvComposerMode);
+  if(cvComposerMode)cvComposerMode.onclick=()=>{if(_visitorAsk)return;_cvOpenModePicker(cvComposerMode)};
 
   // "+ Add" in Sources header AND the composer's + both open the same attach
   // popover anchored to the corpus composer's + (so the picker visually
@@ -5035,6 +5077,7 @@ async function renderCorpus(id,sessionId,opts){
   const doSend=()=>{
     const v=(cvComposerInput?.value||'').trim();
     if(!v)return;
+    if(_visitorAsk){_visitorAskSend(v);return}
     if(_cvDockMode==='compile'){
       location.hash='#/compile?fresh=1&corpus='+encodeURIComponent(id)+'&topic='+encodeURIComponent(v);
       return;

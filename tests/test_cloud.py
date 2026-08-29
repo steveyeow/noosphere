@@ -282,6 +282,72 @@ def test_auth_middleware_rejects_write_without_token():
     asyncio.run(run())
 
 
+def test_auth_middleware_allows_anonymous_ask():
+    """POST /corpora/{id}/ask passes without a token (visitor Ask).
+
+    Access level and anonymous rate limits are enforced by the route itself;
+    the middleware must not demand a login before the question reaches them.
+    Sibling POST endpoints (e.g. /index) stay auth-gated.
+    """
+    import asyncio
+    from noosphere.cloud.auth import auth_middleware
+
+    async def run():
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
+
+        called = False
+
+        async def mock_call_next(request):
+            nonlocal called
+            called = True
+            return JSONResponse({"ok": True})
+
+        def scope_for(path):
+            return {
+                "type": "http",
+                "method": "POST",
+                "path": path,
+                "headers": [],
+                "query_string": b"",
+            }
+
+        resp = await auth_middleware(Request(scope_for("/api/v1/corpora/abc123/ask")), mock_call_next)
+        assert called
+        assert resp.status_code == 200
+
+        called = False
+        resp = await auth_middleware(Request(scope_for("/api/v1/corpora/abc123/index")), mock_call_next)
+        assert not called
+        assert resp.status_code == 401
+
+    asyncio.run(run())
+
+
+def test_anon_ask_rate_limit():
+    """Per-IP daily cap raises 429 with a sign-in nudge after N questions."""
+    from fastapi import HTTPException
+    from noosphere.api import routes
+
+    class FakeRequest:
+        client = type("C", (), {"host": "203.0.113.9"})()
+
+    routes._anon_ask_day = ""
+    routes._anon_ask_counts.clear()
+    for _ in range(routes.ANON_ASK_PER_IP_DAY):
+        routes._check_anon_ask_limit(FakeRequest(), "corpus-x")
+    try:
+        routes._check_anon_ask_limit(FakeRequest(), "corpus-x")
+        assert False, "expected 429"
+    except HTTPException as e:
+        assert e.status_code == 429
+        assert e.detail["code"] == "anon_quota_exceeded"
+    # A different IP is not affected by the first IP's cap.
+    class OtherIP:
+        client = type("C", (), {"host": "203.0.113.10"})()
+    routes._check_anon_ask_limit(OtherIP(), "corpus-x")
+
+
 def test_auth_middleware_valid_hs256_token():
     """Valid HS256 JWT should set user context."""
     import asyncio

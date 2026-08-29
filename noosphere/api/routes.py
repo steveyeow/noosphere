@@ -94,6 +94,44 @@ def _client_ip(request: Request) -> str | None:
     return getattr(client, "host", None) if client else None
 
 
+# ── Anonymous visitor Ask rate limiting ─────────────────────────────
+# Visitors on a public corpus can ask without an account (the "Ask page"
+# loop: share link → question → cited answer). Each answer costs an LLM
+# call, so anonymous usage is capped per IP and per corpus per day.
+# In-memory: single-process deploy; a restart resetting counters is fine
+# for an abuse cap. Signed-in users go through the normal tier quota.
+ANON_ASK_PER_IP_DAY = 5
+ANON_ASK_PER_CORPUS_DAY = 200
+_anon_ask_day = ""
+_anon_ask_counts: dict[str, int] = {}
+
+
+def _check_anon_ask_limit(request: Request, corpus_id: str) -> None:
+    global _anon_ask_day
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _anon_ask_day != today:
+        _anon_ask_day = today
+        _anon_ask_counts.clear()
+    ip = _client_ip(request) or "unknown"
+    ip_key = f"ip:{ip}:{corpus_id}"
+    corpus_key = f"corpus:{corpus_id}"
+    if _anon_ask_counts.get(ip_key, 0) >= ANON_ASK_PER_IP_DAY:
+        raise HTTPException(status_code=429, detail={
+            "code": "anon_quota_exceeded",
+            "limit": ANON_ASK_PER_IP_DAY,
+            "message": f"You've used your {ANON_ASK_PER_IP_DAY} free questions today. Sign in to keep asking.",
+        })
+    if _anon_ask_counts.get(corpus_key, 0) >= ANON_ASK_PER_CORPUS_DAY:
+        raise HTTPException(status_code=429, detail={
+            "code": "anon_quota_exceeded",
+            "limit": ANON_ASK_PER_CORPUS_DAY,
+            "message": "This knowledge base has reached its free question limit for today. Sign in to keep asking.",
+        })
+    _anon_ask_counts[ip_key] = _anon_ask_counts.get(ip_key, 0) + 1
+    _anon_ask_counts[corpus_key] = _anon_ask_counts.get(corpus_key, 0) + 1
+
+
 def _active_workspace(request: Request) -> tuple[str, str | None]:
     """Parse the active workspace from the X-Noosphere-Workspace header.
 
@@ -2434,6 +2472,10 @@ async def api_ask(corpus_id: str, req: AskRequest, request: Request):
     corpus = _resolve_corpus(corpus_id)
     token_id = _check_corpus_access(corpus, request)
     _check_quota(request, "ask")
+    # Anonymous visitor (cloud, no account): per-IP + per-corpus daily caps.
+    # Signed-in users were already limited by _check_quota above.
+    if _is_cloud() and not _get_user_id(request):
+        _check_anon_ask_limit(request, corpus["id"])
     agent_id = request.headers.get("x-agent-id", "")
     caller_corpus = _caller_corpus_id(request)
     caller = "owner" if _is_owner_request(request) else "external"

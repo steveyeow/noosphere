@@ -131,7 +131,9 @@ async def sitemap_xml(request: Request):
         if not slug:
             continue
         lastmod = _lastmod(c)
-        for path in (f"/c/{slug}/llms.txt", f"/c/{slug}/llms-full.txt"):
+        # /c/{slug} is the human share landing (HTML + OG meta, hosts the
+        # visitor Ask box); the llms.txt pair is the machine-readable content.
+        for path in (f"/c/{slug}", f"/c/{slug}/llms.txt", f"/c/{slug}/llms-full.txt"):
             block = ["  <url>", f"    <loc>{_xml_escape(base + path)}</loc>"]
             if lastmod:
                 block.append(f"    <lastmod>{lastmod}</lastmod>")

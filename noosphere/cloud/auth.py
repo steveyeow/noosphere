@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import logging
+import re
 import time
 
 import jwt
@@ -77,6 +78,12 @@ PRIVATE_GET_PREFIXES = (
     "/api/v1/cloud/subscription",
     "/api/v1/cloud/usage",
 )
+
+# Anonymous POST allowance: visitor Ask on a public corpus. The route's own
+# _check_corpus_access still gates token/paid/private corpora, and api_ask
+# applies a per-IP anonymous rate limit — this middleware only stops
+# requiring a login before the question can even reach that gating.
+_ANON_POST_RE = re.compile(r"^/api/v1/corpora/[^/]+/ask$")
 
 
 def _get_jwks_keys() -> list:
@@ -179,6 +186,10 @@ async def auth_middleware(request: Request, call_next):
     if not has_token:
         # Allow public GET API requests (corpus listing, search, etc.)
         if is_get_api and not is_private_get:
+            return await call_next(request)
+        # Visitor Ask: anonymous POST to a corpus's /ask (public corpora only —
+        # the route gates access level and rate-limits anonymous callers).
+        if request.method == "POST" and _ANON_POST_RE.match(path):
             return await call_next(request)
         return JSONResponse(
             {"detail": "Authentication required", "code": "auth_required"},

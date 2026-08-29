@@ -1839,3 +1839,17 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .iv-nudge-btn{flex-shrink:0;padding:5px 14px;border-radius:16px;border:none;background:var(--btnBg);color:var(--btnC);font-size:12px;font-weight:500;cursor:pointer;transition:opacity .12s}
 .iv-nudge-btn:hover{opacity:.88}
 .home--active .home-iv-nudge{display:none}
+
+/* Visitor Ask — cited Q&A cards on a read-only corpus page */
+.cv-ask-thread{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px}
+.cv-ask-thread:empty{display:none}
+.cv-ask-card{background:var(--bg2);border:1px solid var(--brd);border-radius:var(--r-md);padding:14px 16px;box-shadow:var(--shCard)}
+.cv-ask-q{font-weight:600;font-size:13.5px;margin-bottom:8px}
+.cv-ask-a{font-size:13.5px;line-height:1.65;color:var(--tx)}
+.cv-ask-a.cv-ask-pending{color:var(--tx3)}
+.cv-ask-a p{margin:0 0 8px}
+.cv-ask-a p:last-child{margin-bottom:0}
+.cv-ask-a a{color:inherit;text-decoration:underline}
+.cv-ask-cites{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cv-ask-cite{font-family:var(--mono);font-size:11px;color:var(--tx2);background:var(--accBg);border:none;border-radius:var(--r-pill);padding:3px 10px;cursor:pointer}
+.cv-ask-cite:hover{color:var(--tx);background:var(--bgH)}
