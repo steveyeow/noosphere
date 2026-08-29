@@ -44,7 +44,8 @@ body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var
 /* ── Public corpus read-only view (cloud unauth visitor) ──
    When the body carries .unauth-view, hide every write affordance — per-doc
    edit/delete (keep share + the reading view), Wiki Extract/Compile/Interview,
-   Sources +Add, description edit pencil, Settings tab, and chat composer. The
+   Sources +Add, description edit pencil, and the Settings tab. The chat dock
+   stays: for visitors the composer renders as the Ask box (visitor Ask). The
    corpus surface itself stays intact and readable. The cv-unauth-banner sits
    at the top of the content area with the Sign-in CTA.
 
@@ -59,7 +60,8 @@ body.unauth-view #cv-extract-btn,
 body.unauth-view #cv-compile-btn,
 body.unauth-view #cv-interview-btn,
 body.unauth-view #cv-raw-add,
-body.unauth-view .cv-chat-dock,
+/* NOTE: .cv-chat-dock deliberately NOT hidden — for visitors the composer
+   IS the product: it renders as the Ask box (visitor Ask, app.js). */
 body.unauth-view .cv-tab[href$="/settings"],
 /* Right-panel write actions — Access dropdown + Save, Add-subscription,
    per-subscription buttons, Generate-token, Revenue (owner-only). The
