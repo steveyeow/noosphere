@@ -80,7 +80,23 @@ class _PgConnWrapper:
 
     def __init__(self, dsn: str):
         pg = _pg()
+        self._dsn = dsn
         self._conn = pg.connect(dsn)
+        self._conn.autocommit = False
+
+    def _reconnect(self):
+        """Replace a dead connection (idle timeout, PG restart, network drop).
+
+        The singleton connection lives for the process lifetime; managed PG
+        closes idle connections, after which every request on this worker
+        500'd forever with "connection already closed" until a redeploy.
+        """
+        pg = _pg()
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._conn = pg.connect(self._dsn)
         self._conn.autocommit = False
 
     def execute(self, sql: str, params=()) -> _PgCursorResult:
@@ -100,6 +116,13 @@ class _PgConnWrapper:
             cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
             cur.execute(sql, params)
             return _PgCursorResult(cur)
+        except (pg.InterfaceError, pg.OperationalError):
+            # Dead connection. The in-flight transaction died with it, so a
+            # single retry on a fresh connection is safe (nothing committed).
+            self._reconnect()
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.execute(sql, params)
+            return _PgCursorResult(cur)
 
     def executemany(self, sql: str, params_list) -> _PgCursorResult:
         pg = _pg()
@@ -110,6 +133,11 @@ class _PgConnWrapper:
             return _PgCursorResult(cur)
         except pg.errors.InFailedSqlTransaction:
             self._conn.rollback()
+            cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
+            cur.executemany(sql, params_list)
+            return _PgCursorResult(cur)
+        except (pg.InterfaceError, pg.OperationalError):
+            self._reconnect()
             cur = self._conn.cursor(cursor_factory=pg.extras.RealDictCursor)
             cur.executemany(sql, params_list)
             return _PgCursorResult(cur)

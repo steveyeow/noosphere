@@ -132,7 +132,7 @@ async def sitemap_xml(request: Request):
             continue
         lastmod = _lastmod(c)
         for path in (f"/c/{slug}/llms.txt", f"/c/{slug}/llms-full.txt"):
-            block = [f"  <url>", f"    <loc>{_xml_escape(base + path)}</loc>"]
+            block = ["  <url>", f"    <loc>{_xml_escape(base + path)}</loc>"]
             if lastmod:
                 block.append(f"    <lastmod>{lastmod}</lastmod>")
             block.append("  </url>")
@@ -153,3 +153,21 @@ async def robots_txt(request: Request):
     )
     log_access(request, corpus_id=None, surface="site_robots")
     return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/{key}.txt")
+async def indexnow_key_file(key: str):
+    """Serve the IndexNow ownership-proof file at the site root.
+
+    IndexNow (Bing / Seznam / Naver — and via Bing, the retrieval layer for
+    ChatGPT search and Copilot) verifies pushed URLs by fetching
+    ``https://host/{key}.txt``. The key file lives in the static dir; only a
+    32-hex filename is honored so this can't be used to read arbitrary files.
+    """
+    if len(key) != 32 or any(ch not in "0123456789abcdef" for ch in key):
+        raise HTTPException(status_code=404, detail="Not found")
+    from pathlib import Path
+    path = Path(__file__).parent / "static" / f"{key}.txt"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
