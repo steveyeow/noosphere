@@ -33,7 +33,7 @@ def _is_pro_user(owner_id: str) -> bool:
     every feature regardless of tier. In cloud mode, returns False for users
     with no row, 'free' tier, or lookup failures.
     """
-    if not os.getenv("ENABLE_CLOUD", "").lower() in ("1", "true", "yes"):
+    if os.getenv("ENABLE_CLOUD", "").lower() not in ("1", "true", "yes"):
         return True
     if not owner_id:
         return False
@@ -187,6 +187,23 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Noosphere", version=__version__, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _www_to_apex(request, call_next):
+    """301 www.<host> → <host> so search engines see one canonical host.
+
+    www.noosphere.wiki is a custom domain on the same Railway service; without
+    this redirect it would serve a duplicate of the whole site and split
+    ranking signals. Permanent redirect preserves path and query.
+    """
+    host = request.headers.get("host", "")
+    if host.startswith("www."):
+        from starlette.responses import RedirectResponse
+        url = request.url.replace(netloc=host[4:])
+        return RedirectResponse(str(url), status_code=301)
+    return await call_next(request)
+
 
 # CORS — allow agents and external clients to call the API
 app.add_middleware(
