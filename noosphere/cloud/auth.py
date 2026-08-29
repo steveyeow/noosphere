@@ -85,6 +85,10 @@ PRIVATE_GET_PREFIXES = (
 # requiring a login before the question can even reach that gating.
 _ANON_POST_RE = re.compile(r"^/api/v1/corpora/[^/]+/ask$")
 
+# IndexNow ownership proof: engines fetch /{32-hex}.txt at the root with no
+# auth context; a 401 here makes every IndexNow submission fail validation.
+_INDEXNOW_KEY_RE = re.compile(r"^/[0-9a-f]{32}\.txt$")
+
 
 def _get_jwks_keys() -> list:
     """Fetch and cache JWKS keys from Supabase."""
@@ -168,7 +172,8 @@ async def auth_middleware(request: Request, call_next):
     without authentication. Write operations require a valid token.
     """
     path = request.url.path
-    is_public = path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES)
+    is_public = path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES) \
+        or bool(_INDEXNOW_KEY_RE.match(path))
     is_get_api = request.method == "GET" and path.startswith("/api/")
 
     # Public paths always pass through
