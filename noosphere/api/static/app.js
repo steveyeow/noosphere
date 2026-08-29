@@ -4982,10 +4982,18 @@ async function renderCorpus(id,sessionId,opts){
     if(cvComposerInput)cvComposerInput.placeholder='Ask a question…';
     if(cvComposerAttach)cvComposerAttach.style.display='none';
   }
-  // Scroll the corpus page (not the window) to the newest Q&A card. The dock
-  // floats over the bottom ~210px of .cv-scroll, so the thread's bottom
-  // margin (styles.css) keeps the card clear of it at full scroll.
-  const _scrollAskThread=()=>{const sc=ct.querySelector('.cv-scroll');if(sc)sc.scrollTo({top:sc.scrollHeight,behavior:'smooth'})};
+  // Scroll the corpus page (not the window) to the newest Q&A card. Instant,
+  // not smooth — smooth scrollTo gets silently canceled by the composer's
+  // autosize reflow and the view stayed at the top. The dock floats over the
+  // bottom ~210px of .cv-scroll; the thread's bottom margin (styles.css)
+  // keeps the card clear of it at full scroll. force=true on question send;
+  // answer arrival only follows if the reader is still near the bottom.
+  const _scrollAskThread=(force)=>{
+    const sc=ct.querySelector('.cv-scroll');
+    if(!sc)return;
+    if(!force&&sc.scrollHeight-sc.scrollTop-sc.clientHeight>320)return;
+    sc.scrollTop=sc.scrollHeight;
+  };
   async function _visitorAskSend(q){
     const thread=document.getElementById('cv-ask-thread');
     if(!thread)return;
@@ -4994,7 +5002,7 @@ async function renderCorpus(id,sessionId,opts){
     card.className='cv-ask-card';
     card.innerHTML=`<div class="cv-ask-q">${esc(q)}</div><div class="cv-ask-a cv-ask-pending">Thinking…</div>`;
     thread.appendChild(card);
-    _scrollAskThread();
+    _scrollAskThread(true);
     const aEl=card.querySelector('.cv-ask-a');
     try{
       const r=await fetch(`${API}/corpora/${id}/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
