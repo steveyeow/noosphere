@@ -4975,11 +4975,17 @@ async function renderCorpus(id,sessionId,opts){
   // page; the backend rate-limits anonymous callers per IP per day.
   const _visitorAsk=!c.can_write;
   if(_visitorAsk){
+    // One prompt, said once: the placeholder carries it, the corpus chip
+    // below names the scope, the mode slot says Ask. No "…to ask" echo.
     if(cvComposerMode)cvComposerMode.textContent='Ask';
-    if(cvComposerHint)cvComposerHint.textContent='Press Enter to ask';
-    if(cvComposerInput)cvComposerInput.placeholder=`Ask ${c.name} a question`;
+    if(cvComposerHint)cvComposerHint.textContent='Press Enter';
+    if(cvComposerInput)cvComposerInput.placeholder='Ask a question…';
     if(cvComposerAttach)cvComposerAttach.style.display='none';
   }
+  // Scroll the corpus page (not the window) to the newest Q&A card. The dock
+  // floats over the bottom ~210px of .cv-scroll, so the thread's bottom
+  // margin (styles.css) keeps the card clear of it at full scroll.
+  const _scrollAskThread=()=>{const sc=ct.querySelector('.cv-scroll');if(sc)sc.scrollTo({top:sc.scrollHeight,behavior:'smooth'})};
   async function _visitorAskSend(q){
     const thread=document.getElementById('cv-ask-thread');
     if(!thread)return;
@@ -4988,7 +4994,7 @@ async function renderCorpus(id,sessionId,opts){
     card.className='cv-ask-card';
     card.innerHTML=`<div class="cv-ask-q">${esc(q)}</div><div class="cv-ask-a cv-ask-pending">Thinking…</div>`;
     thread.appendChild(card);
-    card.scrollIntoView({behavior:'smooth',block:'end'});
+    _scrollAskThread();
     const aEl=card.querySelector('.cv-ask-a');
     try{
       const r=await fetch(`${API}/corpora/${id}/ask`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
@@ -4997,6 +5003,7 @@ async function renderCorpus(id,sessionId,opts){
         const msg=(d.detail&&d.detail.message)||'Daily free question limit reached.';
         aEl.classList.remove('cv-ask-pending');
         aEl.innerHTML=`${esc(msg)} <a href="#/login">Sign in →</a>`;
+        _scrollAskThread();
         return;
       }
       if(!r.ok)throw new Error((d.detail&&(d.detail.message||(typeof d.detail==='string'?d.detail:'')))||('HTTP '+r.status));
@@ -5005,9 +5012,11 @@ async function renderCorpus(id,sessionId,opts){
       aEl.innerHTML=(typeof _mdToHtml==='function'?_mdToHtml(d.answer||''):esc(d.answer||''))
         +(cites.length?`<div class="cv-ask-cites">${cites.map(ci=>`<button class="cv-ask-cite" type="button" data-doc="${esc(ci.document_id)}">[${ci.index}] ${esc(ci.title)}</button>`).join('')}</div>`:'');
       aEl.querySelectorAll('.cv-ask-cite').forEach(b=>{b.onclick=()=>openDocReader(id,b.dataset.doc)});
+      _scrollAskThread();
     }catch(e){
       aEl.classList.remove('cv-ask-pending');
       aEl.textContent='Could not answer: '+e.message;
+      _scrollAskThread();
     }
   }
 

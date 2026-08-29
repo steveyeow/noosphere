@@ -1843,7 +1843,9 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .home--active .home-iv-nudge{display:none}
 
 /* Visitor Ask — cited Q&A cards on a read-only corpus page */
-.cv-ask-thread{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px}
+/* Bottom margin + the 120px .cv-scroll-end spacer together clear the
+   ~210px floating chat dock, so a fully-scrolled card sits above it. */
+.cv-ask-thread{display:flex;flex-direction:column;gap:10px;margin:6px 0 110px}
 .cv-ask-thread:empty{display:none}
 .cv-ask-card{background:var(--bg2);border:1px solid var(--brd);border-radius:var(--r-md);padding:14px 16px;box-shadow:var(--shCard)}
 .cv-ask-q{font-weight:600;font-size:13.5px;margin-bottom:8px}
