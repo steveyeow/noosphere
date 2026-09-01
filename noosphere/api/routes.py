@@ -171,6 +171,16 @@ def _is_owner_request(request: Request) -> bool:
         if host in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "testclient"):
             return True
 
+    # The Referer/Origin shortcuts are SELF-HOSTED-ONLY. There, the web UI
+    # is private, so same-origin traffic is the operator. In cloud mode the
+    # web UI is the public site — every visitor browsing noosphere.wiki
+    # sends a same-origin Referer, and honoring it made anonymous visitors
+    # "owners": private-corpus access gating was bypassed, retrieval ran
+    # unfiltered (caller=owner), and visitor asks never hit query_logs.
+    # Cloud ownership comes solely from the JWT user_id checks in callers.
+    if _is_cloud():
+        return False
+
     referer = request.headers.get("referer", "")
     if referer:
         base = str(request.base_url).rstrip("/")
