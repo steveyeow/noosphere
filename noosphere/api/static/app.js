@@ -3271,7 +3271,44 @@ function renderMCList(host){
       };
       return;
     }
-    el.innerHTML='<div class="empty" style="margin-top:60px">No corpora yet. Click <strong>+ New</strong> to add your knowledge.</div>';
+    // First-run on-ramp: one action from "I have a link" to a working
+    // corpus with an Ask page and agent endpoint. The chat/create path
+    // stays available underneath for people starting from notes or files.
+    el.innerHTML=`<div class="mc-onramp">
+      <div class="mc-onramp-t">Start your first knowledge base</div>
+      <div class="mc-onramp-p">Paste a link you own — docs, a blog post, a README. Noosphere ingests and indexes it, and gives it an Ask page plus an agent endpoint.</div>
+      <div class="mc-onramp-row"><input type="url" id="mc-onramp-url" placeholder="https://…" autocomplete="off" /><button class="btn-add" id="mc-onramp-go">Create</button></div>
+      <div class="mc-onramp-alt">or <a href="#/main" id="mc-onramp-chat">start from a note, file, or chat</a></div>
+    </div>`;
+    const _orUrl=document.getElementById('mc-onramp-url');
+    const _orGo=document.getElementById('mc-onramp-go');
+    const _orRun=async()=>{
+      const raw=(_orUrl.value||'').trim();
+      if(!raw)return;
+      let u;try{u=new URL(raw.startsWith('http')?raw:'https://'+raw)}catch(e){toast('That does not look like a URL','error');return}
+      _orGo.disabled=true;_orGo.textContent='Creating…';
+      try{
+        const seg=u.pathname.split('/').filter(Boolean)[0]||'';
+        const name=(u.hostname.replace(/^www\./,'')+(seg?' · '+seg:'')).slice(0,60);
+        let r=await fetch(`${API}/corpora`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+        let d=await r.json().catch(()=>({}));
+        if(typeof handleQuotaError==='function'&&handleQuotaError(r,d)){_orGo.disabled=false;_orGo.textContent='Create';return}
+        if(!r.ok)throw new Error(d.detail?.message||d.detail||'Could not create corpus');
+        const cid=d.id;
+        _orGo.textContent='Ingesting…';
+        r=await fetch(`${API}/corpora/${cid}/ingest-url`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u.href})});
+        d=await r.json().catch(()=>({}));
+        if(!r.ok)throw new Error(d.detail?.message||d.detail||'Could not fetch that URL');
+        _orGo.textContent='Indexing…';
+        await fetch(`${API}/corpora/${cid}/index`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+        location.hash=`#/corpus/${cid}`;
+      }catch(e){
+        toast(e.message||'Something went wrong','error');
+        _orGo.disabled=false;_orGo.textContent='Create';
+      }
+    };
+    _orGo.onclick=_orRun;
+    _orUrl.addEventListener('keydown',e=>{if(e.key==='Enter')_orRun()});
     return;
   }
   el.className='mc-list';
@@ -6265,6 +6302,20 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
     return `<div class="rp-stage"><div class="rp-stage-hd"><span class="rp-stage-nm">${s.label}</span>${badge}</div><div class="rp-stage-dc">${s.desc}</div></div>`;
   }).join('');
 
+  // Connect — the "from_pretrained" moment: copy-paste ways to use this
+  // corpus from your own agent or LLM. This is the selfish-utility hook
+  // (HF layer 1): publishing is worth it because consuming your own corpus
+  // anywhere becomes one paste. Shown to visitors too — same snippets work
+  // for them on public corpora. Hidden for private (URLs would 403).
+  const _connSlug=encodeURIComponent(c.slug||c.id);
+  const connectRows=[
+    {l:'MCP · Claude Code',v:`claude mcp add --transport sse noosphere ${host}/mcp/sse`,d:'Adds ask / search / describe tools — then ask this corpus by name.'},
+    {l:'Ask API',v:`curl -X POST ${host}/api/v1/corpora/${c.id}/ask -H 'Content-Type: application/json' -d '{"question":"..."}'`,d:'One POST, returns a cited answer.'},
+    {l:'llms.txt',v:`${host}/c/${_connSlug}/llms-full.txt`,d:'Paste into ChatGPT or any LLM to load this corpus as context.'},
+  ];
+  const connectHTML=al==='private'?'' :
+    `<div class="rp-sec"><div class="rp-lbl" title="Use this corpus from your own agent or LLM — click a row to copy.">Connect</div><div class="rp-conn">${connectRows.map(r=>`<div class="rp-conn-row" data-copy="${esc(r.v)}" title="${esc(r.d)}"><div class="rp-conn-hd"><span class="rp-conn-lbl">${esc(r.l)}</span><span class="rp-conn-cp">copy</span></div><code class="rp-conn-code">${esc(r.v)}</code></div>`).join('')}</div></div>`;
+
   const kbr=cap?Number(cap.kb_reputation||0):0;
   const kbrTier=kbr>=0.5?'high':kbr>=0.2?'mid':'low';
   // Fold Confidence into the Reputation row — a single trust line.
@@ -6345,8 +6396,9 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
   //   Content  — doc count + source mix + entities
   rp.innerHTML=`<div class="rp-sec rp-sec-first"><div class="rp-lbl"><span>Network</span><a href="#" class="rp-mini-expand" id="rp-mini-expand" title="Expand">Expand</a></div><div class="rp-mini-wrap" id="rp-mini-wrap"><canvas class="rp-mini-cv" id="rp-mini-cv"></canvas><div class="rp-mini-empty hidden" id="rp-mini-empty">Add tags to connect with the network.</div></div></div>
     <div class="rp-sec"><div class="rp-lbl">Access</div><div class="rp-row"><select id="rp-acc"><option value="public" ${al==='public'?'selected':''}>Public</option><option value="private" ${al==='private'?'selected':''}>Private</option><option value="token" ${al==='token'?'selected':''}>Token-gated</option><option value="paid" ${al==='paid'?'selected':''}>Paid</option></select><button class="btn-sm" id="rp-sv" disabled>Save</button></div><div class="rp-msg info" id="rp-msg">${ACC_MSG[al]||''}</div><div class="rp-sub"><span class="rp-sub-lbl">Discovery</span><div class="rp-sub-val" id="rp-discovery" title="${esc(regHint)}">${esc(regStatus)}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Licensing</span><div class="rp-sub-val" id="rp-licensing" title="${esc(licHint)}">${esc(licStr)}</div></div><div id="rp-tokens" class="rp-sub rp-sub--block" style="display:${al==='token'?'block':'none'}"><span class="rp-sub-lbl">Access tokens</span><div class="rp-sub-val"><button class="btn-sm" id="rp-gen-tk" style="margin-bottom:8px">+ Generate token</button><div id="rp-tk-list"></div></div></div><div id="rp-pricing" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Pricing</span><div class="rp-sub-val" id="rp-pricing-body"></div></div><div id="rp-revenue" class="rp-sub rp-sub--block" style="display:${al==='paid'?'block':'none'}"><span class="rp-sub-lbl">Revenue</span><div class="rp-sub-val" id="rp-revenue-body" style="font-size:12px;color:var(--tx3)">Loading…</div></div></div>
+    ${connectHTML}
     <div class="rp-sec"><div class="rp-lbl" title="What this KB can do on its own.">Autonomy</div><div class="rp-stages">${autonomyHTML}</div><div class="rp-sub rp-sub--block"><div class="rp-sub-hd"><span class="rp-sub-lbl">Subscriptions <span class="rp-sub-cnt" id="rp-subs-count">(0)</span></span><button class="btn-xs" id="rp-subs-add" title="Subscribe to a peer KB">+ Add</button></div><div class="rp-subs-list" id="rp-subs-list"><span class="rp-sub-empty">Loading…</span></div></div></div>
-    <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span></div></div></div>
+    <div class="rp-sec"><div class="rp-lbl" title="Signals external agents use to weigh this KB's answers against others.">Trust</div><div class="rp-sub"><span class="rp-sub-lbl">Reputation <a href="#" class="rp-info-icon" id="rp-kbr-info" title="How is this computed?" aria-label="How is Reputation computed">&#9432;</a></span><div class="rp-sub-val rp-kbr rp-kbr--${kbrTier}" title="${esc(confHint)}">${kbr>0?`${kbr.toFixed(2)} <span class="rp-kbr-tier">${kbrTier}</span> <span class="rp-kbr-conf">· ${esc(confSuffix)}</span>`:`<span class="rp-kbr-conf">building — earned as agents query and cite this KB</span>`}</div></div></div>
     <div class="rp-sec"><div class="rp-lbl" title="What's inside this KB — count, source mix, and extracted entities.">Content</div><div class="rp-sub"><span class="rp-sub-lbl">Documents</span><div class="rp-sub-val"><strong>${fmtN(docCount)}</strong> ${docCount===1?'doc':'docs'}</div></div><div class="rp-sub"><span class="rp-sub-lbl">Mix</span><div class="rp-sub-val">${mixHTML}</div></div></div>`;
   drawMiniNetwork(c);
 
@@ -6428,6 +6480,15 @@ async function showRP(c,an){const rp=document.getElementById('rpanel');rp.classL
      communicates value without yanking the user off the corpus page. */
   rp.querySelectorAll('[data-pro-upsell]').forEach(btn=>{
     btn.onclick=(e)=>{e.preventDefault();e.stopPropagation();showProModal(btn.dataset.proUpsell||'')};
+  });
+
+  /* Connect rows — click anywhere on a row copies its snippet. */
+  rp.querySelectorAll('.rp-conn-row').forEach(row=>{
+    row.onclick=async()=>{
+      try{await navigator.clipboard.writeText(row.dataset.copy||'')}catch(e){}
+      const cp=row.querySelector('.rp-conn-cp');
+      if(cp){const o=cp.textContent;cp.textContent='copied';setTimeout(()=>{cp.textContent=o},1200)}
+    };
   });
 
   /* Subscriptions — part of the Fully Autonomous tier (peer corpus

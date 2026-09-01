@@ -492,7 +492,7 @@ def search_corpus(
     ).fetchone()["n"]
 
     if chunk_count == 0:
-        _log_query(corpus_id, query, 0, 0, agent_id=agent_id, token_id=token_id, action=action)
+        _log_query(corpus_id, query, 0, 0, agent_id=agent_id, token_id=token_id, action=action, caller=caller)
         return {"results": [], "usage": {"latency_ms": 0, "chunks_searched": 0, "detail": detail}}
 
     queries = [query]
@@ -608,7 +608,7 @@ def search_corpus(
         results.append(result)
 
     latency = int((time.time() - start) * 1000)
-    _log_query(corpus_id, query, len(results), latency, agent_id=agent_id, token_id=token_id, action=action)
+    _log_query(corpus_id, query, len(results), latency, agent_id=agent_id, token_id=token_id, action=action, caller=caller)
 
     return {
         "results": results,
@@ -664,14 +664,15 @@ def _log_query(
     agent_id: str = "",
     token_id: str | None = None,
     action: str = "ask",
+    caller: str = "",
 ):
-    # Only log real agent activity. A request counts as "agent activity"
-    # when it carries an `x-agent-id` header or a corpus access token.
-    # UI-internal fetches (owner browsing, metadata prefetch on page load)
-    # carry neither and must not pollute the Insights funnel — otherwise
-    # Describe/preview_ask/ask counters reflect the owner's own tab-switching,
-    # not outside usage.
-    if not (agent_id or token_id):
+    # Only log OUTSIDE usage. A request counts when it carries an
+    # `x-agent-id` header, a corpus access token, OR was classified
+    # caller="external" by the route (visitor Ask, non-owner API calls).
+    # UI-internal owner fetches (browsing, metadata prefetch on page load)
+    # must not pollute the Insights funnel — otherwise the counters reflect
+    # the owner's own tab-switching, not outside usage.
+    if not (agent_id or token_id or caller == "external"):
         return
     try:
         conn = get_conn()

@@ -1857,3 +1857,23 @@ a.wikilink:hover{color:var(--tx);border-bottom-color:var(--tx3)}
 .cv-ask-cites{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .cv-ask-cite{font-family:var(--mono);font-size:11px;color:var(--tx2);background:var(--accBg);border:none;border-radius:var(--r-pill);padding:3px 10px;cursor:pointer}
 .cv-ask-cite:hover{color:var(--tx);background:var(--bgH)}
+
+/* Connect — copy-paste agent/LLM integration rows on the right panel */
+.rp-conn{display:flex;flex-direction:column;gap:8px}
+.rp-conn-row{cursor:pointer;border:1px solid var(--brd);border-radius:var(--r-sm);padding:8px 10px;background:var(--bg3)}
+.rp-conn-row:hover{background:var(--bgH)}
+.rp-conn-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.rp-conn-lbl{font-size:11.5px;font-weight:600;color:var(--tx)}
+.rp-conn-cp{font-family:var(--mono);font-size:10px;color:var(--tx3)}
+.rp-conn-row:hover .rp-conn-cp{color:var(--tx)}
+.rp-conn-code{display:block;font-family:var(--mono);font-size:10.5px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* First-run on-ramp — Corpora page when the user has no corpora yet */
+.mc-onramp{max-width:520px;margin:80px auto 0;text-align:center}
+.mc-onramp-t{font-family:'Libre Baskerville',Georgia,serif;font-size:22px;margin-bottom:10px}
+.mc-onramp-p{font-size:13.5px;color:var(--tx2);line-height:1.6;margin-bottom:20px}
+.mc-onramp-row{display:flex;gap:8px}
+.mc-onramp-row input{flex:1;padding:10px 14px;border:1px solid var(--brd);border-radius:var(--r-sm);background:var(--bg2);color:var(--tx);font-size:13.5px;outline:none}
+.mc-onramp-row input:focus{box-shadow:var(--ringA)}
+.mc-onramp-alt{margin-top:14px;font-size:12.5px;color:var(--tx3)}
+.mc-onramp-alt a{color:var(--tx2);text-decoration:underline}
