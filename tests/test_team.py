@@ -183,12 +183,31 @@ def test_remove_member_admin_only(isolated_db):
     inv = a.get(f"/api/v1/orgs/{org['id']}/invites").json()[0]
     bob = _client(user_id="bob")
     bob.post(f"/api/v1/orgs/invites/{inv['token']}/accept")
-    # Editor can't remove anyone.
-    r = bob.delete(f"/api/v1/orgs/{org['id']}/members/bob")
+    # Editor can't remove someone ELSE — removing others is admin-only.
+    r = bob.delete(f"/api/v1/orgs/{org['id']}/members/alice")
     assert r.status_code == 403
-    # Owner can.
+    # Owner can remove others.
     r = a.delete(f"/api/v1/orgs/{org['id']}/members/bob")
     assert r.status_code == 200
+
+
+def test_member_can_leave_org(isolated_db):
+    """Self-removal is "Leave organization" — allowed for any role.
+
+    The remove-member route carves this out deliberately (see
+    api_remove_member); the old admin-only test predated the carve-out and
+    wrongly expected 403 for an editor removing himself.
+    """
+    a = _client(user_id="alice")
+    org = _create_org(a)
+    a.post(f"/api/v1/orgs/{org['id']}/invites", json={"role": "editor"})
+    inv = a.get(f"/api/v1/orgs/{org['id']}/invites").json()[0]
+    bob = _client(user_id="bob")
+    bob.post(f"/api/v1/orgs/invites/{inv['token']}/accept")
+    r = bob.delete(f"/api/v1/orgs/{org['id']}/members/bob")
+    assert r.status_code == 200
+    members = a.get(f"/api/v1/orgs/{org['id']}/members").json()
+    assert all(m["user_id"] != "bob" for m in members)
 
 
 # ── Workspace-scoped corpus permissions ────────────────────────────
