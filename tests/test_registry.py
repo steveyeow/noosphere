@@ -31,7 +31,9 @@ def client(tmp_path, monkeypatch):
 
 _NODE_PAYLOAD = {
     "node_version": "0.1.0",
-    "endpoint": "http://localhost:8420",
+    # Must be a routable host: /register rejects localhost/loopback endpoints
+    # (is_local_endpoint) so dev instances can't pollute the shared registry.
+    "endpoint": "http://node-a.example.com:8420",
     "corpora": [
         {
             "corpus_id": "abc-123",
@@ -72,7 +74,7 @@ def test_register_node(client):
     body = r.json()
     assert body["status"] == "ok"
     assert body["registered"] == 2
-    assert body["endpoint"] == "http://localhost:8420"
+    assert body["endpoint"] == "http://node-a.example.com:8420"
 
 
 def test_register_requires_endpoint(client):
@@ -105,7 +107,7 @@ def test_register_updates_on_re_register(client):
 
 def test_deregister_node(client):
     client.post("/api/v1/register", json=_NODE_PAYLOAD)
-    r = client.post("/api/v1/deregister", json={"endpoint": "http://localhost:8420"})
+    r = client.post("/api/v1/deregister", json={"endpoint": "http://node-a.example.com:8420"})
     assert r.status_code == 200
 
     r = client.get("/api/v1/network/nodes")
@@ -157,7 +159,7 @@ def test_list_nodes(client):
     assert r.status_code == 200
     body = r.json()
     assert body["count"] == 1
-    assert body["nodes"][0]["endpoint"] == "http://localhost:8420"
+    assert body["nodes"][0]["endpoint"] == "http://node-a.example.com:8420"
 
 
 # ── Stats ──
